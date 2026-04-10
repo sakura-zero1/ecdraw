@@ -1,0 +1,96 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "ECDraw" [level=1] [ref=e6]
+    - generic [ref=e7]:
+      - button "+ 新建元件" [ref=e8] [cursor=pointer]
+      - button "导出" [ref=e9] [cursor=pointer]
+      - button "导入" [ref=e10] [cursor=pointer]
+  - generic [ref=e11]:
+    - complementary [ref=e12]:
+      - generic [ref=e13]:
+        - generic [ref=e14]: 元件列表
+        - generic [ref=e15]:
+          - generic [ref=e16]: "0"
+          - button "◂" [ref=e17] [cursor=pointer]
+      - generic [ref=e18]:
+        - generic [ref=e19]: 暂无元件，点击“新建元件”开始绘制
+        - button "▸ 电源点 0" [ref=e21] [cursor=pointer]:
+          - generic [ref=e22]: ▸
+          - generic [ref=e23]: 电源点
+          - generic [ref=e24]: "0"
+        - button "▸ 分合点 0" [ref=e26] [cursor=pointer]:
+          - generic [ref=e27]: ▸
+          - generic [ref=e28]: 分合点
+          - generic [ref=e29]: "0"
+        - button "▸ 衔接点 0" [ref=e31] [cursor=pointer]:
+          - generic [ref=e32]: ▸
+          - generic [ref=e33]: 衔接点
+          - generic [ref=e34]: "0"
+        - button "▸ 负荷点 0" [ref=e36] [cursor=pointer]:
+          - generic [ref=e37]: ▸
+          - generic [ref=e38]: 负荷点
+          - generic [ref=e39]: "0"
+    - main [ref=e40]:
+      - generic [ref=e41]:
+        - generic [ref=e42]:
+          - generic [ref=e43]:
+            - button "↖ 选择" [ref=e44] [cursor=pointer]:
+              - generic [ref=e45]: ↖
+              - generic [ref=e46]: 选择
+            - button "▭ 矩形" [ref=e47] [cursor=pointer]:
+              - generic [ref=e48]: ▭
+              - generic [ref=e49]: 矩形
+            - button "◯ 圆形" [ref=e50] [cursor=pointer]:
+              - generic [ref=e51]: ◯
+              - generic [ref=e52]: 圆形
+            - button "⬭ 椭圆" [ref=e53] [cursor=pointer]:
+              - generic [ref=e54]: ⬭
+              - generic [ref=e55]: 椭圆
+            - button "╱ 线段" [ref=e56] [cursor=pointer]:
+              - generic [ref=e57]: ╱
+              - generic [ref=e58]: 线段
+          - generic [ref=e60]:
+            - generic [ref=e61]:
+              - generic [ref=e62]: 填充
+              - textbox "填充 Ø" [ref=e63] [cursor=pointer]: "#ffffff"
+              - button "Ø" [ref=e64] [cursor=pointer]
+            - generic [ref=e65]:
+              - generic [ref=e66]: 描边
+              - textbox "描边" [ref=e67] [cursor=pointer]: "#000000"
+            - generic [ref=e68]:
+              - generic [ref=e69]: 粗细
+              - spinbutton "粗细" [ref=e70]: "5"
+          - generic [ref=e72]:
+            - button "⊞ 组合" [disabled] [ref=e73]:
+              - generic [ref=e74]: ⊞
+              - generic [ref=e75]: 组合
+            - button "⊟ 解组" [disabled] [ref=e76]:
+              - generic [ref=e77]: ⊟
+              - generic [ref=e78]: 解组
+            - button "✕ 删除" [disabled] [ref=e79]:
+              - generic [ref=e80]: ✕
+              - generic [ref=e81]: 删除
+        - img [ref=e82]:
+          - generic [ref=e85]: 请选择或新建一个元件
+    - complementary [ref=e86]:
+      - generic [ref=e87]:
+        - generic [ref=e88]: 元件属性
+        - button "▸" [ref=e89] [cursor=pointer]
+      - generic [ref=e90]: 请选择或新建一个元件
+  - generic [ref=e92]:
+    - heading "新建元件" [level=3] [ref=e93]
+    - generic [ref=e94]:
+      - text: 名称
+      - textbox "名称" [active] [ref=e95]:
+        - /placeholder: 可选，留空使用分类名称
+        - text: 测试断路器
+    - generic [ref=e96]:
+      - text: 分类
+      - combobox "分类" [ref=e97]:
+        - option "电源点"
+        - option "分合点" [selected]
+        - option "衔接点"
+        - option "负荷点"
+    - generic [ref=e98]:
+      - button "取消" [ref=e99] [cursor=pointer]
+      - button "创建" [ref=e100] [cursor=pointer]

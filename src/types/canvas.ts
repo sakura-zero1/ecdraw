@@ -1,0 +1,16 @@
+﻿export type ToolMode = 'select' | 'pan' | 'add-pin' | 'draw-rect' | 'draw-circle' | 'draw-ellipse' | 'draw-line';
+
+export interface Viewport {
+  offsetX: number;
+  offsetY: number;
+  zoom: number;
+}
+
+export interface ProjectFile {
+  version: string;
+  name: string;
+  components: import('./component').ElectricalComponent[];
+  matrices: import('./connection').ConnectivityMatrix[];
+  viewport: Viewport;
+  savedAt: string;
+}

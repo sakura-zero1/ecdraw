@@ -1,0 +1,111 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - heading "ECDraw" [level=1] [ref=e6]
+      - generic [ref=e7]: 电气元件绘制工具
+    - generic [ref=e8]:
+      - button "+ 新建元件" [ref=e9] [cursor=pointer]
+      - button "导出" [ref=e10] [cursor=pointer]
+      - button "导入" [ref=e11] [cursor=pointer]
+  - generic [ref=e12]:
+    - complementary [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]: 元件列表
+        - generic [ref=e16]:
+          - generic [ref=e17]: "1"
+          - button "◂" [ref=e18] [cursor=pointer]
+      - generic [ref=e19]:
+        - button "▸ 电源点 0" [ref=e21] [cursor=pointer]:
+          - generic [ref=e22]: ▸
+          - generic [ref=e23]: 电源点
+          - generic [ref=e24]: "0"
+        - generic [ref=e25]:
+          - button "▸ 分合点 1" [ref=e26] [cursor=pointer]:
+            - generic [ref=e27]: ▸
+            - generic [ref=e28]: 分合点
+            - generic [ref=e29]: "1"
+          - generic [ref=e30] [cursor=pointer]:
+            - generic "测试断路器" [ref=e31]
+            - button "⧉" [ref=e32]
+        - button "▸ 衔接点 0" [ref=e34] [cursor=pointer]:
+          - generic [ref=e35]: ▸
+          - generic [ref=e36]: 衔接点
+          - generic [ref=e37]: "0"
+        - button "▸ 负荷点 0" [ref=e39] [cursor=pointer]:
+          - generic [ref=e40]: ▸
+          - generic [ref=e41]: 负荷点
+          - generic [ref=e42]: "0"
+    - main [ref=e43]:
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - generic [ref=e46]:
+            - button "↖ 选择" [ref=e47] [cursor=pointer]:
+              - generic [ref=e48]: ↖
+              - generic [ref=e49]: 选择
+            - button "▭ 矩形" [ref=e50] [cursor=pointer]:
+              - generic [ref=e51]: ▭
+              - generic [ref=e52]: 矩形
+            - button "◯ 圆形" [ref=e53] [cursor=pointer]:
+              - generic [ref=e54]: ◯
+              - generic [ref=e55]: 圆形
+            - button "⬭ 椭圆" [ref=e56] [cursor=pointer]:
+              - generic [ref=e57]: ⬭
+              - generic [ref=e58]: 椭圆
+            - button "╱ 线段" [ref=e59] [cursor=pointer]:
+              - generic [ref=e60]: ╱
+              - generic [ref=e61]: 线段
+          - generic [ref=e63]:
+            - generic [ref=e64]:
+              - generic [ref=e65]: 填充
+              - textbox "填充 Ø" [ref=e66] [cursor=pointer]: "#ffffff"
+              - button "Ø" [ref=e67] [cursor=pointer]
+            - generic [ref=e68]:
+              - generic [ref=e69]: 描边
+              - textbox "描边" [ref=e70] [cursor=pointer]: "#000000"
+            - generic [ref=e71]:
+              - generic [ref=e72]: 粗细
+              - spinbutton "粗细" [ref=e73]: "5"
+          - generic [ref=e75]:
+            - button "⊞ 组合" [disabled] [ref=e76]:
+              - generic [ref=e77]: ⊞
+              - generic [ref=e78]: 组合
+            - button "⊟ 解组" [disabled] [ref=e79]:
+              - generic [ref=e80]: ⊟
+              - generic [ref=e81]: 解组
+            - button "✕ 删除" [disabled] [ref=e82]:
+              - generic [ref=e83]: ✕
+              - generic [ref=e84]: 删除
+        - img [ref=e85]:
+          - generic [ref=e92]:
+            - generic: "1"
+          - generic [ref=e94]:
+            - generic: "3"
+          - generic [ref=e96]:
+            - generic: "2"
+    - complementary [ref=e98]:
+      - generic [ref=e99]:
+        - generic [ref=e100]:
+          - button "元件属性" [ref=e101] [cursor=pointer]
+          - button "引脚管理" [ref=e102] [cursor=pointer]
+        - button "▸" [ref=e103] [cursor=pointer]
+      - generic [ref=e105]:
+        - generic [ref=e106] [cursor=pointer]:
+          - generic [ref=e107]: ▶
+          - generic [ref=e108]: 元件属性
+        - generic [ref=e109]:
+          - text: 名称
+          - textbox "名称" [ref=e110]: 测试断路器
+        - generic [ref=e111]:
+          - text: 分类
+          - combobox "分类" [ref=e112]:
+            - option "电源点"
+            - option "分合点" [selected]
+            - option "衔接点"
+            - option "负荷点"
+        - generic [ref=e113]:
+          - text: 描述
+          - textbox "描述" [ref=e114]
+        - generic [ref=e115]: "画布: 1200 x 800 | 图形: 3 | 引脚: 3"
+        - generic [ref=e116]:
+          - generic [ref=e117]: 选中图形参数
+          - generic [ref=e118]: 未选中图形

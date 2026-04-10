@@ -1,0 +1,176 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  COMPONENT_EDITOR
+  DIAGRAM_EDITOR
+  REVIEWER
+  VIEWER
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum DiagramStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  REJECTED
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id           String      @id @default(cuid())
+  username     String      @unique
+  passwordHash String
+  role         UserRole
+  status       UserStatus  @default(ACTIVE)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  components   Component[]
+  diagrams     Diagram[]
+  reviews      ReviewRequest[] @relation("ReviewerReviews")
+  auditLogs    AuditLog[]
+  aiSessions   AiSession[]
+}
+
+model Component {
+  id          String   @id @default(cuid())
+  name        String
+  category    String
+  description String?
+  isPublic    Boolean  @default(false)
+  ownerId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner       User                @relation(fields: [ownerId], references: [id])
+  versions    ComponentVersion[]
+
+  @@index([ownerId])
+  @@index([category])
+}
+
+model ComponentVersion {
+  id          String   @id @default(cuid())
+  componentId String
+  versionNo   Int
+  snapshot    Json
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  component   Component @relation(fields: [componentId], references: [id], onDelete: Cascade)
+
+  @@unique([componentId, versionNo])
+  @@index([createdAt])
+}
+
+model Diagram {
+  id               String        @id @default(cuid())
+  name             String
+  description      String?
+  ownerId          String
+  status           DiagramStatus @default(DRAFT)
+  currentVersionId String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  owner            User           @relation(fields: [ownerId], references: [id])
+  versions         DiagramVersion[]
+  reviews          ReviewRequest[]
+
+  @@index([ownerId])
+  @@index([status])
+}
+
+model DiagramVersion {
+  id         String   @id @default(cuid())
+  diagramId  String
+  versionNo  Int
+  snapshot   Json
+  createdBy  String
+  createdAt  DateTime @default(now())
+
+  diagram    Diagram  @relation(fields: [diagramId], references: [id], onDelete: Cascade)
+  reviews    ReviewRequest[]
+
+  @@unique([diagramId, versionNo])
+  @@index([createdAt])
+}
+
+model ReviewRequest {
+  id               String       @id @default(cuid())
+  diagramId        String
+  diagramVersionId String
+  submitterId      String
+  reviewerId       String?
+  status           ReviewStatus @default(PENDING)
+  comment          String?
+  submittedAt      DateTime     @default(now())
+  reviewedAt       DateTime?
+
+  diagram          Diagram        @relation(fields: [diagramId], references: [id], onDelete: Cascade)
+  diagramVersion   DiagramVersion @relation(fields: [diagramVersionId], references: [id], onDelete: Cascade)
+  reviewer         User?          @relation("ReviewerReviews", fields: [reviewerId], references: [id])
+
+  @@index([status])
+  @@index([submittedAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  action     String
+  targetType String
+  targetId   String
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
+
+model AiSession {
+  id         String      @id @default(cuid())
+  userId     String
+  diagramId  String?
+  createdAt  DateTime    @default(now())
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages   AiMessage[]
+
+  @@index([userId])
+}
+
+model AiMessage {
+  id          String   @id @default(cuid())
+  sessionId   String
+  role        String
+  content     String
+  toolCalls   Json?
+  createdAt   DateTime @default(now())
+
+  session     AiSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
+

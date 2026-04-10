@@ -1,0 +1,156 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - heading "ECDraw" [level=1] [ref=e6]
+      - generic [ref=e239]: 电气元件绘制工具
+    - generic [ref=e7]:
+      - button "+ 新建元件" [ref=e8] [cursor=pointer]
+      - button "导出" [ref=e9] [cursor=pointer]
+      - button "导入" [active] [ref=e10] [cursor=pointer]
+  - generic [ref=e11]:
+    - complementary [ref=e12]:
+      - generic [ref=e13]:
+        - generic [ref=e14]: 元件列表
+        - generic [ref=e15]:
+          - generic [ref=e16]: "1"
+          - button "◂" [ref=e17] [cursor=pointer]
+      - generic [ref=e18]:
+        - button "▸ 电源点 0" [ref=e21] [cursor=pointer]:
+          - generic [ref=e22]: ▸
+          - generic [ref=e23]: 电源点
+          - generic [ref=e24]: "0"
+        - generic [ref=e25]:
+          - button "▸ 分合点 1" [ref=e290] [cursor=pointer]:
+            - generic [ref=e27]: ▸
+            - generic [ref=e28]: 分合点
+            - generic [ref=e29]: "1"
+          - generic [ref=e102] [cursor=pointer]:
+            - generic "测试断路器" [ref=e103]
+            - button "⧉" [ref=e104]
+        - button "▸ 衔接点 0" [ref=e31] [cursor=pointer]:
+          - generic [ref=e32]: ▸
+          - generic [ref=e33]: 衔接点
+          - generic [ref=e34]: "0"
+        - button "▸ 负荷点 0" [ref=e36] [cursor=pointer]:
+          - generic [ref=e37]: ▸
+          - generic [ref=e38]: 负荷点
+          - generic [ref=e39]: "0"
+    - main [ref=e40]:
+      - generic [ref=e41]:
+        - generic [ref=e42]:
+          - generic [ref=e43]:
+            - button "↖ 选择" [ref=e44] [cursor=pointer]:
+              - generic [ref=e45]: ↖
+              - generic [ref=e46]: 选择
+            - button "▭ 矩形" [ref=e47] [cursor=pointer]:
+              - generic [ref=e48]: ▭
+              - generic [ref=e49]: 矩形
+            - button "◯ 圆形" [ref=e50] [cursor=pointer]:
+              - generic [ref=e51]: ◯
+              - generic [ref=e52]: 圆形
+            - button "⬭ 椭圆" [ref=e53] [cursor=pointer]:
+              - generic [ref=e54]: ⬭
+              - generic [ref=e55]: 椭圆
+            - button "╱ 线段" [ref=e56] [cursor=pointer]:
+              - generic [ref=e57]: ╱
+              - generic [ref=e58]: 线段
+          - generic [ref=e60]:
+            - generic [ref=e61]:
+              - generic [ref=e62]: 填充
+              - textbox "填充 Ø" [ref=e63] [cursor=pointer]: "#ffffff"
+              - button "Ø" [ref=e64] [cursor=pointer]
+            - generic [ref=e65]:
+              - generic [ref=e66]: 描边
+              - textbox "描边" [ref=e67] [cursor=pointer]: "#000000"
+            - generic [ref=e68]:
+              - generic [ref=e69]: 粗细
+              - spinbutton "粗细" [ref=e70]: "5"
+          - generic [ref=e72]:
+            - button "⊞ 组合" [disabled] [ref=e73]:
+              - generic [ref=e74]: ⊞
+              - generic [ref=e75]: 组合
+            - button "⊟ 解组" [disabled] [ref=e76]:
+              - generic [ref=e77]: ⊟
+              - generic [ref=e78]: 解组
+            - button "✕ 删除" [disabled] [ref=e79]:
+              - generic [ref=e80]: ✕
+              - generic [ref=e81]: 删除
+        - img [ref=e82]:
+          - generic [ref=e479]:
+            - generic: "1"
+          - generic [ref=e481]:
+            - generic: "3"
+          - generic [ref=e483]:
+            - generic: "2"
+    - complementary [ref=e86]:
+      - generic [ref=e87]:
+        - generic [ref=e88]:
+          - button "元件属性" [ref=e303] [cursor=pointer]
+          - button "引脚管理" [ref=e304] [cursor=pointer]
+        - button "▸" [ref=e89] [cursor=pointer]
+      - generic [ref=e305]:
+        - generic [ref=e306]:
+          - generic [ref=e307] [cursor=pointer]:
+            - generic [ref=e308]: ▶
+            - generic [ref=e309]: 引脚管理
+          - generic [ref=e310]:
+            - button "+1 引脚" [ref=e311] [cursor=pointer]
+            - generic [ref=e312]: 默认命名为数字，类型固定为“双向”
+          - generic [ref=e313]:
+            - generic [ref=e485]:
+              - generic [ref=e486]: "1"
+              - generic [ref=e487]: 双向
+              - generic [ref=e488]: (50, 50)
+              - button "删除" [ref=e490] [cursor=pointer]
+            - generic [ref=e491]:
+              - generic [ref=e492]: "3"
+              - generic [ref=e493]: 双向
+              - generic [ref=e494]: (50, 50)
+              - button "删除" [ref=e496] [cursor=pointer]
+            - generic [ref=e497]:
+              - generic [ref=e498]: "2"
+              - generic [ref=e499]: 双向
+              - generic [ref=e500]: (50, 50)
+              - button "删除" [ref=e502] [cursor=pointer]
+        - generic [ref=e332]:
+          - generic [ref=e333] [cursor=pointer]:
+            - generic [ref=e334]: ▶
+            - generic [ref=e335]: 连通矩阵
+          - table [ref=e504]:
+            - rowgroup [ref=e505]:
+              - row "1 3 2" [ref=e506]:
+                - columnheader [ref=e507]
+                - columnheader "1" [ref=e508]
+                - columnheader "3" [ref=e509]
+                - columnheader "2" [ref=e510]
+            - rowgroup [ref=e511]:
+              - row "1 - 通" [ref=e512]:
+                - columnheader "1" [ref=e513]
+                - cell [ref=e514] [cursor=pointer]
+                - cell "-" [ref=e515] [cursor=pointer]
+                - cell "通" [ref=e516] [cursor=pointer]
+              - row "3 - -" [ref=e517]:
+                - rowheader "3" [ref=e518]
+                - cell "-" [ref=e519] [cursor=pointer]
+                - cell [ref=e520] [cursor=pointer]
+                - cell "-" [ref=e521] [cursor=pointer]
+              - row "2 通 -" [ref=e522]:
+                - rowheader "2" [ref=e523]
+                - cell "通" [ref=e524] [cursor=pointer]
+                - cell "-" [ref=e525] [cursor=pointer]
+                - cell [ref=e526] [cursor=pointer]
+          - generic [ref=e527]:
+            - generic [ref=e528]: 闭合
+            - generic [ref=e530]: 断开
+            - generic [ref=e532]: 无连接
+          - generic [ref=e534]:
+            - generic [ref=e535]: 连接详情
+            - generic [ref=e537]:
+              - generic [ref=e538]: "1"
+              - generic [ref=e539]: →
+              - generic [ref=e540]: "2"
+              - generic [ref=e543] [cursor=pointer]: 闭合
+              - generic "隐藏连线" [ref=e544] [cursor=pointer]:
+                - generic [ref=e545]: 👁
+              - button "图形 (1)" [ref=e546] [cursor=pointer]
+          - button "播放开断动画" [ref=e548] [cursor=pointer]

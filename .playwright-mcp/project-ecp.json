@@ -1,0 +1,113 @@
+{
+  "version": "1.0.0",
+  "components": [
+    {
+      "id": "1b3c890a-4a62-4e9f-ba26-78bec30cb0e9",
+      "name": "测试断路器",
+      "category": "switchPoint",
+      "description": "",
+      "width": 1200,
+      "height": 800,
+      "shapeElements": [
+        {
+          "id": "f2b42df9-e190-4f37-b88b-a62dc43691d9",
+          "type": "rect",
+          "fill": "transparent",
+          "stroke": "#000000",
+          "strokeWidth": 5,
+          "opacity": 1,
+          "x": 0,
+          "y": 466,
+          "width": 268,
+          "height": 312,
+          "linkedConnectionId": "194ba12c-1163-488e-980f-278b599001f9",
+          "stateClosed": {
+            "fill": "#22c55e"
+          }
+        },
+        {
+          "id": "98b27ac7-3b98-45ba-988a-158ef44d9f8b",
+          "type": "circle",
+          "fill": "transparent",
+          "stroke": "#000000",
+          "strokeWidth": 5,
+          "opacity": 1,
+          "cx": 894,
+          "cy": 493,
+          "r": 27
+        },
+        {
+          "id": "c337d294-66f7-436a-9ca8-009a55dcb4f6",
+          "type": "rect",
+          "fill": "transparent",
+          "stroke": "#000000",
+          "strokeWidth": 5,
+          "opacity": 1,
+          "x": 0,
+          "y": 309,
+          "width": 0,
+          "height": 251
+        }
+      ],
+      "pins": [
+        {
+          "id": "6a27cc32-5daa-4061-b748-b3b2e900d161",
+          "label": "1",
+          "number": 1,
+          "position": {
+            "x": 50,
+            "y": 50
+          },
+          "pinType": "bidirectional",
+          "visible": true
+        },
+        {
+          "id": "f5247bda-bc4c-4feb-888f-fc7c4db10a5a",
+          "label": "3",
+          "number": 3,
+          "position": {
+            "x": 50,
+            "y": 50
+          },
+          "pinType": "bidirectional",
+          "visible": true
+        },
+        {
+          "id": "e93702fb-cb35-41a4-8548-c9390921525b",
+          "label": "2",
+          "number": 3,
+          "position": {
+            "x": 50,
+            "y": 50
+          },
+          "pinType": "bidirectional",
+          "visible": true
+        }
+      ],
+      "createdAt": "2026-04-10T14:56:50.542Z",
+      "updatedAt": "2026-04-10T15:40:45.951Z"
+    }
+  ],
+  "matrices": [
+    {
+      "componentId": "1b3c890a-4a62-4e9f-ba26-78bec30cb0e9",
+      "connections": [
+        {
+          "id": "194ba12c-1163-488e-980f-278b599001f9",
+          "componentId": "1b3c890a-4a62-4e9f-ba26-78bec30cb0e9",
+          "pinAId": "6a27cc32-5daa-4061-b748-b3b2e900d161",
+          "pinBId": "e93702fb-cb35-41a4-8548-c9390921525b",
+          "state": "closed",
+          "pathSvg": "",
+          "animationDuration": 500,
+          "visible": true
+        }
+      ]
+    },
+    {
+      "componentId": "ab4e7ec1-ec0f-4fdc-9b30-7af7ebc4e1d7",
+      "connections": []
+    }
+  ],
+  "savedAt": "2026-04-10T15:45:59.806Z"
+}

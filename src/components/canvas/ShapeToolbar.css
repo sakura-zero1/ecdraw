@@ -1,0 +1,134 @@
+﻿.shape-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #d6e0ed;
+  border-radius: 12px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 10;
+  box-shadow: 0 10px 20px -16px rgba(15, 23, 42, 0.36);
+}
+
+.tool-group {
+  display: flex;
+  gap: 3px;
+}
+
+.tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 5px 9px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #304256;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s ease;
+  min-width: 44px;
+}
+
+.tool-btn:hover {
+  background: #f2f8fd;
+  border-color: #c8dbef;
+}
+
+.tool-btn.active {
+  background: #eaf6fd;
+  color: #0369a1;
+  border-color: #7dd3fc;
+}
+
+.tool-btn.btn-danger:hover {
+  background: #fff7ed;
+  color: #b45309;
+  border-color: #fdba74;
+}
+
+.tool-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.tool-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.tool-label {
+  font-size: 10px;
+  margin-top: 1px;
+}
+
+.tool-divider {
+  width: 1px;
+  height: 30px;
+  background: #dbe7f4;
+  margin: 0 3px;
+}
+
+.colors {
+  gap: 8px;
+  align-items: center;
+}
+
+.color-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+}
+
+.color-label {
+  font-size: 10px;
+  color: #607286;
+}
+
+.color-field input[type='color'] {
+  width: 24px;
+  height: 24px;
+  border: 1px solid #d6e0ed;
+  border-radius: 4px;
+  padding: 0;
+  cursor: pointer;
+  background: none;
+}
+
+.color-field input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.color-field input[type='color']::-webkit-color-swatch {
+  border: none;
+  border-radius: 2px;
+}
+
+.color-field input[type='number'] {
+  padding: 3px 4px;
+  font-size: 11px;
+  text-align: center;
+}
+
+.color-transparent {
+  width: 24px;
+  height: 24px;
+  border: 1px solid #d6e0ed;
+  border-radius: 4px;
+  background: #fff;
+  color: #607286;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.color-transparent:hover {
+  background: #f2f8fd;
+}
