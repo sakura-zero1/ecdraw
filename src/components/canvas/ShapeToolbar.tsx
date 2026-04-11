@@ -34,6 +34,9 @@ export default function ShapeToolbar() {
         ? defaultFill
         : '#ffffff';
 
+  const isFillTransparent = (selectedShape?.fill === 'transparent' || selectedShape?.fill === 'none')
+    || (!selectedShape && (defaultFill === 'transparent' || defaultFill === 'none'));
+
   const applyToSelected = (updates: Record<string, unknown>) => {
     if (!activeComponentId || selectedShapeIds.length === 0) return;
     for (const sid of selectedShapeIds) {
@@ -109,6 +112,7 @@ export default function ShapeToolbar() {
             value={currentFillColor}
             onInput={(e) => handleFillInput((e.target as HTMLInputElement).value)}
             onChange={(e) => handleFillInput(e.target.value)}
+            className={isFillTransparent ? 'is-transparent' : ''}
           />
           <button className="color-transparent" title="透明" onClick={() => applyFill('transparent')}>Ø</button>
         </label>

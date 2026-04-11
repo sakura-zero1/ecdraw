@@ -1,5 +1,6 @@
 ﻿import type { ElectricalComponent } from '../../types';
 import { useComponentStore } from '../../stores/useComponentStore';
+import { PIN_TYPE_LABELS } from '../../constants/categories';
 
 interface Props {
   component: ElectricalComponent;
@@ -45,7 +46,7 @@ export default function PinListPanel({ component }: Props) {
         {component.pins.map((pin) => (
           <div key={pin.id} className="pin-item">
             <span className="pin-label">{pin.label}</span>
-            <span className="pin-type">双向</span>
+            <span className="pin-type">{PIN_TYPE_LABELS[pin.pinType]}</span>
             <span style={{ fontSize: 10, color: 'var(--color-text-dim)' }}>
               ({Math.round(pin.position.x)}, {Math.round(pin.position.y)})
             </span>

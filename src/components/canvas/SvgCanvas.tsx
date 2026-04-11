@@ -16,7 +16,7 @@ const SNAP_THRESHOLD = 5;
 export default function SvgCanvas() {
   const svgRef = useRef<SVGSVGElement>(null);
   const { activeTool, setActiveTool, selectShape, selectPin } = useCanvasStore();
-  const { components, activeComponentId, addShapeElement, updateShapeElement, updatePin } = useComponentStore();
+  const { components, activeComponentId, addShapeElement, updateShapeElement, updatePin, pushUndo } = useComponentStore();
   useConnectionStore((s) => s.matrices);
 
   const [drawing, setDrawing] = useState<{
@@ -206,6 +206,7 @@ export default function SvgCanvas() {
         const shape = activeComp.shapeElements.find((s) => s.id === resizeShapeId);
         if (!shape) return;
         const pos = getSvgPos(e);
+        pushUndo();
         selectShape(resizeShapeId);
         setDragState({
           type: 'handle',
@@ -238,6 +239,7 @@ export default function SvgCanvas() {
             return;
           }
           const pos = getSvgPos(e);
+          pushUndo();
           selectPin(hitPinId);
           setDragState({
             type: 'pin',
@@ -259,6 +261,7 @@ export default function SvgCanvas() {
             selectShape(hitShapeId, true);
             return;
           }
+          pushUndo();
           const groupIds = el.groupId
             ? activeComp.shapeElements.filter((s) => s.groupId === el.groupId).map((s) => s.id)
             : [hitShapeId];
@@ -295,7 +298,7 @@ export default function SvgCanvas() {
         selectPin(null);
       }
     },
-    [activeComp, activeTool, isDrawTool, altHeld, effectiveSelect, getSvgPos, selectShape, selectPin]
+    [activeComp, activeTool, isDrawTool, altHeld, effectiveSelect, getSvgPos, selectShape, selectPin, pushUndo]
   );
 
   const handleMouseMove = useCallback(
@@ -428,6 +431,7 @@ export default function SvgCanvas() {
       const bottom = Math.max(rubberBand.startY, rubberBand.endY);
 
       selectShape(null);
+      selectPin(null);
       if (right - left > 3 || bottom - top > 3) {
         const ids: string[] = [];
         for (const el of activeComp.shapeElements) {
@@ -453,15 +457,15 @@ export default function SvgCanvas() {
     if (drawing?.preview && activeComp) {
       const el = drawing.preview;
       const tooSmall =
-        (el.type === 'rect' && (el.width ?? 0) < 3 && (el.height ?? 0) < 3) ||
+        (el.type === 'rect' && ((el.width ?? 0) < 3 || (el.height ?? 0) < 3)) ||
         (el.type === 'circle' && (el.r ?? 0) < 3) ||
-        (el.type === 'ellipse' && (el.rx ?? 0) < 3 && (el.ry ?? 0) < 3);
+        (el.type === 'ellipse' && ((el.rx ?? 0) < 3 || (el.ry ?? 0) < 3));
 
       if (!tooSmall) addShapeElement(activeComp.id, { ...el, opacity: 1 });
     }
     setSnapPreview(null);
     setDrawing(null);
-  }, [rubberBand, dragState, drawing, activeComp, addShapeElement, selectShape]);
+  }, [rubberBand, dragState, drawing, activeComp, addShapeElement, selectShape, selectPin]);
 
   return (
     <div className="svg-canvas-container">

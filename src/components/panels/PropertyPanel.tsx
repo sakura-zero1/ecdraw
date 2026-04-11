@@ -21,7 +21,11 @@ export default function PropertyPanel({ component }: Props) {
     updateShapeElement(component.id, selectedShape.id, updates);
   };
 
-  const num = (v: string) => (v === '' ? undefined : Number(v));
+  const num = (v: string) => {
+    if (v === '') return 0;
+    const n = Number(v);
+    return Number.isNaN(n) ? 0 : n;
+  };
 
   return (
     <>

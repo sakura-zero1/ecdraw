@@ -17,7 +17,7 @@ const ALIGN_BUTTONS: { mode: AlignMode; icon: string; label: string }[] = [
 export default function AlignmentToolbar() {
   const selectedShapeIds = useCanvasStore((s) => s.selectedShapeIds);
   const selectedPinIds = useCanvasStore((s) => s.selectedPinIds);
-  const { activeComponentId, getComponent, updateShapeElement, updatePin } = useComponentStore();
+  const { activeComponentId, getComponent, updateShapeElement, updatePin, pushUndo } = useComponentStore();
 
   if (!activeComponentId) return null;
 
@@ -33,6 +33,7 @@ export default function AlignmentToolbar() {
 
   const handleAlign = (mode: AlignMode) => {
     if (shapeMode) {
+      pushUndo();
       const updates = computeAlignment(selectedShapes, mode);
       for (const [id, partial] of updates) {
         updateShapeElement(activeComponentId, id, partial);
@@ -40,6 +41,7 @@ export default function AlignmentToolbar() {
       return;
     }
 
+    pushUndo();
     const pinUpdates = computePinAlignment(selectedPins, mode);
     for (const [id, pos] of pinUpdates) {
       updatePin(activeComponentId, id, { position: pos });

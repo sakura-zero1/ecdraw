@@ -39,7 +39,7 @@ function moveShapeBy(el: ShapeElement, dx: number, dy: number): Partial<ShapeEle
   const updates: Record<string, number> = {};
   const pos = getShapePositionKeys(el);
   for (const [k, v] of Object.entries(pos)) {
-    updates[k] = v + (k.includes('x') || k === 'cx' ? dx : k.includes('y') || k === 'cy' ? dy : 0);
+    updates[k] = Math.round(v + (k.includes('x') || k === 'cx' ? dx : k.includes('y') || k === 'cy' ? dy : 0));
   }
   return updates;
 }
@@ -125,7 +125,7 @@ export function computeAlignment(elements: ShapeElement[], mode: AlignMode): Map
       const totalHeight = sorted.reduce((sum, { b }) => sum + b.height, 0);
       const gap = (totalSpan - totalHeight) / (sorted.length - 1);
       let cursor = sorted[0].b.top;
-      for (const { el, b } of bounds) {
+      for (const { el, b } of sorted) {
         result.set(el.id, moveShapeBy(el, 0, Math.round(cursor - b.top)));
         cursor += b.height + gap;
       }

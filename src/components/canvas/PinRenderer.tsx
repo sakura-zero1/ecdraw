@@ -29,17 +29,48 @@ export default function PinRenderer({ pin }: Props) {
       selectPin(pin.id);
       setDragging(true);
 
-      const startX = e.clientX;
-      const startY = e.clientY;
+      const svg = (e.currentTarget as SVGElement).closest('svg');
       const startPos = { ...pin.position };
-      const { zoom } = useCanvasStore.getState().viewport;
+      const startClientX = e.clientX;
+      const startClientY = e.clientY;
+
+      // Compute initial SVG position of mouse for delta calculation
+      let startSvgX = startPos.x;
+      let startSvgY = startPos.y;
+      if (svg) {
+        const ctm = svg.getScreenCTM();
+        if (ctm) {
+          const pt = svg.createSVGPoint();
+          pt.x = e.clientX;
+          pt.y = e.clientY;
+          const local = pt.matrixTransform(ctm.inverse());
+          startSvgX = local.x;
+          startSvgY = local.y;
+        }
+      }
 
       const handleMove = (ev: MouseEvent) => {
-        const dx = (ev.clientX - startX) / zoom;
-        const dy = (ev.clientY - startY) / zoom;
-        if (activeComponentId) {
+        if (!activeComponentId) return;
+        if (svg) {
+          const ctm = svg.getScreenCTM();
+          if (ctm) {
+            const pt = svg.createSVGPoint();
+            pt.x = ev.clientX;
+            pt.y = ev.clientY;
+            const local = pt.matrixTransform(ctm.inverse());
+            const dx = local.x - startSvgX;
+            const dy = local.y - startSvgY;
+            updatePin(activeComponentId, pin.id, {
+              position: { x: Math.round(startPos.x + dx), y: Math.round(startPos.y + dy) },
+            });
+          }
+        } else {
+          // Fallback: use viewport zoom if no SVG reference
+          const { zoom } = useCanvasStore.getState().viewport;
+          const dx = (ev.clientX - startClientX) / zoom;
+          const dy = (ev.clientY - startClientY) / zoom;
           updatePin(activeComponentId, pin.id, {
-            position: { x: startPos.x + dx, y: startPos.y + dy },
+            position: { x: Math.round(startPos.x + dx), y: Math.round(startPos.y + dy) },
           });
         }
       };

@@ -1,6 +1,7 @@
 ﻿import type { ElectricalComponent, ShapeElement } from '../../types';
 import { useConnectionStore } from '../../stores/useConnectionStore';
 import { useCanvasStore } from '../../stores/useCanvasStore';
+import { getShapeBounds } from '../../utils/alignment';
 import PinRenderer from './PinRenderer';
 import ConnectionRenderer from './ConnectionRenderer';
 
@@ -8,51 +9,67 @@ interface Props {
   component: ElectricalComponent;
 }
 
+function resolveShapeProps(el: ShapeElement): ShapeElement {
+  if (el.linkedConnectionId) {
+    const matrices = useConnectionStore.getState().matrices;
+    for (const matrix of Object.values(matrices)) {
+      const conn = matrix.connections.find((c: { id: string }) => c.id === el.linkedConnectionId);
+      if (conn) {
+        const override = conn.state === 'closed' ? el.stateClosed : el.stateOpen;
+        if (override) return { ...el, ...override };
+        return el;
+      }
+    }
+  }
+  return el;
+}
+
 function renderShape(el: ShapeElement) {
+  const resolved = resolveShapeProps(el);
   const baseProps = {
-    fill: el.fill || 'transparent',
-    stroke: el.stroke || '#fff',
-    strokeWidth: el.strokeWidth ?? 2,
-    opacity: el.opacity ?? 1,
+    fill: resolved.fill || 'transparent',
+    stroke: resolved.stroke || '#fff',
+    strokeWidth: resolved.strokeWidth ?? 2,
+    opacity: resolved.opacity ?? 1,
     style: { cursor: 'pointer' },
   };
 
-  switch (el.type) {
+  switch (resolved.type) {
     case 'rect':
       return (
         <rect
           key={el.id}
           data-shape-id={el.id}
-          x={el.x}
-          y={el.y}
-          width={el.width}
-          height={el.height}
-          rx={el.rx ?? 0}
+          x={resolved.x}
+          y={resolved.y}
+          width={resolved.width}
+          height={resolved.height}
+          rx={resolved.rx ?? 0}
           {...baseProps}
         />
       );
     case 'circle':
-      return <circle key={el.id} data-shape-id={el.id} cx={el.cx} cy={el.cy} r={el.r} {...baseProps} />;
+      return <circle key={el.id} data-shape-id={el.id} cx={resolved.cx} cy={resolved.cy} r={resolved.r} {...baseProps} />;
     case 'ellipse':
-      return <ellipse key={el.id} data-shape-id={el.id} cx={el.cx} cy={el.cy} rx={el.rx} ry={el.ry} {...baseProps} />;
+      return <ellipse key={el.id} data-shape-id={el.id} cx={resolved.cx} cy={resolved.cy} rx={resolved.rx} ry={resolved.ry} {...baseProps} />;
     case 'line':
       return (
         <line
           key={el.id}
           data-shape-id={el.id}
-          x1={el.x1}
-          y1={el.y1}
-          x2={el.x2}
-          y2={el.y2}
+          x1={resolved.x1}
+          y1={resolved.y1}
+          x2={resolved.x2}
+          y2={resolved.y2}
           fill="none"
-          stroke={el.stroke || '#fff'}
-          strokeWidth={el.strokeWidth ?? 2}
-          opacity={el.opacity ?? 1}
+          stroke={resolved.stroke || '#fff'}
+          strokeWidth={resolved.strokeWidth ?? 2}
+          opacity={resolved.opacity ?? 1}
           style={{ cursor: 'pointer' }}
         />
       );
     case 'path':
-      return <path key={el.id} data-shape-id={el.id} d={el.d} {...baseProps} />;
+      return <path key={el.id} data-shape-id={el.id} d={resolved.d} {...baseProps} />;
     default:
       return null;
   }
@@ -79,21 +96,17 @@ export default function ComponentRenderer({ component }: Props) {
 
       {component.shapeElements.map((el) => {
         const isSelected = selectedShapeIds.includes(el.id);
-        const anchorX = el.x ?? el.cx ?? el.x1 ?? 0;
-        const anchorY = el.y ?? el.cy ?? el.y1 ?? 0;
-        const radius = el.r ?? 0;
-        const width = el.width ?? (radius > 0 ? radius * 2 : Math.abs((el.x2 ?? 0) - (el.x1 ?? 0)));
-        const height = el.height ?? (radius > 0 ? radius * 2 : Math.abs((el.y2 ?? 0) - (el.y1 ?? 0)));
+        const b = getShapeBounds(resolveShapeProps(el));
 
         return (
           <g key={el.id}>
             {renderShape(el)}
             {isSelected && (
               <rect
-                x={anchorX - 2}
-                y={anchorY - 2}
-                width={width + 4}
-                height={height + 4}
+                x={b.left - 2}
+                y={b.top - 2}
+                width={b.width + 4}
+                height={b.height + 4}
                 fill="none"
                 stroke="#6366f1"
                 strokeWidth={1}

@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import type { ElectricalComponent, ShapeElement, Connection } from '../../types';
 import { useConnectionStore } from '../../stores/useConnectionStore';
 import { useComponentStore } from '../../stores/useComponentStore';
@@ -14,6 +14,14 @@ export default function ConnectivityMatrixPanel({ component: comp }: Props) {
   const matrix = matrices[comp.id];
   const connections = matrix?.connections ?? [];
   const pins = comp.pins;
+  const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => {
+    const timeouts = timeoutsRef.current;
+    return () => {
+      for (const t of timeouts) clearTimeout(t);
+    };
+  }, []);
 
   const getConnection = (pinAId: string, pinBId: string) => {
     return connections.find(
@@ -26,9 +34,10 @@ export default function ConnectivityMatrixPanel({ component: comp }: Props) {
   const handleAnimateAll = () => {
     for (const conn of connections) {
       toggleConnectionState(comp.id, conn.id);
-      setTimeout(() => {
+      const t = setTimeout(() => {
         toggleConnectionState(comp.id, conn.id);
       }, conn.animationDuration + 200);
+      timeoutsRef.current.push(t);
     }
   };
 

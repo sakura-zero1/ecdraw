@@ -15,7 +15,7 @@ interface ConnectionStore {
   cycleCellState: (componentId: string, pinAId: string, pinBId: string) => void;
   removePinConnections: (componentId: string, pinId: string) => void;
   removeComponentMatrix: (componentId: string) => void;
-  duplicateComponentMatrix: (sourceComponentId: string, targetComponentId: string, pinIdMap: Record<string, string>) => void;
+  duplicateComponentMatrix: (sourceComponentId: string, targetComponentId: string, pinIdMap: Record<string, string>) => Record<string, string>;
 
   getMatrix: (componentId: string) => ConnectivityMatrix;
   loadMatrices: (matrices: ConnectivityMatrix[]) => void;
@@ -115,6 +115,7 @@ export const useConnectionStore = create<ConnectionStore>()(
       },
 
       duplicateComponentMatrix: (sourceComponentId, targetComponentId, pinIdMap) => {
+        const connectionIdMap: Record<string, string> = {};
         set((state) => {
           const source = state.matrices[sourceComponentId];
           if (!source) return;
@@ -125,9 +126,11 @@ export const useConnectionStore = create<ConnectionStore>()(
                 const pinAId = pinIdMap[conn.pinAId];
                 const pinBId = pinIdMap[conn.pinBId];
                 if (!pinAId || !pinBId) return null;
+                const newId = uuid();
+                connectionIdMap[conn.id] = newId;
                 return {
                   ...conn,
-                  id: uuid(),
+                  id: newId,
                   componentId: targetComponentId,
                   pinAId,
                   pinBId,
@@ -137,6 +140,7 @@ export const useConnectionStore = create<ConnectionStore>()(
               .filter((c): c is Connection => c !== null),
           };
         });
+        return connectionIdMap;
       },
 
       getMatrix: (componentId) => {

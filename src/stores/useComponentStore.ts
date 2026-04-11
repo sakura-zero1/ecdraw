@@ -121,7 +121,16 @@ export const useComponentStore = create<ComponentStore>()(
         return { ...p, id: newPinId };
       });
 
-      const newShapes = source.shapeElements.map((s) => ({ ...s, id: uuid() }));
+      const connectionIdMap = useConnectionStore.getState().duplicateComponentMatrix(source.id, newComponentId, pinIdMap);
+
+      const newShapes = source.shapeElements.map((s) => {
+        const newId = uuid();
+        const mapped: ShapeElement = { ...s, id: newId };
+        if (mapped.linkedConnectionId && connectionIdMap[mapped.linkedConnectionId]) {
+          mapped.linkedConnectionId = connectionIdMap[mapped.linkedConnectionId];
+        }
+        return mapped;
+      });
 
       set((state) => {
         state.components.push({
@@ -135,8 +144,6 @@ export const useComponentStore = create<ComponentStore>()(
         });
         state.activeComponentId = newComponentId;
       });
-
-      useConnectionStore.getState().duplicateComponentMatrix(source.id, newComponentId, pinIdMap);
       return newComponentId;
     },
 
