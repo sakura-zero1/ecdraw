@@ -7,8 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ─── Enums ────────────────────────────────────────────────────────────────────
-
 enum UserStatus {
   ACTIVE
   DISABLED
@@ -27,40 +25,33 @@ enum ReviewStatus {
   REJECTED
 }
 
-// ─── User & Auth ──────────────────────────────────────────────────────────────
-
 model User {
-  id           String      @id @default(cuid())
-  username     String      @unique
+  id           String     @id @default(cuid())
+  username     String     @unique
   passwordHash String
-  roles        String      @default("VIEWER") // JSON array, e.g. '["ADMIN","VIEWER"]'
-  status       UserStatus  @default(ACTIVE)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  roles        String     @default("VIEWER")
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
-  components   Component[]
-  diagrams     Diagram[]
-  reviews      ReviewRequest[] @relation("ReviewerReviews")
-  auditLogs    AuditLog[]
-
-  @@index([status])
+  components Component[]
+  diagrams   Diagram[]
+  reviews    ReviewRequest[] @relation("ReviewerReviews")
+  auditLogs  AuditLog[]
 }
-
-// ─── Component Library ────────────────────────────────────────────────────────
 
 model Component {
   id          String   @id @default(cuid())
   name        String
   category    String
   description String?
-  isPublic    Boolean  @default(false)
   ownerId     String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  owner       User                @relation(fields: [ownerId], references: [id])
-  versions    ComponentVersion[]
-  instances   DiagramInstance[]
+  owner    User              @relation(fields: [ownerId], references: [id])
+  versions ComponentVersion[]
+  instances DiagramInstance[]
 
   @@index([ownerId])
   @@index([category])
@@ -74,13 +65,11 @@ model ComponentVersion {
   createdBy   String
   createdAt   DateTime @default(now())
 
-  component   Component @relation(fields: [componentId], references: [id], onDelete: Cascade)
+  component Component @relation(fields: [componentId], references: [id], onDelete: Cascade)
 
   @@unique([componentId, versionNo])
   @@index([createdAt])
 }
-
-// ─── Diagram & Topology ───────────────────────────────────────────────────────
 
 model Diagram {
   id          String        @id @default(cuid())
@@ -91,11 +80,11 @@ model Diagram {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  owner       User           @relation(fields: [ownerId], references: [id])
-  versions    DiagramVersion[]
-  reviews     ReviewRequest[]
-  instances   DiagramInstance[]
-  edges       DiagramEdge[]
+  owner     User            @relation(fields: [ownerId], references: [id])
+  versions  DiagramVersion[]
+  reviews   ReviewRequest[]
+  instances DiagramInstance[]
+  edges     DiagramEdge[]
 
   @@index([ownerId])
   @@index([status])
@@ -109,30 +98,30 @@ model DiagramVersion {
   createdBy  String
   createdAt  DateTime @default(now())
 
-  diagram    Diagram  @relation(fields: [diagramId], references: [id], onDelete: Cascade)
-  reviews    ReviewRequest[]
+  diagram Diagram        @relation(fields: [diagramId], references: [id], onDelete: Cascade)
+  reviews ReviewRequest[]
 
   @@unique([diagramId, versionNo])
   @@index([createdAt])
 }
 
 model DiagramInstance {
-  id          String   @id @default(cuid())
-  diagramId   String
-  componentId String
-  label       String   // REQUIRED — editors must name each instance
-  positionX   Float    @default(0)
-  positionY   Float    @default(0)
-  instanceData Json    // snapshot of component shapes/pins at instantiation time
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  diagramId    String
+  componentId  String
+  label        String
+  positionX    Float    @default(0)
+  positionY    Float    @default(0)
+  instanceData Json
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  diagram       Diagram        @relation(fields: [diagramId], references: [id], onDelete: Cascade)
-  component     Component      @relation(fields: [componentId], references: [id])
-  sourceEdges   DiagramEdge[]  @relation("SourceInstance")
-  targetEdges   DiagramEdge[]  @relation("TargetInstance")
-  districtData  DistrictData?
-  gisData       GisData?
+  diagram        Diagram          @relation(fields: [diagramId], references: [id], onDelete: Cascade)
+  component      Component        @relation(fields: [componentId], references: [id])
+  sourceEdges    DiagramEdge[]    @relation("SourceInstance")
+  targetEdges    DiagramEdge[]    @relation("TargetInstance")
+  districtData   DistrictData?
+  gisData        GisData?
 
   @@index([diagramId])
   @@index([componentId])
@@ -148,7 +137,7 @@ model DiagramEdge {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  diagram        Diagram        @relation(fields: [diagramId], references: [id], onDelete: Cascade)
+  diagram        Diagram         @relation(fields: [diagramId], references: [id], onDelete: Cascade)
   sourceInstance DiagramInstance @relation("SourceInstance", fields: [sourceInstanceId], references: [id], onDelete: Cascade)
   targetInstance DiagramInstance @relation("TargetInstance", fields: [targetInstanceId], references: [id], onDelete: Cascade)
   lineSegmentData LineSegmentData?
@@ -157,8 +146,6 @@ model DiagramEdge {
   @@index([sourceInstanceId])
   @@index([targetInstanceId])
 }
-
-// ─── Upper Data Layers (attached to topology elements) ────────────────────────
 
 model DistrictData {
   id                  String   @id @default(cuid())
@@ -171,7 +158,7 @@ model DistrictData {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  diagramInstance     DiagramInstance @relation(fields: [diagramInstanceId], references: [id], onDelete: Cascade)
+  diagramInstance DiagramInstance @relation(fields: [diagramInstanceId], references: [id], onDelete: Cascade)
 }
 
 model LineSegmentData {
@@ -186,7 +173,7 @@ model LineSegmentData {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  diagramEdge   DiagramEdge @relation(fields: [diagramEdgeId], references: [id], onDelete: Cascade)
+  diagramEdge DiagramEdge @relation(fields: [diagramEdgeId], references: [id], onDelete: Cascade)
 }
 
 model GisData {
@@ -198,10 +185,8 @@ model GisData {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  diagramInstance   DiagramInstance @relation(fields: [diagramInstanceId], references: [id], onDelete: Cascade)
+  diagramInstance DiagramInstance @relation(fields: [diagramInstanceId], references: [id], onDelete: Cascade)
 }
-
-// ─── Review & Audit ───────────────────────────────────────────────────────────
 
 model ReviewRequest {
   id               String       @id @default(cuid())
@@ -214,9 +199,9 @@ model ReviewRequest {
   submittedAt      DateTime     @default(now())
   reviewedAt       DateTime?
 
-  diagram          Diagram        @relation(fields: [diagramId], references: [id], onDelete: Cascade)
-  diagramVersion   DiagramVersion @relation(fields: [diagramVersionId], references: [id], onDelete: Cascade)
-  reviewer         User?          @relation("ReviewerReviews", fields: [reviewerId], references: [id])
+  diagram        Diagram        @relation(fields: [diagramId], references: [id], onDelete: Cascade)
+  diagramVersion DiagramVersion @relation(fields: [diagramVersionId], references: [id], onDelete: Cascade)
+  reviewer       User?          @relation("ReviewerReviews", fields: [reviewerId], references: [id])
 
   @@index([status])
   @@index([submittedAt])
@@ -231,7 +216,7 @@ model AuditLog {
   payload    Json?
   createdAt  DateTime @default(now())
 
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([targetType, targetId])

@@ -26,7 +26,6 @@ CREATE TABLE "Component" (
     "name" TEXT NOT NULL,
     "category" TEXT NOT NULL,
     "description" TEXT,
-    "isPublic" BOOLEAN NOT NULL DEFAULT false,
     "ownerId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -174,9 +173,6 @@ CREATE TABLE "AuditLog" (
 
 -- CreateIndex
 CREATE UNIQUE INDEX "User_username_key" ON "User"("username");
-
--- CreateIndex
-CREATE INDEX "User_status_idx" ON "User"("status");
 
 -- CreateIndex
 CREATE INDEX "Component_ownerId_idx" ON "Component"("ownerId");
