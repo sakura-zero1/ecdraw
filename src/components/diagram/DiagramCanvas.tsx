@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useRef, forwardRef } from 'react';
 import type { DiagramInstance, DiagramEdge } from '../../services/diagramApi';
 import { CATEGORY_LABELS } from '../../constants/categories';
 import type { ComponentCategory } from '../../types';
@@ -48,6 +48,13 @@ function roundRect(
   ctx.closePath();
 }
 
+// ---------- Ref handle ----------
+
+export interface DiagramCanvasHandle {
+  screenToWorld: (screenX: number, screenY: number) => { x: number; y: number };
+  getContainerRect: () => DOMRect | undefined;
+}
+
 // ---------- Props ----------
 
 export interface DiagramCanvasProps {
@@ -69,7 +76,7 @@ export interface DiagramCanvasProps {
 
 // ---------- Component ----------
 
-export default function DiagramCanvas({
+const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(function DiagramCanvas({
   instances,
   edges,
   componentMap,
@@ -84,7 +91,7 @@ export default function DiagramCanvas({
   onPersistInstanceMove,
   onSetZoom,
   onSetPan,
-}: DiagramCanvasProps) {
+}, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -97,6 +104,22 @@ export default function DiagramCanvas({
     startInstY: number;
     moved: boolean;
   } | null>(null);
+
+  // Expose helpers to parent via ref
+  useImperativeHandle(ref, () => ({
+    screenToWorld: (screenX: number, screenY: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return { x: 0, y: 0 };
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: (screenX - rect.left - panX) / zoom,
+        y: (screenY - rect.top - panY) / zoom,
+      };
+    },
+    getContainerRect: () => {
+      return canvasRef.current?.getBoundingClientRect();
+    },
+  }), [panX, panY, zoom]);
 
   // Pan state
   const panRef = useRef<{
@@ -511,4 +534,6 @@ export default function DiagramCanvas({
       />
     </div>
   );
-}
+});
+
+export default DiagramCanvasInner;

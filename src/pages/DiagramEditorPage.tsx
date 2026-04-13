@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   createDiagramByApi,
   fetchDiagrams,
@@ -7,6 +7,8 @@ import {
 } from '../services/diagramApi';
 import { useDiagramStore } from '../stores/useDiagramStore';
 import DiagramCanvas from '../components/diagram/DiagramCanvas';
+import type { DiagramCanvasHandle } from '../components/diagram/DiagramCanvas';
+import ComponentLibraryPanel from '../components/diagram/ComponentLibraryPanel';
 import { CATEGORY_LABELS } from '../constants/categories';
 import type { DiagramInstance, DiagramEdge } from '../services/diagramApi';
 import './DiagramEditorPage.css';
@@ -158,6 +160,7 @@ export default function DiagramEditorPage() {
     panX,
     panY,
     loadDiagram,
+    addInstance,
     moveInstance,
     persistInstanceMove,
     removeInstance,
@@ -175,6 +178,16 @@ export default function DiagramEditorPage() {
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState('');
   const [newDiagramName, setNewDiagramName] = useState('');
+
+  // Naming dialog state
+  const [showNamingDialog, setShowNamingDialog] = useState(false);
+  const [newInstanceName, setNewInstanceName] = useState('');
+  const [pendingComponentId, setPendingComponentId] = useState<string | null>(null);
+  const [pendingDropX, setPendingDropX] = useState(0);
+  const [pendingDropY, setPendingDropY] = useState(0);
+
+  const canvasRef = useRef<DiagramCanvasHandle>(null);
+  const namingInputRef = useRef<HTMLInputElement>(null);
 
   const loadList = useCallback(async () => {
     setListLoading(true);
@@ -226,6 +239,89 @@ export default function DiagramEditorPage() {
     clearDiagram();
   };
 
+  // ---------- Drag-and-drop handlers ----------
+
+  const handleCanvasDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  }, []);
+
+  const handleCanvasDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const componentId = e.dataTransfer.getData('text/plain');
+      if (!componentId) return;
+
+      // Convert screen coords to world coords via the canvas ref
+      const worldPos = canvasRef.current?.screenToWorld(e.clientX, e.clientY);
+      if (!worldPos) return;
+
+      // Center the instance on the drop point
+      const nodeWidth = 140;
+      const nodeHeight = 56;
+      const dropX = worldPos.x - nodeWidth / 2;
+      const dropY = worldPos.y - nodeHeight / 2;
+
+      // Open naming dialog
+      setPendingComponentId(componentId);
+      setPendingDropX(dropX);
+      setPendingDropY(dropY);
+      setNewInstanceName('');
+      setShowNamingDialog(true);
+
+      // Focus input after dialog opens
+      setTimeout(() => namingInputRef.current?.focus(), 50);
+    },
+    [],
+  );
+
+  const handleConfirmPlacement = useCallback(async () => {
+    if (!pendingComponentId || !newInstanceName.trim()) return;
+    setShowNamingDialog(false);
+    await addInstance(pendingComponentId, newInstanceName.trim(), pendingDropX, pendingDropY);
+    setPendingComponentId(null);
+    setNewInstanceName('');
+  }, [pendingComponentId, newInstanceName, pendingDropX, pendingDropY, addInstance]);
+
+  const handleCancelNaming = useCallback(() => {
+    setShowNamingDialog(false);
+    setPendingComponentId(null);
+    setNewInstanceName('');
+  }, []);
+
+  // ---------- Keyboard shortcuts ----------
+
+  useEffect(() => {
+    if (!diagramId) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if typing in an input/textarea
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        if (selectedInstanceId) {
+          void removeInstance(selectedInstanceId);
+        } else if (selectedEdgeId) {
+          void removeEdge(selectedEdgeId);
+        }
+      }
+
+      if (e.key === 'z' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        undo();
+      }
+
+      if (e.key === 'Escape') {
+        selectInstance(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [diagramId, selectedInstanceId, selectedEdgeId, removeInstance, removeEdge, undo, selectInstance]);
+
   const selectedInstance = selectedInstanceId
     ? instances.find((i) => i.id === selectedInstanceId) ?? null
     : null;
@@ -266,12 +362,22 @@ export default function DiagramEditorPage() {
           </div>
         </div>
 
-        {/* Center: Canvas */}
-        <div className="de-main-area">
+        {/* Left panel: Component Library */}
+        <div className="de-left-panel">
+          <ComponentLibraryPanel />
+        </div>
+
+        {/* Center: Canvas (drop target) */}
+        <div
+          className="de-main-area"
+          onDragOver={handleCanvasDragOver}
+          onDrop={handleCanvasDrop}
+        >
           {loading ? (
             <div className="de-empty-center">加载中...</div>
           ) : (
             <DiagramCanvas
+              ref={canvasRef}
               instances={instances}
               edges={edges}
               componentMap={componentMap}
@@ -313,6 +419,43 @@ export default function DiagramEditorPage() {
             </div>
           )}
         </div>
+
+        {/* Naming dialog */}
+        {showNamingDialog && (
+          <div className="dialog-overlay" onClick={handleCancelNaming}>
+            <div className="dialog" onClick={(e) => e.stopPropagation()}>
+              <h3>命名实例</h3>
+              <label>
+                实例名称（必填）
+                <input
+                  ref={namingInputRef}
+                  value={newInstanceName}
+                  onChange={(e) => setNewInstanceName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newInstanceName.trim()) {
+                      void handleConfirmPlacement();
+                    }
+                    if (e.key === 'Escape') {
+                      handleCancelNaming();
+                    }
+                  }}
+                  placeholder="例如：1号变压器"
+                  autoFocus
+                />
+              </label>
+              <div className="dialog-actions">
+                <button className="btn btn-secondary" onClick={handleCancelNaming}>取消</button>
+                <button
+                  className="btn btn-primary"
+                  disabled={!newInstanceName.trim()}
+                  onClick={() => void handleConfirmPlacement()}
+                >
+                  放置
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Error overlay */}
         {error && <div className="de-error-toast">{error}</div>}
