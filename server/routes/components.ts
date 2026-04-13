@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { v4 as uuid } from 'uuid';
 import { prisma } from '../utils/prisma.js';
 import { authGuard, requireRole } from '../middleware/auth.js';
 import { writeAudit } from '../middleware/audit.js';
@@ -171,36 +172,46 @@ router.post('/:id/duplicate', authGuard, requireRole('ADMIN', 'COMPONENT_EDITOR'
   });
 
   const prefix = `${source.name}副本`;
+  let newName = '';
   let next = 2;
-  while (true) {
+  while (next <= 100) {
     const probe = await prisma.component.findFirst({ where: { name: `${prefix}${next}` } });
-    if (!probe) break;
+    if (!probe) {
+      newName = `${prefix}${next}`;
+      break;
+    }
     next += 1;
   }
-  const newName = `${prefix}${next}`;
+  if (!newName) {
+    newName = `${prefix}${uuid().slice(0, 8)}`;
+  }
 
-  const created = await prisma.component.create({
-    data: {
-      name: newName,
-      category: source.category,
-      description: source.description,
-      ownerId: req.user!.id,
-    },
-  });
+  const created = await prisma.$transaction(async (tx) => {
+    const comp = await tx.component.create({
+      data: {
+        name: newName,
+        category: source.category,
+        description: source.description,
+        ownerId: req.user!.id,
+      },
+    });
 
-  await prisma.componentVersion.create({
-    data: {
-      componentId: created.id,
-      versionNo: 1,
-      snapshot:
-        latestVersion?.snapshot || {
-          schemaVersion: 1,
-          shapeElements: [],
-          pins: [],
-          matrix: { connections: [] },
-        },
-      createdBy: req.user!.id,
-    },
+    await tx.componentVersion.create({
+      data: {
+        componentId: comp.id,
+        versionNo: 1,
+        snapshot:
+          latestVersion?.snapshot || {
+            schemaVersion: 1,
+            shapeElements: [],
+            pins: [],
+            matrix: { connections: [] },
+          },
+        createdBy: req.user!.id,
+      },
+    });
+
+    return comp;
   });
 
   await writeAudit(req.user!.id, 'COMPONENT_DUPLICATE', 'Component', created.id, {

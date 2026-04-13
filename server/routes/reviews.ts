@@ -94,6 +94,10 @@ router.post('/:id/approve', authGuard, requireRole('ADMIN', 'REVIEWER'), async (
     res.status(409).json({ message: '该审核记录已处理' });
     return;
   }
+  if (review.submitterId === req.user!.id) {
+    res.status(403).json({ message: '不能审核自己提交的图纸' });
+    return;
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     const updatedReview = await tx.reviewRequest.update({
@@ -151,6 +155,10 @@ router.post('/:id/reject', authGuard, requireRole('ADMIN', 'REVIEWER'), async (r
   }
   if (review.status !== 'PENDING') {
     res.status(409).json({ message: '该审核记录已处理' });
+    return;
+  }
+  if (review.submitterId === req.user!.id) {
+    res.status(403).json({ message: '不能审核自己提交的图纸' });
     return;
   }
 

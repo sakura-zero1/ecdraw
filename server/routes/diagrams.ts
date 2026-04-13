@@ -391,8 +391,22 @@ router.patch('/:id/instances/:instanceId', authGuard, requireRole('ADMIN', 'DIAG
 
   const updates: Record<string, unknown> = {};
   if (label !== undefined) updates.label = String(label);
-  if (positionX !== undefined) updates.positionX = Number(positionX) || 0;
-  if (positionY !== undefined) updates.positionY = Number(positionY) || 0;
+  if (positionX !== undefined) {
+    const n = Number(positionX);
+    if (Number.isNaN(n)) {
+      res.status(400).json({ message: 'positionX 必须为数字' });
+      return;
+    }
+    updates.positionX = n;
+  }
+  if (positionY !== undefined) {
+    const n = Number(positionY);
+    if (Number.isNaN(n)) {
+      res.status(400).json({ message: 'positionY 必须为数字' });
+      return;
+    }
+    updates.positionY = n;
+  }
   if (instanceData !== undefined) updates.instanceData = instanceData;
   if (componentId !== undefined) updates.componentId = String(componentId);
 

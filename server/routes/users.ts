@@ -39,6 +39,10 @@ router.post('/', authGuard, requireRole('ADMIN'), async (req, res) => {
     res.status(400).json({ message: 'username/password 不能为空' });
     return;
   }
+  if (String(password).length < 8) {
+    res.status(400).json({ message: '密码长度不能少于8位' });
+    return;
+  }
 
   const rolesArray: string[] = Array.isArray(roles) ? roles : roles ? [String(roles)] : ['VIEWER'];
   const invalidRoles = rolesArray.filter((r: string) => !VALID_ROLES.includes(r));
@@ -110,6 +114,10 @@ router.patch('/:id', authGuard, requireRole('ADMIN'), async (req, res) => {
   if (password !== undefined) {
     if (!String(password)) {
       res.status(400).json({ message: 'password 不能为空' });
+      return;
+    }
+    if (String(password).length < 8) {
+      res.status(400).json({ message: '密码长度不能少于8位' });
       return;
     }
     updates.passwordHash = await bcrypt.hash(String(password), 10);

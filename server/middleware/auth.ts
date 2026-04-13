@@ -1,6 +1,13 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
+if (!process.env.JWT_ACCESS_SECRET) {
+  console.warn('[WARN] JWT_ACCESS_SECRET not set, using default. Set this in production!');
+}
+if (!process.env.JWT_REFRESH_SECRET) {
+  console.warn('[WARN] JWT_REFRESH_SECRET not set, using default. Set this in production!');
+}
+
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'dev_access_secret';
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'dev_refresh_secret';
 
