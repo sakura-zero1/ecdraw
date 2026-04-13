@@ -64,6 +64,11 @@
   gap: 6px;
 }
 
+.shell-menu a.shell-menu-item {
+  text-decoration: none;
+  color: inherit;
+}
+
 .shell-menu-item {
   text-align: left;
   border: 1px solid #dbe7f4;
@@ -71,6 +76,10 @@
   border-radius: 8px;
   padding: 8px 10px;
   cursor: pointer;
+}
+
+.menu-icon {
+  margin-right: 6px;
 }
 
 .shell-menu-item.active {
