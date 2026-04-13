@@ -23,6 +23,7 @@ const TYPE_LABELS: Record<string, string> = {
   DistrictData: '台区数据',
   LineSegmentData: '线路数据',
   GisData: '地理数据',
+  User: '用户',
 };
 
 const COMMON_ACTIONS = [
@@ -35,6 +36,21 @@ const COMMON_ACTIONS = [
   'REJECT',
   'LOGIN',
   'LOGOUT',
+  'DIAGRAM_CREATE',
+  'DIAGRAM_UPDATE',
+  'DIAGRAM_DELETE',
+  'DIAGRAM_PUBLISH',
+  'DIAGRAM_UNPUBLISH',
+  'DIAGRAM_SUBMIT_REVIEW',
+  'DISTRICT_CREATE',
+  'DISTRICT_UPDATE',
+  'DISTRICT_DELETE',
+  'LINE_CREATE',
+  'LINE_UPDATE',
+  'LINE_DELETE',
+  'GIS_CREATE',
+  'GIS_UPDATE',
+  'GIS_DELETE',
 ];
 
 function parseApiError(error: unknown) {
@@ -130,6 +146,36 @@ export default function AuditPage() {
     return Array.from(actions).sort();
   };
 
+  const { todayCount, weekCount, mostActiveUser } = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(now);
+    weekStart.setDate(weekStart.getDate() - 7);
+
+    let today = 0;
+    let week = 0;
+    const userCounts: Record<string, number> = {};
+
+    for (const item of items) {
+      const d = new Date(item.createdAt);
+      if (d >= todayStart) today++;
+      if (d >= weekStart) week++;
+      const name = item.user.username;
+      userCounts[name] = (userCounts[name] || 0) + 1;
+    }
+
+    let topUser = '-';
+    let topCount = 0;
+    for (const [name, count] of Object.entries(userCounts)) {
+      if (count > topCount) {
+        topUser = name;
+        topCount = count;
+      }
+    }
+
+    return { todayCount: today, weekCount: week, mostActiveUser: topUser };
+  }, [items]);
+
   return (
     <div className="workspace-page">
       <div className="page-head">
@@ -138,6 +184,21 @@ export default function AuditPage() {
           <button className="btn" onClick={handleRefresh}>
             刷新
           </button>
+        </div>
+      </div>
+
+      <div className="audit-summary">
+        <div className="audit-summary-card">
+          <div className="audit-summary-label">今日操作</div>
+          <div className="audit-summary-value">{todayCount}</div>
+        </div>
+        <div className="audit-summary-card">
+          <div className="audit-summary-label">本周操作</div>
+          <div className="audit-summary-value">{weekCount}</div>
+        </div>
+        <div className="audit-summary-card">
+          <div className="audit-summary-label">最活跃用户</div>
+          <div className="audit-summary-value" style={{ fontSize: '16px' }}>{mostActiveUser}</div>
         </div>
       </div>
 

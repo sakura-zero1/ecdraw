@@ -17,6 +17,7 @@ const MENUS: MenuItem[] = [
   { path: '/districts', label: '台区维护', icon: '\uD83C\uDFE0', roles: ['ADMIN', 'DIAGRAM_EDITOR', 'DISTRICT_EDITOR'] },
   { path: '/lines', label: '线路维护', icon: '\uD83D\uDD0C', roles: ['ADMIN', 'DIAGRAM_EDITOR', 'LINE_EDITOR'] },
   { path: '/gis', label: '地理维护', icon: '\uD83D\uDCCD', roles: ['ADMIN', 'DIAGRAM_EDITOR', 'GIS_EDITOR'] },
+  { path: '/admin/dashboard', label: '数据概览', icon: '\uD83D\uDCCA', roles: ['ADMIN'] },
   { path: '/admin/users', label: '用户管理', icon: '\uD83D\uDC65', roles: ['ADMIN'] },
   { path: '/admin/audits', label: '审计日志', icon: '\uD83D\uDCCB', roles: ['ADMIN'] },
 ];

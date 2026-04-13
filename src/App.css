@@ -632,3 +632,36 @@
 .diagram-viewer-page {
   height: calc(100vh - 46px);
 }
+
+/* ===================== Dashboard ===================== */
+
+.dashboard-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin: 16px 0; }
+.stat-card { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.stat-card-label { font-size: 12px; color: #64748b; margin-bottom: 4px; }
+.stat-card-value { font-size: 24px; font-weight: 700; color: #1e293b; }
+.dashboard-section { display: flex; gap: 16px; margin-top: 16px; }
+.dashboard-status-chart { background: #fff; border-radius: 8px; padding: 16px; flex: 1; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.dashboard-recent { background: #fff; border-radius: 8px; padding: 16px; flex: 1; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.dashboard-recent h4 { margin: 0 0 12px; font-size: 14px; }
+.dashboard-recent-item { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; color: #475569; }
+.dashboard-recent-item:last-child { border-bottom: none; }
+.dashboard-recent-time { color: #94a3b8; min-width: 80px; }
+.dashboard-recent-user { color: #1e293b; font-weight: 600; min-width: 60px; }
+.dashboard-recent-action { color: #3b82f6; }
+.status-bar { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.status-bar-label { min-width: 80px; font-size: 12px; color: #64748b; }
+.status-bar-track { flex: 1; height: 20px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }
+.status-bar-fill { height: 100%; border-radius: 4px; display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; font-size: 11px; color: #fff; font-weight: 600; }
+.status-bar-fill.draft { background: #94a3b8; }
+.status-bar-fill.pending { background: #f59e0b; }
+.status-bar-fill.published { background: #22c55e; }
+.status-bar-fill.rejected { background: #ef4444; }
+
+/* Review preview */
+.review-preview-area { width: 100%; height: 300px; border: 1px solid #e2e8f0; border-radius: 8px; margin-top: 12px; background: #f8fafc; }
+
+/* Audit summary */
+.audit-summary { display: flex; gap: 16px; margin-bottom: 16px; }
+.audit-summary-card { background: #fff; border-radius: 8px; padding: 12px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.audit-summary-label { font-size: 11px; color: #64748b; }
+.audit-summary-value { font-size: 20px; font-weight: 700; color: #1e293b; }

@@ -13,6 +13,7 @@ import gisRoutes from './routes/gis.js';
 import reviewRoutes from './routes/reviews.js';
 import auditRoutes from './routes/audits.js';
 import analysisRoutes from './routes/analysis.js';
+import adminRoutes from './routes/admin.js';
 
 const app = express();
 const PORT = Number(process.env.API_PORT ?? 3001);
@@ -65,6 +66,7 @@ app.use('/api/gis', gisRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/audits', auditRoutes);
 app.use('/api/analysis', analysisRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Global error handler
 app.use(errorHandler);

@@ -13,6 +13,7 @@ import DistrictPage from './pages/DistrictPage';
 import LinePage from './pages/LinePage';
 import GisPage from './pages/GisPage';
 import AuditPage from './pages/AuditPage';
+import DashboardPage from './pages/DashboardPage';
 import './App.css';
 
 function LoginRoute() {
@@ -38,6 +39,7 @@ function AppRoutes() {
         <Route path="districts" element={<RoleGuard roles={['ADMIN', 'DIAGRAM_EDITOR', 'DISTRICT_EDITOR']}><DistrictPage /></RoleGuard>} />
         <Route path="lines" element={<RoleGuard roles={['ADMIN', 'DIAGRAM_EDITOR', 'LINE_EDITOR']}><LinePage /></RoleGuard>} />
         <Route path="gis" element={<RoleGuard roles={['ADMIN', 'DIAGRAM_EDITOR', 'GIS_EDITOR']}><GisPage /></RoleGuard>} />
+        <Route path="admin/dashboard" element={<RoleGuard roles={['ADMIN']}><DashboardPage /></RoleGuard>} />
         <Route path="admin/users" element={<RoleGuard roles={['ADMIN']}><UserManagementPage /></RoleGuard>} />
         <Route path="admin/audits" element={<RoleGuard roles={['ADMIN']}><AuditPage /></RoleGuard>} />
       </Route>
