@@ -21,7 +21,7 @@ const MENUS: MenuItem[] = [
   { key: 'component', label: '元件编辑', roles: ['ADMIN', 'COMPONENT_EDITOR'] },
   { key: 'diagramEditor', label: '图纸编辑', roles: ['ADMIN', 'DIAGRAM_EDITOR'] },
   { key: 'diagramReview', label: '图纸审核', roles: ['ADMIN', 'REVIEWER'] },
-  { key: 'diagramViewer', label: '图纸查看', roles: ['ADMIN', 'COMPONENT_EDITOR', 'DIAGRAM_EDITOR', 'REVIEWER', 'VIEWER'] },
+  { key: 'diagramViewer', label: '图纸查看', roles: ['ADMIN', 'COMPONENT_EDITOR', 'DIAGRAM_EDITOR', 'REVIEWER', 'DISTRICT_EDITOR', 'LINE_EDITOR', 'GIS_EDITOR', 'VIEWER'] },
 ];
 
 function parseApiError(error: unknown) {
@@ -46,8 +46,8 @@ function renderPage(menu: MenuKey) {
   return <DiagramViewerPage />;
 }
 
-function firstMenuByRole(role: UserRole): MenuKey {
-  return (MENUS.find((item) => item.roles.includes(role))?.key ?? 'diagramViewer') as MenuKey;
+function firstMenuByRole(roles: UserRole[]): MenuKey {
+  return (MENUS.find((item) => item.roles.some((r) => roles.includes(r as UserRole)))?.key ?? 'diagramViewer') as MenuKey;
 }
 
 function App() {
@@ -65,7 +65,7 @@ function App() {
         if (cancelled) return;
         if (restored) {
           setUser(restored);
-          setActiveMenu(firstMenuByRole(restored.role));
+          setActiveMenu(firstMenuByRole(restored.roles));
         }
       } finally {
         if (!cancelled) setBooting(false);
@@ -78,13 +78,13 @@ function App() {
 
   const visibleMenus = useMemo(() => {
     if (!user) return [];
-    return MENUS.filter((item) => item.roles.includes(user.role));
+    return MENUS.filter((item) => item.roles.some((r) => user.roles.includes(r as UserRole)));
   }, [user]);
 
   useEffect(() => {
     if (!user) return;
     if (!visibleMenus.some((item) => item.key === activeMenu)) {
-      setActiveMenu(firstMenuByRole(user.role));
+      setActiveMenu(firstMenuByRole(user.roles));
     }
   }, [activeMenu, user, visibleMenus]);
 
@@ -103,7 +103,7 @@ function App() {
           try {
             const loggedIn = await loginApi(username, password);
             setUser(loggedIn);
-            setActiveMenu(firstMenuByRole(loggedIn.role));
+            setActiveMenu(firstMenuByRole(loggedIn.roles));
           } catch (e) {
             setAuthError(parseApiError(e));
           } finally {
@@ -134,7 +134,7 @@ function App() {
       <main className="shell-main">
         <header className="shell-topbar">
           <span>
-            {user.username} ({user.role})
+            {user.username} ({user.roles.join(', ')})
           </span>
           <button
             className="btn btn-sm"
