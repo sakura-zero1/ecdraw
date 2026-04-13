@@ -5,6 +5,7 @@ import { CATEGORY_LABELS, CATEGORIES } from '../../constants/categories';
 import type { ComponentCategory, ConnectivityMatrix, ElectricalComponent } from '../../types';
 import {
   createComponentByApi,
+  deleteComponentByApi,
   duplicateComponentByApi,
   fetchComponentLibrary,
   saveComponentVersionByApi,
@@ -66,9 +67,11 @@ export default function AppLayout() {
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState<ComponentCategory>('junctionPoint');
+  const [deleteTarget, setDeleteTarget] = useState<ElectricalComponent | null>(null);
 
   const [storageMode, setStorageMode] = useState<'api' | 'local'>('local');
   const [syncStatus, setSyncStatus] = useState('本地模式');
+  const [saving, setSaving] = useState(false);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
@@ -297,6 +300,48 @@ export default function AppLayout() {
     duplicateComponent(component.id);
   };
 
+  const { removeComponent } = useComponentStore();
+
+  const handleDelete = async (comp: ElectricalComponent) => {
+    if (storageMode === 'api') {
+      try {
+        await deleteComponentByApi(comp.id);
+      } catch {
+        setSyncStatus('删除失败');
+        setDeleteTarget(null);
+        return;
+      }
+    }
+    removeComponent(comp.id);
+    setDeleteTarget(null);
+  };
+
+  const handleSave = async () => {
+    if (storageMode !== 'api') {
+      setSyncStatus('本地模式无法保存到云端');
+      return;
+    }
+    const comp = useComponentStore.getState().components.find((c) => c.id === useComponentStore.getState().activeComponentId);
+    if (!comp) return;
+    setSaving(true);
+    try {
+      const matrix = matrices[comp.id] ?? { componentId: comp.id, connections: [] };
+      await saveComponentVersionByApi(comp, matrix);
+      await updateComponentMetaByApi(comp);
+      lastVersionSignaturesRef.current[comp.id] = JSON.stringify({
+        width: comp.width, height: comp.height, shapeElements: comp.shapeElements, pins: comp.pins, matrix,
+      });
+      lastMetaSignaturesRef.current[comp.id] = JSON.stringify({
+        name: comp.name, category: comp.category, description: comp.description,
+      });
+      setSyncStatus(`已保存 ${new Date().toLocaleTimeString()}`);
+    } catch {
+      setSyncStatus('保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const loadReviewList = useCallback(async () => {
     if (!showReviewDialog) return;
     setReviewLoading(true);
@@ -437,6 +482,13 @@ export default function AppLayout() {
 
         <div className="toolbar-right">
           <button
+            className="btn btn-primary"
+            disabled={saving || storageMode !== 'api'}
+            onClick={() => void handleSave()}
+          >
+            {saving ? '保存中...' : '保存'}
+          </button>
+          <button
             className={`btn ${showAuditDialog ? 'btn-active' : ''}`}
             onClick={() => {
               setShowAuditDialog(true);
@@ -462,7 +514,6 @@ export default function AppLayout() {
           >
             审核队列
           </button>
-          <button className="btn" onClick={() => setShowNewDialog(true)}>+ 新建元件</button>
           <button
             className="btn"
             onClick={() => {
@@ -549,6 +600,7 @@ export default function AppLayout() {
                 onChange={(e) => setSearchKeyword(e.target.value)}
                 placeholder="搜索名称/描述/分类"
               />
+              <button className="btn btn-sm" onClick={() => setShowNewDialog(true)} style={{ marginLeft: 6, whiteSpace: 'nowrap' }}>+ 新建</button>
             </div>
             <div className="component-list">
               {components.length === 0 && <div className="empty-hint">暂无元件，点击“新建元件”开始绘制</div>}
@@ -590,6 +642,16 @@ export default function AppLayout() {
                             }}
                           >
                             ⧉
+                          </button>
+                          <button
+                            className="item-action-btn item-action-danger"
+                            title="删除元件"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteTarget(comp);
+                            }}
+                          >
+                            ✕
                           </button>
                         </div>
                       ))}
@@ -951,6 +1013,28 @@ export default function AppLayout() {
                 }}
               >
                 创建
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="dialog-overlay" onClick={() => setDeleteTarget(null)}>
+          <div className="dialog" onClick={(e) => e.stopPropagation()}>
+            <h3>确认删除</h3>
+            <p style={{ margin: '12px 0', color: 'var(--color-text-dim)' }}>
+              确定要删除元件「{deleteTarget.name}」吗？此操作不可撤销。
+            </p>
+            <div className="dialog-actions">
+              <button className="btn btn-secondary" onClick={() => setDeleteTarget(null)}>
+                取消
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={() => void handleDelete(deleteTarget)}
+              >
+                删除
               </button>
             </div>
           </div>

@@ -97,8 +97,9 @@ export default function SvgCanvas() {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target?.isContentEditable) return;
-      const tag = target?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (target?.closest('input, textarea, select')) return;
+      // Never intercept OS-level IME switching (Ctrl+Shift, Shift+Shift)
+      if ((e.ctrlKey && e.shiftKey) || (e.key === 'Shift' && !e.ctrlKey && !e.altKey && !e.metaKey)) return;
 
       const { selectedShapeIds } = useCanvasStore.getState();
       const store = useComponentStore.getState();

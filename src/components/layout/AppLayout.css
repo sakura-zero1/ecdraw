@@ -231,7 +231,6 @@ body {
 }
 
 .item-action-btn {
-  margin-left: auto;
   width: 24px;
   height: 24px;
   min-width: 24px;
@@ -250,10 +249,24 @@ body {
   justify-content: center;
 }
 
+.item-action-btn:first-child {
+  margin-left: auto;
+}
+
+.item-action-btn + .item-action-btn {
+  margin-left: 4px;
+}
+
 .item-action-btn:hover {
   background: #eef7ff;
   border-color: #92c8ef;
   color: #0369a1;
+}
+
+.item-action-danger:hover {
+  background: #fff0f0;
+  border-color: #f87171;
+  color: #dc2626;
 }
 
 .canvas-area {

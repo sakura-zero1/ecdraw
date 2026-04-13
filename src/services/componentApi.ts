@@ -126,6 +126,11 @@ export async function updateComponentMetaByApi(component: ElectricalComponent) {
   });
 }
 
+export async function deleteComponentByApi(componentId: string) {
+  await requireAuth();
+  await apiRequest(`/api/components/${componentId}`, { method: 'DELETE' });
+}
+
 export async function saveComponentVersionByApi(component: ElectricalComponent, matrix: ConnectivityMatrix) {
   await requireAuth();
   await apiRequest(`/api/components/${component.id}/versions`, {
