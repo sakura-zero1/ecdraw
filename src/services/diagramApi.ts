@@ -212,3 +212,35 @@ export async function fetchDiagramForEditor(diagramId: string): Promise<DiagramE
     edges,
   };
 }
+
+// ===================== Topology (query browser) =====================
+
+export interface TopologyResponse {
+  diagram: DiagramListItem;
+  instances: Array<{
+    id: string;
+    diagramId: string;
+    componentId: string;
+    label: string;
+    positionX: number;
+    positionY: number;
+    instanceData: Record<string, unknown>;
+    component: { id: string; name: string; category: string };
+    districtData: { id: string; transformerCapacity: number | null; supplyRange: string | null; supplyArea: string | null; householdCount: number | null } | null;
+    gisData: { id: string; latitude: number | null; longitude: number | null } | null;
+  }>;
+  edges: Array<{
+    id: string;
+    diagramId: string;
+    sourceInstanceId: string;
+    targetInstanceId: string;
+    sourcePinId: string;
+    targetPinId: string;
+    lineSegmentData: { id: string; startPole: string | null; endPole: string | null; length: number | null; wireModel: string | null; impedance: number | null } | null;
+  }>;
+}
+
+export async function fetchDiagramTopology(diagramId: string): Promise<TopologyResponse> {
+  await requireAuth();
+  return apiRequest<TopologyResponse>(`/api/diagrams/${diagramId}/topology`);
+}

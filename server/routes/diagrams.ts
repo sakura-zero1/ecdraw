@@ -119,6 +119,59 @@ router.get('/', authGuard, async (req, res) => {
   res.json({ items: rows });
 });
 
+// GET /:id/topology — get topology data for a diagram (instances, edges, associated data)
+router.get('/:id/topology', authGuard, async (req, res) => {
+  const { id } = req.params;
+
+  const diagram = await prisma.diagram.findUnique({
+    where: { id },
+    select: { id: true, name: true, description: true, status: true, ownerId: true, createdAt: true, updatedAt: true },
+  });
+  if (!diagram) {
+    res.status(404).json({ message: '图纸不存在' });
+    return;
+  }
+  if (!canReadDiagram(req.user!, diagram)) {
+    res.status(403).json({ message: '无权限查看该图纸' });
+    return;
+  }
+
+  const instances = await prisma.diagramInstance.findMany({
+    where: { diagramId: id },
+    select: {
+      id: true,
+      diagramId: true,
+      componentId: true,
+      label: true,
+      positionX: true,
+      positionY: true,
+      instanceData: true,
+      component: { select: { id: true, name: true, category: true } },
+      districtData: {
+        select: { id: true, transformerCapacity: true, supplyRange: true, supplyArea: true, householdCount: true },
+      },
+      gisData: { select: { id: true, latitude: true, longitude: true } },
+    },
+  });
+
+  const edges = await prisma.diagramEdge.findMany({
+    where: { diagramId: id },
+    select: {
+      id: true,
+      diagramId: true,
+      sourceInstanceId: true,
+      targetInstanceId: true,
+      sourcePinId: true,
+      targetPinId: true,
+      lineSegmentData: {
+        select: { id: true, startPole: true, endPole: true, length: true, wireModel: true, impedance: true },
+      },
+    },
+  });
+
+  res.json({ diagram, instances, edges });
+});
+
 // GET /:id — get single diagram
 router.get('/:id', authGuard, async (req, res) => {
   const { id } = req.params;
