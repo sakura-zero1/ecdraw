@@ -3,7 +3,7 @@ import { apiRequest, ensureApiAuth, type UserRole } from './apiClient';
 export interface UserItem {
   id: string;
   username: string;
-  role: UserRole;
+  roles: string[];
   status: 'ACTIVE' | 'DISABLED';
   createdAt: string;
   updatedAt: string;
@@ -26,7 +26,7 @@ export async function fetchUsers() {
 export async function createUser(payload: {
   username: string;
   password: string;
-  role: UserRole;
+  roles: UserRole[];
   status?: 'ACTIVE' | 'DISABLED';
 }) {
   await requireAuth();
@@ -38,7 +38,7 @@ export async function createUser(payload: {
 
 export async function updateUser(
   id: string,
-  payload: Partial<{ role: UserRole; status: 'ACTIVE' | 'DISABLED'; password: string }>
+  payload: Partial<{ roles: UserRole[]; status: 'ACTIVE' | 'DISABLED'; password: string }>
 ) {
   await requireAuth();
   return apiRequest<UserItem>(`/api/users/${id}`, {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   approveReviewByApi,
   fetchReviewQueue,
@@ -7,6 +7,8 @@ import {
   type ReviewQueueItem,
   type ReviewStatus,
 } from '../services/reviewApi';
+import ViewerCanvas from '../components/diagram/ViewerCanvas';
+import { fetchDiagramTopology, type TopologyResponse } from '../services/diagramApi';
 
 function parseApiError(error: unknown) {
   if (!(error instanceof Error)) return '请求失败';
@@ -25,6 +27,12 @@ export default function DiagramReviewPage() {
   const [error, setError] = useState('');
   const [actionLoadingId, setActionLoadingId] = useState('');
   const [comments, setComments] = useState<Record<string, string>>({});
+  const [expandedReviewId, setExpandedReviewId] = useState<string | null>(null);
+  const [previewData, setPreviewData] = useState<TopologyResponse | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewZoom, setPreviewZoom] = useState(0.6);
+  const [previewPan, setPreviewPan] = useState({ x: 0, y: 0 });
+  const [previewSelectedId, setPreviewSelectedId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -59,6 +67,28 @@ export default function DiagramReviewPage() {
     }
   };
 
+  const handleTogglePreview = useCallback(async (item: ReviewQueueItem) => {
+    if (expandedReviewId === item.id) {
+      setExpandedReviewId(null);
+      setPreviewData(null);
+      return;
+    }
+    setExpandedReviewId(item.id);
+    setPreviewData(null);
+    setPreviewLoading(true);
+    setPreviewZoom(0.6);
+    setPreviewPan({ x: 0, y: 0 });
+    setPreviewSelectedId(null);
+    try {
+      const topology = await fetchDiagramTopology(item.diagramId);
+      setPreviewData(topology);
+    } catch {
+      // silently fail — preview is optional
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [expandedReviewId]);
+
   return (
     <div className="workspace-page">
       <div className="page-head">
@@ -79,6 +109,7 @@ export default function DiagramReviewPage() {
       <div className="review-list">
         {items.map((item) => {
           const processing = actionLoadingId === item.id;
+          const isExpanded = expandedReviewId === item.id;
           return (
             <div key={item.id} className="review-item">
               <div className="review-item-top">
@@ -89,6 +120,42 @@ export default function DiagramReviewPage() {
                 <span>版本: v{item.diagramVersion.versionNo}</span>
                 <span>提交: {new Date(item.submittedAt).toLocaleString()}</span>
               </div>
+              {item.status === 'PENDING' && (
+                <div style={{ marginBottom: 6 }}>
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => void handleTogglePreview(item)}
+                  >
+                    {isExpanded ? '收起预览' : '查看预览'}
+                  </button>
+                </div>
+              )}
+              {isExpanded && (
+                <div className="review-preview-area">
+                  {previewLoading ? (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '13px' }}>
+                      加载拓扑预览...
+                    </div>
+                  ) : previewData ? (
+                    <ViewerCanvas
+                      instances={previewData.instances}
+                      edges={previewData.edges}
+                      viewMode="complete"
+                      zoom={previewZoom}
+                      panX={previewPan.x}
+                      panY={previewPan.y}
+                      onSetZoom={setPreviewZoom}
+                      onSetPan={(x, y) => setPreviewPan({ x, y })}
+                      selectedInstanceId={previewSelectedId}
+                      onSelectInstance={setPreviewSelectedId}
+                    />
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8', fontSize: '13px' }}>
+                      无法加载预览
+                    </div>
+                  )}
+                </div>
+              )}
               {item.status === 'PENDING' ? (
                 <div className="review-actions">
                   <input

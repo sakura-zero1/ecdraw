@@ -1,156 +1,61 @@
-import { useEffect, useMemo, useState } from 'react';
-import AppLayout from './components/layout/AppLayout';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
+import { useAuth } from './contexts/useAuth';
 import LoginPage from './pages/LoginPage';
-import UserManagementPage from './pages/UserManagementPage';
+import AppShell from './components/layout/AppShell';
+import RoleGuard from './components/guards/RoleGuard';
+import AppLayout from './components/layout/AppLayout';
 import DiagramEditorPage from './pages/DiagramEditorPage';
 import DiagramReviewPage from './pages/DiagramReviewPage';
 import DiagramViewerPage from './pages/DiagramViewerPage';
-import { loginApi, logoutApi, restoreSessionUser, type AuthUser, type UserRole } from './services/apiClient';
+import UserManagementPage from './pages/UserManagementPage';
+import DistrictPage from './pages/DistrictPage';
+import LinePage from './pages/LinePage';
+import GisPage from './pages/GisPage';
+import AuditPage from './pages/AuditPage';
+import DashboardPage from './pages/DashboardPage';
 import './App.css';
 
-type MenuKey = 'user' | 'component' | 'diagramEditor' | 'diagramReview' | 'diagramViewer';
-
-interface MenuItem {
-  key: MenuKey;
-  label: string;
-  roles: UserRole[];
+function LoginRoute() {
+  const { user, loading, login } = useAuth();
+  if (loading) return <div className="booting">正在初始化...</div>;
+  if (user) return <Navigate to="/" replace />;
+  return <LoginPage onSubmit={login} />;
 }
 
-const MENUS: MenuItem[] = [
-  { key: 'user', label: '用户管理', roles: ['ADMIN'] },
-  { key: 'component', label: '元件编辑', roles: ['ADMIN', 'COMPONENT_EDITOR'] },
-  { key: 'diagramEditor', label: '图纸编辑', roles: ['ADMIN', 'DIAGRAM_EDITOR'] },
-  { key: 'diagramReview', label: '图纸审核', roles: ['ADMIN', 'REVIEWER'] },
-  { key: 'diagramViewer', label: '图纸查看', roles: ['ADMIN', 'COMPONENT_EDITOR', 'DIAGRAM_EDITOR', 'REVIEWER', 'VIEWER'] },
-];
-
-function parseApiError(error: unknown) {
-  if (!(error instanceof Error)) return '请求失败';
-  const lower = error.message.toLowerCase();
-  if (lower.includes('failed to fetch') || lower.includes('networkerror')) {
-    return '无法连接 API（http://localhost:3001），请先启动后端：npm run api:dev';
-  }
-  try {
-    const payload = JSON.parse(error.message) as { message?: string };
-    return payload.message || error.message;
-  } catch {
-    return error.message || '请求失败';
-  }
-}
-
-function renderPage(menu: MenuKey) {
-  if (menu === 'user') return <UserManagementPage />;
-  if (menu === 'component') return <div className="page-component"><AppLayout /></div>;
-  if (menu === 'diagramEditor') return <DiagramEditorPage />;
-  if (menu === 'diagramReview') return <DiagramReviewPage />;
-  return <DiagramViewerPage />;
-}
-
-function firstMenuByRole(role: UserRole): MenuKey {
-  return (MENUS.find((item) => item.roles.includes(role))?.key ?? 'diagramViewer') as MenuKey;
-}
-
-function App() {
-  const [booting, setBooting] = useState(true);
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authError, setAuthError] = useState('');
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [activeMenu, setActiveMenu] = useState<MenuKey>('diagramViewer');
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const restored = await restoreSessionUser();
-        if (cancelled) return;
-        if (restored) {
-          setUser(restored);
-          setActiveMenu(firstMenuByRole(restored.role));
-        }
-      } finally {
-        if (!cancelled) setBooting(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const visibleMenus = useMemo(() => {
-    if (!user) return [];
-    return MENUS.filter((item) => item.roles.includes(user.role));
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return;
-    if (!visibleMenus.some((item) => item.key === activeMenu)) {
-      setActiveMenu(firstMenuByRole(user.role));
-    }
-  }, [activeMenu, user, visibleMenus]);
-
-  if (booting) {
-    return <div className="booting">正在初始化...</div>;
-  }
-
-  if (!user) {
-    return (
-      <LoginPage
-        loading={authLoading}
-        error={authError}
-        onSubmit={async (username, password) => {
-          setAuthLoading(true);
-          setAuthError('');
-          try {
-            const loggedIn = await loginApi(username, password);
-            setUser(loggedIn);
-            setActiveMenu(firstMenuByRole(loggedIn.role));
-          } catch (e) {
-            setAuthError(parseApiError(e));
-          } finally {
-            setAuthLoading(false);
-          }
-        }}
-      />
-    );
-  }
+function AppRoutes() {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="booting">正在初始化...</div>;
+  if (!user) return <Navigate to="/login" replace />;
 
   return (
-    <div className="shell">
-      <aside className="shell-nav">
-        <div className="shell-brand">ECDraw</div>
-        <div className="shell-menu">
-          {visibleMenus.map((menu) => (
-            <button
-              key={menu.key}
-              className={`shell-menu-item ${activeMenu === menu.key ? 'active' : ''}`}
-              onClick={() => setActiveMenu(menu.key)}
-            >
-              {menu.label}
-            </button>
-          ))}
-        </div>
-      </aside>
-
-      <main className="shell-main">
-        <header className="shell-topbar">
-          <span>
-            {user.username} ({user.role})
-          </span>
-          <button
-            className="btn btn-sm"
-            onClick={() => {
-              logoutApi();
-              setUser(null);
-              setAuthError('');
-            }}
-          >
-            退出登录
-          </button>
-        </header>
-        <section className="shell-content">{renderPage(activeMenu)}</section>
-      </main>
-    </div>
+    <Routes>
+      <Route element={<AppShell />}>
+        <Route index element={<Navigate to="/viewer" replace />} />
+        <Route path="components" element={<RoleGuard roles={['ADMIN', 'COMPONENT_EDITOR', 'DIAGRAM_EDITOR']}><div className="page-component"><AppLayout /></div></RoleGuard>} />
+        <Route path="diagrams" element={<RoleGuard roles={['ADMIN', 'DIAGRAM_EDITOR']}><DiagramEditorPage /></RoleGuard>} />
+        <Route path="reviews" element={<RoleGuard roles={['ADMIN', 'REVIEWER']}><DiagramReviewPage /></RoleGuard>} />
+        <Route path="viewer" element={<DiagramViewerPage />} />
+        <Route path="districts" element={<RoleGuard roles={['ADMIN', 'DIAGRAM_EDITOR', 'DISTRICT_EDITOR']}><DistrictPage /></RoleGuard>} />
+        <Route path="lines" element={<RoleGuard roles={['ADMIN', 'DIAGRAM_EDITOR', 'LINE_EDITOR']}><LinePage /></RoleGuard>} />
+        <Route path="gis" element={<RoleGuard roles={['ADMIN', 'DIAGRAM_EDITOR', 'GIS_EDITOR']}><GisPage /></RoleGuard>} />
+        <Route path="admin/dashboard" element={<RoleGuard roles={['ADMIN']}><DashboardPage /></RoleGuard>} />
+        <Route path="admin/users" element={<RoleGuard roles={['ADMIN']}><UserManagementPage /></RoleGuard>} />
+        <Route path="admin/audits" element={<RoleGuard roles={['ADMIN']}><AuditPage /></RoleGuard>} />
+      </Route>
+    </Routes>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginRoute />} />
+          <Route path="/*" element={<AppRoutes />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
