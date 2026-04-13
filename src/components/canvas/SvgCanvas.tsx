@@ -17,7 +17,7 @@ export default function SvgCanvas() {
   const svgRef = useRef<SVGSVGElement>(null);
   const { activeTool, setActiveTool, selectShape, selectPin } = useCanvasStore();
   const { components, activeComponentId, addShapeElement, updateShapeElement, updatePin, pushUndo } = useComponentStore();
-  useConnectionStore((s) => s.matrices);
+  const matrices = useConnectionStore((s) => s.matrices);
 
   const [drawing, setDrawing] = useState<{
     startX: number;
@@ -493,7 +493,12 @@ export default function SvgCanvas() {
 
         {activeComp && (
           <>
-            {activeComp.shapeElements.map(renderShapeElement)}
+            {activeComp.shapeElements.map((el) => {
+              const connState = el.linkedConnectionId
+                ? (matrices[activeComp.id]?.connections.find((c) => c.id === el.linkedConnectionId)?.state ?? '')
+                : '';
+              return <g key={`${el.id}-${connState}`}>{renderShapeElement(el, matrices, activeComp.id)}</g>;
+            })}
             {drawing?.preview && renderPreviewElement(drawing.preview)}
             {rubberBand && (
               <rect
@@ -775,10 +780,10 @@ function getShapeSnapPoints(shape: ShapeElement): Array<{ x: number; y: number }
   return points;
 }
 
-function resolveShapeProps(el: ShapeElement): ShapeElement {
+function resolveShapeProps(el: ShapeElement, matrices: Record<string, import('../../types').ConnectivityMatrix>, compId: string): ShapeElement {
   if (el.linkedConnectionId) {
-    const matrices = useConnectionStore.getState().matrices;
-    for (const matrix of Object.values(matrices)) {
+    const matrix = matrices[compId];
+    if (matrix) {
       const conn = matrix.connections.find((c) => c.id === el.linkedConnectionId);
       if (conn) {
         const override = conn.state === 'closed' ? el.stateClosed : el.stateOpen;
@@ -790,11 +795,11 @@ function resolveShapeProps(el: ShapeElement): ShapeElement {
   return el;
 }
 
-function renderShapeElement(el: ShapeElement) {
+function renderShapeElement(el: ShapeElement, matrices: Record<string, import('../../types').ConnectivityMatrix>, compId: string) {
   const { selectedShapeIds, flashedShapeIds } = useCanvasStore.getState();
   const isSelected = selectedShapeIds.includes(el.id);
   const isFlashed = flashedShapeIds.includes(el.id);
-  const resolved = resolveShapeProps(el);
+  const resolved = resolveShapeProps(el, matrices, compId);
   const base = {
     fill: resolved.fill || 'transparent',
     stroke: resolved.stroke || '#334155',
@@ -824,12 +829,12 @@ function renderShapeElement(el: ShapeElement) {
   }
 
   return (
-    <g key={el.id}>
+    <>
       {shape}
       {isSelected && renderSelectionBox(resolved)}
       {isSelected && renderResizeHandles(resolved)}
       {isFlashed && renderFlashBox(resolved)}
-    </g>
+    </>
   );
 }
 

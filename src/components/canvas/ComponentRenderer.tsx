@@ -1,4 +1,4 @@
-﻿import type { ElectricalComponent, ShapeElement } from '../../types';
+﻿import type { ElectricalComponent, ShapeElement, ConnectivityMatrix } from '../../types';
 import { useConnectionStore } from '../../stores/useConnectionStore';
 import { useCanvasStore } from '../../stores/useCanvasStore';
 import { getShapeBounds } from '../../utils/alignment';
@@ -9,10 +9,10 @@ interface Props {
   component: ElectricalComponent;
 }
 
-function resolveShapeProps(el: ShapeElement): ShapeElement {
+function resolveShapeProps(el: ShapeElement, matrices: Record<string, ConnectivityMatrix>, compId: string): ShapeElement {
   if (el.linkedConnectionId) {
-    const matrices = useConnectionStore.getState().matrices;
-    for (const matrix of Object.values(matrices)) {
+    const matrix = matrices[compId];
+    if (matrix) {
       const conn = matrix.connections.find((c: { id: string }) => c.id === el.linkedConnectionId);
       if (conn) {
         const override = conn.state === 'closed' ? el.stateClosed : el.stateOpen;
@@ -24,8 +24,8 @@ function resolveShapeProps(el: ShapeElement): ShapeElement {
   return el;
 }
 
-function renderShape(el: ShapeElement) {
-  const resolved = resolveShapeProps(el);
+function renderShape(el: ShapeElement, matrices: Record<string, ConnectivityMatrix>, compId: string) {
+  const resolved = resolveShapeProps(el, matrices, compId);
   const baseProps = {
     fill: resolved.fill || 'transparent',
     stroke: resolved.stroke || '#fff',
@@ -76,7 +76,8 @@ function renderShape(el: ShapeElement) {
 }
 
 export default function ComponentRenderer({ component }: Props) {
-  const matrix = useConnectionStore((s) => s.matrices[component.id]);
+  const matrices = useConnectionStore((s) => s.matrices);
+  const matrix = matrices[component.id];
   const connections = matrix?.connections ?? [];
   const selectedShapeIds = useCanvasStore((s) => s.selectedShapeIds);
 
@@ -96,11 +97,15 @@ export default function ComponentRenderer({ component }: Props) {
 
       {component.shapeElements.map((el) => {
         const isSelected = selectedShapeIds.includes(el.id);
-        const b = getShapeBounds(resolveShapeProps(el));
+        const resolved = resolveShapeProps(el, matrices, component.id);
+        const b = getShapeBounds(resolved);
+        const connState = el.linkedConnectionId
+          ? (matrices[component.id]?.connections.find((c) => c.id === el.linkedConnectionId)?.state ?? '')
+          : '';
 
         return (
-          <g key={el.id}>
-            {renderShape(el)}
+          <g key={`${el.id}-${connState}`}>
+            {renderShape(el, matrices, component.id)}
             {isSelected && (
               <rect
                 x={b.left - 2}
