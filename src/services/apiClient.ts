@@ -2,7 +2,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3001
 const ACCESS_TOKEN_KEY = 'ecdraw-access-token';
 const REFRESH_TOKEN_KEY = 'ecdraw-refresh-token';
 
-type ApiMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
+type ApiMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 interface ApiRequestOptions {
   method?: ApiMethod;
@@ -10,12 +10,20 @@ interface ApiRequestOptions {
   allowRefresh?: boolean;
 }
 
-export type UserRole = 'ADMIN' | 'COMPONENT_EDITOR' | 'DIAGRAM_EDITOR' | 'REVIEWER' | 'VIEWER';
+export type UserRole = 'ADMIN' | 'COMPONENT_EDITOR' | 'DIAGRAM_EDITOR' | 'REVIEWER' | 'DISTRICT_EDITOR' | 'LINE_EDITOR' | 'GIS_EDITOR' | 'VIEWER';
 
 export interface AuthUser {
   id: string;
   username: string;
-  role: UserRole;
+  roles: UserRole[];
+}
+
+export function hasRole(user: AuthUser, role: UserRole): boolean {
+  return user.roles.includes(role);
+}
+
+export function hasAnyRole(user: AuthUser, ...roles: UserRole[]): boolean {
+  return roles.some((r) => user.roles.includes(r));
 }
 
 interface LoginResponse {
@@ -56,10 +64,10 @@ function readUserFromAccessToken(): AuthUser | null {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
     const payloadText = decodeBase64Url(parts[1]);
-    const payload = JSON.parse(payloadText) as { id?: string; username?: string; role?: UserRole; exp?: number };
-    if (!payload.id || !payload.username || !payload.role || !payload.exp) return null;
+    const payload = JSON.parse(payloadText) as { id?: string; username?: string; roles?: UserRole[]; exp?: number };
+    if (!payload.id || !payload.username || !payload.roles || !payload.exp) return null;
     if (payload.exp * 1000 <= Date.now()) return null;
-    return { id: payload.id, username: payload.username, role: payload.role };
+    return { id: payload.id, username: payload.username, roles: payload.roles };
   } catch {
     return null;
   }
