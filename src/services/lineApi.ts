@@ -1,5 +1,13 @@
 import { apiRequest, ensureApiAuth } from './apiClient';
 
+export interface LineSegmentEdge {
+  id: string;
+  sourceInstanceId: string;
+  targetInstanceId: string;
+  sourcePinId: string;
+  targetPinId: string;
+}
+
 export interface LineSegmentData {
   id: string;
   diagramEdgeId: string;
@@ -11,6 +19,7 @@ export interface LineSegmentData {
   updatedBy: string;
   createdAt: string;
   updatedAt: string;
+  diagramEdge?: LineSegmentEdge;
 }
 
 async function requireAuth(): Promise<void> {

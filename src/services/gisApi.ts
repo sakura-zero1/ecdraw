@@ -1,5 +1,11 @@
 import { apiRequest, ensureApiAuth } from './apiClient';
 
+export interface GisDataInstance {
+  id: string;
+  label: string;
+  componentId: string;
+}
+
 export interface GisData {
   id: string;
   diagramInstanceId: string;
@@ -8,6 +14,7 @@ export interface GisData {
   updatedBy: string;
   createdAt: string;
   updatedAt: string;
+  diagramInstance?: GisDataInstance;
 }
 
 async function requireAuth(): Promise<void> {

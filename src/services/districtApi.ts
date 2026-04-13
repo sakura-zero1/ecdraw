@@ -1,5 +1,11 @@
 import { apiRequest, ensureApiAuth } from './apiClient';
 
+export interface DistrictDataInstance {
+  id: string;
+  label: string;
+  componentId: string;
+}
+
 export interface DistrictData {
   id: string;
   diagramInstanceId: string;
@@ -10,6 +16,7 @@ export interface DistrictData {
   updatedBy: string;
   createdAt: string;
   updatedAt: string;
+  diagramInstance?: DistrictDataInstance;
 }
 
 async function requireAuth(): Promise<void> {
