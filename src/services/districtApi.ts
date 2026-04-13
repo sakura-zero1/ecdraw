@@ -34,3 +34,14 @@ export async function upsertDistrict(instanceId: string, data: Partial<Omit<Dist
   await requireAuth();
   return apiRequest<DistrictData>(`/api/districts/instance/${instanceId}`, { method: 'PUT', body: data });
 }
+
+export async function batchUpsertDistricts(items: Array<{
+  diagramInstanceId: string;
+  transformerCapacity?: number | null;
+  supplyRange?: string | null;
+  supplyArea?: string | null;
+  householdCount?: number | null;
+}>): Promise<{ count: number }> {
+  await requireAuth();
+  return apiRequest<{ count: number }>('/api/districts/batch', { method: 'POST', body: { items } });
+}

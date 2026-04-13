@@ -37,3 +37,15 @@ export async function upsertLineSegment(edgeId: string, data: Partial<Omit<LineS
   await requireAuth();
   return apiRequest<LineSegmentData>(`/api/lines/edge/${edgeId}`, { method: 'PUT', body: data });
 }
+
+export async function batchUpsertLineSegments(items: Array<{
+  diagramEdgeId: string;
+  startPole?: string | null;
+  endPole?: string | null;
+  length?: number | null;
+  wireModel?: string | null;
+  impedance?: number | null;
+}>): Promise<{ count: number }> {
+  await requireAuth();
+  return apiRequest<{ count: number }>('/api/lines/batch', { method: 'POST', body: { items } });
+}

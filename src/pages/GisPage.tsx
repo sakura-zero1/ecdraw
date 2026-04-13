@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
+import * as XLSX from 'xlsx';
 import {
   fetchPublishedDiagrams,
   fetchDiagramReadonlySnapshot,
   type DiagramListItem,
   type DiagramSnapshot,
 } from '../services/diagramApi';
-import { fetchGisByDiagram, upsertGis, type GisData } from '../services/gisApi';
+import { fetchGisByDiagram, upsertGis, batchUpsertGis, type GisData } from '../services/gisApi';
 
 function parseApiError(error: unknown): string {
   if (!(error instanceof Error)) return '请求失败';
@@ -123,6 +124,72 @@ export default function GisPage() {
 
   const instances = snapshot?.instances ?? [];
 
+  const diagramName = diagrams.find((d) => d.id === selectedId)?.name ?? '图纸';
+
+  const handleExport = () => {
+    const rows = instances.map((inst) => {
+      const gis = gisMap[inst.id];
+      return {
+        '实例名称': inst.label || '(未命名)',
+        '实例ID': inst.id,
+        '纬度': gis?.latitude ?? '',
+        '经度': gis?.longitude ?? '',
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'GIS数据');
+    XLSX.writeFile(wb, `${diagramName}_GIS数据.xlsx`);
+  };
+
+  const handleImport = async (file: File) => {
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer);
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws) as Record<string, string>[];
+
+      const labelToId = new Map<string, string>();
+      for (const inst of instances) {
+        labelToId.set(inst.label, inst.id);
+      }
+
+      const items: Array<{
+        diagramInstanceId: string;
+        latitude?: number | null;
+        longitude?: number | null;
+      }> = [];
+
+      for (const row of rows) {
+        const label = row['实例名称'];
+        const id = labelToId.get(label) || row['实例ID'];
+        if (!id) continue;
+        items.push({
+          diagramInstanceId: id,
+          latitude: row['纬度'] != null && row['纬度'] !== '' ? Number(row['纬度']) : null,
+          longitude: row['经度'] != null && row['经度'] !== '' ? Number(row['经度']) : null,
+        });
+      }
+
+      if (items.length === 0) {
+        setError('未找到匹配的数据行');
+        return;
+      }
+
+      await batchUpsertGis(items);
+      // Refresh GIS data
+      const gisList = await fetchGisByDiagram(selectedId);
+      const map: Record<string, GisData> = {};
+      for (const g of gisList) {
+        map[g.diagramInstanceId] = g;
+      }
+      setGisMap(map);
+      showToast(`成功导入 ${items.length} 条 GIS 数据`);
+    } catch (e) {
+      setError(parseApiError(e));
+    }
+  };
+
   return (
     <div className="workspace-page">
       <div className="page-head"><h3>地理信息维护</h3></div>
@@ -162,6 +229,24 @@ export default function GisPage() {
               <div className="published-preview-meta">
                 <span>实例总数: {instances.length}</span>
                 <span>已录入坐标: {Object.keys(gisMap).length}</span>
+                <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                  <button className="btn btn-sm" onClick={handleExport} disabled={instances.length === 0}>
+                    导出 Excel
+                  </button>
+                  <label className="btn btn-sm btn-primary" style={{ cursor: 'pointer' }}>
+                    导入 Excel
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void handleImport(file);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
               </div>
               <table className="matrix-table" style={{ marginTop: 12 }}>
                 <thead>

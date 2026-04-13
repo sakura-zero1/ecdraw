@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
+import * as XLSX from 'xlsx';
 import {
   fetchPublishedDiagrams,
   fetchDiagramReadonlySnapshot,
   type DiagramListItem,
   type DiagramSnapshot,
 } from '../services/diagramApi';
-import { fetchLinesByDiagram, upsertLineSegment, type LineSegmentData } from '../services/lineApi';
+import { fetchLinesByDiagram, upsertLineSegment, batchUpsertLineSegments, type LineSegmentData } from '../services/lineApi';
 
 function parseApiError(error: unknown): string {
   if (!(error instanceof Error)) return '请求失败';
@@ -165,6 +166,75 @@ export default function LinePage() {
     }
   }
 
+  const diagramName = diagrams.find((d) => d.id === selectedId)?.name ?? '图纸';
+
+  const handleExport = () => {
+    const rows = allEdges.map((edge) => {
+      const sourceLabel = instanceLabelMap[edge.sourceId] || edge.sourceId.slice(-6);
+      const targetLabel = instanceLabelMap[edge.targetId] || edge.targetId.slice(-6);
+      return {
+        '起点名称': sourceLabel,
+        '终点名称': targetLabel,
+        '线路ID': edge.edgeId,
+        '起始杆号': edge.data?.startPole ?? '',
+        '终止杆号': edge.data?.endPole ?? '',
+        '长度(m)': edge.data?.length ?? '',
+        '导线型号': edge.data?.wireModel ?? '',
+        '阻抗(Ω)': edge.data?.impedance ?? '',
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '线路数据');
+    XLSX.writeFile(wb, `${diagramName}_线路数据.xlsx`);
+  };
+
+  const handleImport = async (file: File) => {
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer);
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws) as Record<string, string>[];
+
+      const items: Array<{
+        diagramEdgeId: string;
+        startPole?: string | null;
+        endPole?: string | null;
+        length?: number | null;
+        wireModel?: string | null;
+        impedance?: number | null;
+      }> = [];
+
+      const edgeIdSet = new Set(allEdges.map((e) => e.edgeId));
+
+      for (const row of rows) {
+        const edgeId = row['线路ID'];
+        if (!edgeId || !edgeIdSet.has(edgeId)) continue;
+        items.push({
+          diagramEdgeId: edgeId,
+          startPole: row['起始杆号'] || null,
+          endPole: row['终止杆号'] || null,
+          length: row['长度(m)'] != null && row['长度(m)'] !== '' ? Number(row['长度(m)']) : null,
+          wireModel: row['导线型号'] || null,
+          impedance: row['阻抗(Ω)'] != null && row['阻抗(Ω)'] !== '' ? Number(row['阻抗(Ω)']) : null,
+        });
+      }
+
+      if (items.length === 0) {
+        setError('未找到匹配的数据行');
+        return;
+      }
+
+      await batchUpsertLineSegments(items);
+      // Refresh line data
+      const lines = await fetchLinesByDiagram(selectedId);
+      setLineSegments(lines);
+      showToast(`成功导入 ${items.length} 条线路数据`);
+    } catch (e) {
+      setError(parseApiError(e));
+    }
+  };
+
   return (
     <div className="workspace-page">
       <div className="page-head"><h3>线路台账维护</h3></div>
@@ -204,6 +274,24 @@ export default function LinePage() {
               <div className="published-preview-meta">
                 <span>线路总数: {allEdges.length}</span>
                 <span>已录入台账: {lineSegments.length}</span>
+                <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                  <button className="btn btn-sm" onClick={handleExport} disabled={allEdges.length === 0}>
+                    导出 Excel
+                  </button>
+                  <label className="btn btn-sm btn-primary" style={{ cursor: 'pointer' }}>
+                    导入 Excel
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void handleImport(file);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
               </div>
               <table className="matrix-table" style={{ marginTop: 12 }}>
                 <thead>

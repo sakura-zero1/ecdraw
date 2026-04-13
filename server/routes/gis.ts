@@ -80,4 +80,43 @@ router.put('/instance/:instanceId', authGuard, requireRole('ADMIN', 'DIAGRAM_EDI
   res.json(gis);
 });
 
+// POST /batch — batch upsert GIS data
+router.post('/batch', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR', 'GIS_EDITOR'), async (req, res, next) => {
+  try {
+    const { items } = req.body as { items: Array<{
+      diagramInstanceId: string;
+      latitude?: number | null;
+      longitude?: number | null;
+    }> };
+    if (!Array.isArray(items) || items.length === 0) {
+      res.status(400).json({ message: 'items 不能为空数组' });
+      return;
+    }
+    if (items.length > 500) {
+      res.status(400).json({ message: '单次批量操作不能超过 500 条' });
+      return;
+    }
+
+    const results = await Promise.all(
+      items.map((item) =>
+        prisma.gisData.upsert({
+          where: { diagramInstanceId: item.diagramInstanceId },
+          create: {
+            diagramInstanceId: item.diagramInstanceId,
+            latitude: item.latitude ?? null,
+            longitude: item.longitude ?? null,
+            updatedBy: req.user!.id,
+          },
+          update: {
+            ...(item.latitude !== undefined ? { latitude: item.latitude } : {}),
+            ...(item.longitude !== undefined ? { longitude: item.longitude } : {}),
+            updatedBy: req.user!.id,
+          },
+        })
+      )
+    );
+    res.json({ count: results.length });
+  } catch (err) { next(err); }
+});
+
 export default router;

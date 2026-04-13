@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
+import * as XLSX from 'xlsx';
 import {
   fetchPublishedDiagrams,
   fetchDiagramReadonlySnapshot,
   type DiagramListItem,
   type DiagramSnapshot,
 } from '../services/diagramApi';
-import { fetchDistrictsByDiagram, upsertDistrict, type DistrictData } from '../services/districtApi';
+import { fetchDistrictsByDiagram, upsertDistrict, batchUpsertDistricts, type DistrictData } from '../services/districtApi';
 
 function parseApiError(error: unknown): string {
   if (!(error instanceof Error)) return '请求失败';
@@ -129,6 +130,78 @@ export default function DistrictPage() {
 
   const instances = snapshot?.instances ?? [];
 
+  const diagramName = diagrams.find((d) => d.id === selectedId)?.name ?? '图纸';
+
+  const handleExport = () => {
+    const rows = instances.map((inst) => {
+      const district = districtMap[inst.id];
+      return {
+        '实例名称': inst.label || '(未命名)',
+        '实例ID': inst.id,
+        '变压器容量(kVA)': district?.transformerCapacity ?? '',
+        '供电范围': district?.supplyRange ?? '',
+        '供电面积(m²)': district?.supplyArea ?? '',
+        '供电户数': district?.householdCount ?? '',
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '台区数据');
+    XLSX.writeFile(wb, `${diagramName}_台区数据.xlsx`);
+  };
+
+  const handleImport = async (file: File) => {
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer);
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws) as Record<string, string>[];
+
+      const labelToId = new Map<string, string>();
+      for (const inst of instances) {
+        labelToId.set(inst.label, inst.id);
+      }
+
+      const items: Array<{
+        diagramInstanceId: string;
+        transformerCapacity?: number | null;
+        supplyRange?: string | null;
+        supplyArea?: string | null;
+        householdCount?: number | null;
+      }> = [];
+
+      for (const row of rows) {
+        const label = row['实例名称'];
+        const id = labelToId.get(label) || row['实例ID'];
+        if (!id) continue;
+        items.push({
+          diagramInstanceId: id,
+          transformerCapacity: row['变压器容量(kVA)'] != null && row['变压器容量(kVA)'] !== '' ? Number(row['变压器容量(kVA)']) : null,
+          supplyRange: row['供电范围'] || null,
+          supplyArea: row['供电面积(m²)'] || null,
+          householdCount: row['供电户数'] != null && row['供电户数'] !== '' ? Number(row['供电户数']) : null,
+        });
+      }
+
+      if (items.length === 0) {
+        setError('未找到匹配的数据行');
+        return;
+      }
+
+      await batchUpsertDistricts(items);
+      // Refresh district data
+      const districts = await fetchDistrictsByDiagram(selectedId);
+      const map: Record<string, DistrictData> = {};
+      for (const d of districts) {
+        map[d.diagramInstanceId] = d;
+      }
+      setDistrictMap(map);
+      showToast(`成功导入 ${items.length} 条台区数据`);
+    } catch (e) {
+      setError(parseApiError(e));
+    }
+  };
+
   return (
     <div className="workspace-page">
       <div className="page-head"><h3>台区数据维护</h3></div>
@@ -168,6 +241,24 @@ export default function DistrictPage() {
               <div className="published-preview-meta">
                 <span>实例总数: {instances.length}</span>
                 <span>已录入台区数据: {Object.keys(districtMap).length}</span>
+                <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                  <button className="btn btn-sm" onClick={handleExport} disabled={instances.length === 0}>
+                    导出 Excel
+                  </button>
+                  <label className="btn btn-sm btn-primary" style={{ cursor: 'pointer' }}>
+                    导入 Excel
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      style={{ display: 'none' }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) void handleImport(file);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
               </div>
               <table className="matrix-table" style={{ marginTop: 12 }}>
                 <thead>

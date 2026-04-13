@@ -81,4 +81,49 @@ router.put('/instance/:instanceId', authGuard, requireRole('ADMIN', 'DIAGRAM_EDI
   res.json(district);
 });
 
+// POST /batch — batch upsert district data
+router.post('/batch', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR', 'DISTRICT_EDITOR'), async (req, res, next) => {
+  try {
+    const { items } = req.body as { items: Array<{
+      diagramInstanceId: string;
+      transformerCapacity?: number | null;
+      supplyRange?: string | null;
+      supplyArea?: string | null;
+      householdCount?: number | null;
+    }> };
+    if (!Array.isArray(items) || items.length === 0) {
+      res.status(400).json({ message: 'items 不能为空数组' });
+      return;
+    }
+    if (items.length > 500) {
+      res.status(400).json({ message: '单次批量操作不能超过 500 条' });
+      return;
+    }
+
+    const results = await Promise.all(
+      items.map((item) =>
+        prisma.districtData.upsert({
+          where: { diagramInstanceId: item.diagramInstanceId },
+          create: {
+            diagramInstanceId: item.diagramInstanceId,
+            transformerCapacity: item.transformerCapacity ?? null,
+            supplyRange: item.supplyRange ?? null,
+            supplyArea: item.supplyArea ?? null,
+            householdCount: item.householdCount ?? null,
+            updatedBy: req.user!.id,
+          },
+          update: {
+            ...(item.transformerCapacity !== undefined ? { transformerCapacity: item.transformerCapacity } : {}),
+            ...(item.supplyRange !== undefined ? { supplyRange: item.supplyRange } : {}),
+            ...(item.supplyArea !== undefined ? { supplyArea: item.supplyArea } : {}),
+            ...(item.householdCount !== undefined ? { householdCount: item.householdCount } : {}),
+            updatedBy: req.user!.id,
+          },
+        })
+      )
+    );
+    res.json({ count: results.length });
+  } catch (err) { next(err); }
+});
+
 export default router;

@@ -32,3 +32,12 @@ export async function upsertGis(instanceId: string, data: { latitude?: number; l
   await requireAuth();
   return apiRequest<GisData>(`/api/gis/instance/${instanceId}`, { method: 'PUT', body: data });
 }
+
+export async function batchUpsertGis(items: Array<{
+  diagramInstanceId: string;
+  latitude?: number | null;
+  longitude?: number | null;
+}>): Promise<{ count: number }> {
+  await requireAuth();
+  return apiRequest<{ count: number }>('/api/gis/batch', { method: 'POST', body: { items } });
+}

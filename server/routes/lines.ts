@@ -88,4 +88,52 @@ router.put('/edge/:edgeId', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR', 'L
   res.json(line);
 });
 
+// POST /batch — batch upsert line segment data
+router.post('/batch', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR', 'LINE_EDITOR'), async (req, res, next) => {
+  try {
+    const { items } = req.body as { items: Array<{
+      diagramEdgeId: string;
+      startPole?: string | null;
+      endPole?: string | null;
+      length?: number | null;
+      wireModel?: string | null;
+      impedance?: number | null;
+    }> };
+    if (!Array.isArray(items) || items.length === 0) {
+      res.status(400).json({ message: 'items 不能为空数组' });
+      return;
+    }
+    if (items.length > 500) {
+      res.status(400).json({ message: '单次批量操作不能超过 500 条' });
+      return;
+    }
+
+    const results = await Promise.all(
+      items.map((item) =>
+        prisma.lineSegmentData.upsert({
+          where: { diagramEdgeId: item.diagramEdgeId },
+          create: {
+            diagramEdgeId: item.diagramEdgeId,
+            startPole: item.startPole ?? null,
+            endPole: item.endPole ?? null,
+            length: item.length ?? null,
+            wireModel: item.wireModel ?? null,
+            impedance: item.impedance ?? null,
+            updatedBy: req.user!.id,
+          },
+          update: {
+            ...(item.startPole !== undefined ? { startPole: item.startPole } : {}),
+            ...(item.endPole !== undefined ? { endPole: item.endPole } : {}),
+            ...(item.length !== undefined ? { length: item.length } : {}),
+            ...(item.wireModel !== undefined ? { wireModel: item.wireModel } : {}),
+            ...(item.impedance !== undefined ? { impedance: item.impedance } : {}),
+            updatedBy: req.user!.id,
+          },
+        })
+      )
+    );
+    res.json({ count: results.length });
+  } catch (err) { next(err); }
+});
+
 export default router;
