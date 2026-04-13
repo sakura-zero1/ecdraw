@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, forwardRef } from 'react';
 import type { DiagramInstance, DiagramEdge } from '../../services/diagramApi';
 import { CATEGORY_LABELS } from '../../constants/categories';
-import type { ComponentCategory } from '../../types';
+import type { ComponentCategory, Pin, PinType } from '../../types';
 
 // ---------- Constants ----------
 
@@ -17,6 +17,14 @@ const CATEGORY_COLORS: Record<string, string> = {
   loadPoint: '#f97316',
 };
 
+const PIN_COLORS: Record<PinType, string> = {
+  input: '#3b82f6',
+  output: '#f97316',
+  bidirectional: '#8b5cf6',
+  power: '#eab308',
+  ground: '#6b7280',
+};
+
 const EDGE_COLOR = '#94a3b8';
 const EDGE_SELECTED_COLOR = '#3b82f6';
 const SELECTION_BORDER_COLOR = '#2563eb';
@@ -24,6 +32,9 @@ const GRID_COLOR = '#e2e8f0';
 const GRID_COLOR_MAJOR = '#cbd5e1';
 const LABEL_COLOR = '#ffffff';
 const BG_COLOR = '#f8fafc';
+
+const PIN_RADIUS = 5;
+const PIN_HIT_RADIUS = 10;
 
 // ---------- Helpers ----------
 
@@ -48,6 +59,18 @@ function roundRect(
   ctx.closePath();
 }
 
+function getPinsForInstance(inst: DiagramInstance): Pin[] {
+  const pins = (inst.instanceData as { pins?: Pin[] })?.pins;
+  return Array.isArray(pins) ? pins : [];
+}
+
+function getPinWorldPos(inst: DiagramInstance, pin: Pin): { x: number; y: number } {
+  return {
+    x: inst.positionX + pin.position.x,
+    y: inst.positionY + pin.position.y,
+  };
+}
+
 // ---------- Ref handle ----------
 
 export interface DiagramCanvasHandle {
@@ -60,7 +83,7 @@ export interface DiagramCanvasHandle {
 export interface DiagramCanvasProps {
   instances: DiagramInstance[];
   edges: DiagramEdge[];
-  componentMap: Record<string, { name: string; category: string }>;
+  componentMap: Record<string, { name: string; category: string; pins?: Pin[] }>;
   selectedInstanceId: string | null;
   selectedEdgeId: string | null;
   zoom: number;
@@ -72,6 +95,7 @@ export interface DiagramCanvasProps {
   onPersistInstanceMove: (id: string) => void;
   onSetZoom: (z: number) => void;
   onSetPan: (x: number, y: number) => void;
+  onConnectPins?: (sourceInstanceId: string, sourcePinId: string, targetInstanceId: string, targetPinId: string) => void;
 }
 
 // ---------- Component ----------
@@ -91,6 +115,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
   onPersistInstanceMove,
   onSetZoom,
   onSetPan,
+  onConnectPins,
 }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -104,6 +129,17 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
     startInstY: number;
     moved: boolean;
   } | null>(null);
+
+  // Connection mode state
+  const connectingFromPinRef = useRef<{
+    instanceId: string;
+    pinId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  // Mouse world position for rubber-band line
+  const mouseWorldPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Expose helpers to parent via ref
   useImperativeHandle(ref, () => ({
@@ -213,10 +249,14 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
       const target = instances.find((i) => i.id === edge.targetInstanceId);
       if (!source || !target) continue;
 
-      const sx = source.positionX + NODE_WIDTH / 2;
-      const sy = source.positionY + NODE_HEIGHT / 2;
-      const tx = target.positionX + NODE_WIDTH / 2;
-      const ty = target.positionY + NODE_HEIGHT / 2;
+      // Try to route from pin positions if available
+      const sourcePin = getPinsForInstance(source).find(p => p.id === edge.sourcePinId);
+      const targetPin = getPinsForInstance(target).find(p => p.id === edge.targetPinId);
+
+      const sx = sourcePin ? (source.positionX + sourcePin.position.x) : (source.positionX + NODE_WIDTH / 2);
+      const sy = sourcePin ? (source.positionY + sourcePin.position.y) : (source.positionY + NODE_HEIGHT / 2);
+      const tx = targetPin ? (target.positionX + targetPin.position.x) : (target.positionX + NODE_WIDTH / 2);
+      const ty = targetPin ? (target.positionY + targetPin.position.y) : (target.positionY + NODE_HEIGHT / 2);
 
       const isSelected = edge.id === selectedEdgeId;
       ctx.strokeStyle = isSelected ? EDGE_SELECTED_COLOR : EDGE_COLOR;
@@ -275,6 +315,66 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
         displayLabel += '...';
       }
       ctx.fillText(displayLabel, x + NODE_WIDTH / 2, y + NODE_HEIGHT / 2);
+
+      // ---- Pins ----
+      const showPins = zoom > 0.5 || isSelected;
+      if (showPins) {
+        // Get pins from instanceData first, fallback to componentMap
+        const pins = getPinsForInstance(inst).length > 0
+          ? getPinsForInstance(inst)
+          : (comp?.pins || []);
+
+        for (const pin of pins) {
+          const px = x + pin.position.x;
+          const py = y + pin.position.y;
+          const pinColor = PIN_COLORS[pin.pinType] || PIN_COLORS.bidirectional;
+
+          // Pin outer circle
+          ctx.beginPath();
+          ctx.arc(px, py, PIN_RADIUS / zoom, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+          ctx.strokeStyle = pinColor;
+          ctx.lineWidth = 1.5 / zoom;
+          ctx.stroke();
+
+          // Pin inner dot
+          ctx.beginPath();
+          ctx.arc(px, py, (PIN_RADIUS - 2) / zoom, 0, Math.PI * 2);
+          ctx.fillStyle = pinColor;
+          ctx.fill();
+
+          // Pin label (when zoomed in enough)
+          if (zoom > 0.7 && pin.label) {
+            ctx.fillStyle = '#607286';
+            ctx.font = `${9 / Math.max(zoom, 0.3)}px "Microsoft YaHei", "PingFang SC", sans-serif`;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(pin.label, px + (PIN_RADIUS + 3) / zoom, py);
+          }
+        }
+      }
+    }
+
+    // ---- Rubber-band line for pin connection ----
+    const connectingFrom = connectingFromPinRef.current;
+    if (connectingFrom) {
+      const mwp = mouseWorldPosRef.current;
+      ctx.setLineDash([6 / zoom, 4 / zoom]);
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 2 / zoom;
+      ctx.beginPath();
+      ctx.moveTo(connectingFrom.x, connectingFrom.y);
+      ctx.lineTo(mwp.x, mwp.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Highlight the source pin
+      ctx.beginPath();
+      ctx.arc(connectingFrom.x, connectingFrom.y, PIN_RADIUS * 1.5 / zoom, 0, Math.PI * 2);
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 2 / zoom;
+      ctx.stroke();
     }
 
     ctx.restore();
@@ -329,6 +429,31 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
     [instances],
   );
 
+  /** Hit test a pin across all instances. Returns { instanceId, pinId } if hit. */
+  const hitTestPin = useCallback(
+    (worldX: number, worldY: number): { instanceId: string; pinId: string } | null => {
+      const threshold = PIN_HIT_RADIUS / zoom;
+      for (let i = instances.length - 1; i >= 0; i--) {
+        const inst = instances[i];
+        const comp = componentMap[inst.componentId];
+        const pins = getPinsForInstance(inst).length > 0
+          ? getPinsForInstance(inst)
+          : (comp?.pins || []);
+
+        for (const pin of pins) {
+          const px = inst.positionX + pin.position.x;
+          const py = inst.positionY + pin.position.y;
+          const dist = Math.sqrt((worldX - px) ** 2 + (worldY - py) ** 2);
+          if (dist <= threshold) {
+            return { instanceId: inst.id, pinId: pin.id };
+          }
+        }
+      }
+      return null;
+    },
+    [instances, componentMap, zoom],
+  );
+
   const hitTestEdge = useCallback(
     (worldX: number, worldY: number): string | null => {
       const threshold = 8 / zoom;
@@ -337,10 +462,13 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
         const target = instances.find((i) => i.id === edge.targetInstanceId);
         if (!source || !target) continue;
 
-        const sx = source.positionX + NODE_WIDTH / 2;
-        const sy = source.positionY + NODE_HEIGHT / 2;
-        const tx = target.positionX + NODE_WIDTH / 2;
-        const ty = target.positionY + NODE_HEIGHT / 2;
+        const sourcePin = getPinsForInstance(source).find(p => p.id === edge.sourcePinId);
+        const targetPin = getPinsForInstance(target).find(p => p.id === edge.targetPinId);
+
+        const sx = sourcePin ? (source.positionX + sourcePin.position.x) : (source.positionX + NODE_WIDTH / 2);
+        const sy = sourcePin ? (source.positionY + sourcePin.position.y) : (source.positionY + NODE_HEIGHT / 2);
+        const tx = targetPin ? (target.positionX + targetPin.position.x) : (target.positionX + NODE_WIDTH / 2);
+        const ty = targetPin ? (target.positionY + targetPin.position.y) : (target.positionY + NODE_HEIGHT / 2);
 
         // Distance from point to line segment
         const dx = tx - sx;
@@ -388,7 +516,51 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
 
       if (e.button !== 0) return;
 
-      // Hit test node first
+      // If in connection mode, check if we clicked a pin or empty space
+      if (connectingFromPinRef.current) {
+        const hitPin = hitTestPin(world.x, world.y);
+        if (hitPin && hitPin.instanceId !== connectingFromPinRef.current.instanceId) {
+          // Complete the connection
+          onConnectPins?.(
+            connectingFromPinRef.current.instanceId,
+            connectingFromPinRef.current.pinId,
+            hitPin.instanceId,
+            hitPin.pinId,
+          );
+        }
+        // Cancel connection mode regardless
+        connectingFromPinRef.current = null;
+        requestDraw();
+        return;
+      }
+
+      // Hit test pin first (pins are above nodes)
+      const hitPinResult = hitTestPin(world.x, world.y);
+      if (hitPinResult) {
+        // Start connection mode from this pin
+        const inst = instances.find((i) => i.id === hitPinResult.instanceId);
+        if (inst) {
+          const comp = componentMap[inst.componentId];
+          const pins = getPinsForInstance(inst).length > 0
+            ? getPinsForInstance(inst)
+            : (comp?.pins || []);
+          const pin = pins.find((p) => p.id === hitPinResult.pinId);
+          if (pin) {
+            const pinWorldPos = getPinWorldPos(inst, pin);
+            connectingFromPinRef.current = {
+              instanceId: inst.id,
+              pinId: pin.id,
+              x: pinWorldPos.x,
+              y: pinWorldPos.y,
+            };
+            onSelectInstance(inst.id);
+            requestDraw();
+          }
+        }
+        return;
+      }
+
+      // Hit test node
       const hitId = hitTestInstance(world.x, world.y);
       if (hitId) {
         const inst = instances.find((i) => i.id === hitId);
@@ -416,11 +588,24 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
       // Deselect
       onSelectInstance(null);
     },
-    [screenToWorld, panX, panY, hitTestInstance, hitTestEdge, instances, onSelectInstance, onSelectEdge],
+    [screenToWorld, panX, panY, hitTestInstance, hitTestPin, hitTestEdge, instances, componentMap, onSelectInstance, onSelectEdge, onConnectPins, requestDraw],
   );
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+      const world = screenToWorld(screenX, screenY);
+
+      // Update mouse world position for rubber-band line
+      if (connectingFromPinRef.current) {
+        mouseWorldPosRef.current = { x: world.x, y: world.y };
+        requestDraw();
+      }
+
       // Panning
       if (panRef.current) {
         const dx = e.clientX - panRef.current.startScreenX;
@@ -431,13 +616,6 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
 
       // Dragging node
       if (dragRef.current) {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const rect = canvas.getBoundingClientRect();
-        const screenX = e.clientX - rect.left;
-        const screenY = e.clientY - rect.top;
-        const world = screenToWorld(screenX, screenY);
-
         const dx = world.x - dragRef.current.startWorldX;
         const dy = world.y - dragRef.current.startWorldY;
 
@@ -452,7 +630,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
         );
       }
     },
-    [screenToWorld, onSetPan, onMoveInstance],
+    [screenToWorld, onSetPan, onMoveInstance, requestDraw],
   );
 
   const handleMouseUp = useCallback(
@@ -499,9 +677,22 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
     e.preventDefault();
   }, []);
 
+  // Cancel connection mode on Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && connectingFromPinRef.current) {
+        connectingFromPinRef.current = null;
+        requestDraw();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [requestDraw]);
+
   // ---------- Cursor ----------
 
   const getCursor = useCallback(() => {
+    if (connectingFromPinRef.current) return 'crosshair';
     if (panRef.current) return 'grabbing';
     if (dragRef.current) return 'grabbing';
     return 'default';
