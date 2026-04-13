@@ -364,6 +364,7 @@ function OverrideEditor({
   const ov = (shape[overrideKey] ?? {}) as ShapeOverride;
   const set = (field: string, value: string | number | undefined) =>
     updateOverride(compId, shape.id, overrideKey, field, value, shape, onUpdate);
+  const isFillTransparent = ov.fill === 'transparent';
   const fillColorForInput =
     (typeof ov.fill === 'string' && ov.fill !== 'transparent' ? ov.fill : undefined) ??
     (shape.fill !== 'transparent' ? shape.fill : '#ffffff');
@@ -374,15 +375,19 @@ function OverrideEditor({
       <div className="state-row">
         <label className="state-field">
           <span>填充</span>
-          <input type="color" value={fillColorForInput} onChange={(e) => set('fill', e.target.value)} />
+          <input type="color" value={fillColorForInput} onChange={(e) => set('fill', e.target.value)} disabled={isFillTransparent} style={isFillTransparent ? { opacity: 0.4 } : undefined} />
           <button
             className="btn btn-sm"
             type="button"
-            title="填充透明"
-            style={{ padding: '0 6px', lineHeight: 1.4 }}
-            onClick={() => set('fill', 'transparent')}
+            title={isFillTransparent ? '取消透明' : '填充透明'}
+            style={{
+              padding: '0 6px', lineHeight: 1.4,
+              background: isFillTransparent ? 'var(--color-active)' : undefined,
+              color: isFillTransparent ? '#fff' : undefined,
+            }}
+            onClick={() => set('fill', isFillTransparent ? undefined : 'transparent')}
           >
-            透明
+            {isFillTransparent ? '已透明' : '透明'}
           </button>
         </label>
         <label className="state-field">
@@ -395,12 +400,10 @@ function OverrideEditor({
             type="number"
             min={1}
             max={20}
-            value={(ov.strokeWidth as number) ?? ''}
+            value={(ov.strokeWidth as number) ?? shape.strokeWidth ?? ''}
             onChange={(e) => set('strokeWidth', e.target.value === '' ? undefined : Number(e.target.value))}
           />
         </label>
-      </div>
-      <div className="state-row">
         <label className="state-field">
           <span>透明</span>
           <input
@@ -408,50 +411,70 @@ function OverrideEditor({
             min={0}
             max={1}
             step={0.1}
-            value={(ov.opacity as number) ?? ''}
+            value={(ov.opacity as number) ?? shape.opacity ?? ''}
             onChange={(e) => set('opacity', e.target.value === '' ? undefined : Number(e.target.value))}
           />
         </label>
-        {shape.type === 'line' ? (
-          <>
+      </div>
+      {shape.type === 'line' ? (
+        <>
+          <div className="state-row">
+            <label className="state-field">
+              <span>X1</span>
+              <input
+                type="number"
+                value={(ov.x1 as number) ?? shape.x1 ?? ''}
+                onChange={(e) => set('x1', e.target.value === '' ? undefined : Number(e.target.value))}
+              />
+            </label>
             <label className="state-field">
               <span>X2</span>
               <input
                 type="number"
-                value={(ov.x2 as number) ?? ''}
+                value={(ov.x2 as number) ?? shape.x2 ?? ''}
                 onChange={(e) => set('x2', e.target.value === '' ? undefined : Number(e.target.value))}
+              />
+            </label>
+          </div>
+          <div className="state-row">
+            <label className="state-field">
+              <span>Y1</span>
+              <input
+                type="number"
+                value={(ov.y1 as number) ?? shape.y1 ?? ''}
+                onChange={(e) => set('y1', e.target.value === '' ? undefined : Number(e.target.value))}
               />
             </label>
             <label className="state-field">
               <span>Y2</span>
               <input
                 type="number"
-                value={(ov.y2 as number) ?? ''}
+                value={(ov.y2 as number) ?? shape.y2 ?? ''}
                 onChange={(e) => set('y2', e.target.value === '' ? undefined : Number(e.target.value))}
               />
             </label>
-          </>
-        ) : shape.type === 'rect' ? (
-          <>
-            <label className="state-field">
-              <span>宽</span>
-              <input
-                type="number"
-                value={(ov.width as number) ?? ''}
-                onChange={(e) => set('width', e.target.value === '' ? undefined : Number(e.target.value))}
-              />
-            </label>
-            <label className="state-field">
-              <span>高</span>
-              <input
-                type="number"
-                value={(ov.height as number) ?? ''}
-                onChange={(e) => set('height', e.target.value === '' ? undefined : Number(e.target.value))}
-              />
-            </label>
-          </>
-        ) : null}
-      </div>
+          </div>
+        </>
+      ) : shape.type === 'rect' ? (
+        <div className="state-row">
+          <label className="state-field">
+            <span>宽</span>
+            <input
+              type="number"
+              value={(ov.width as number) ?? shape.width ?? ''}
+              onChange={(e) => set('width', e.target.value === '' ? undefined : Number(e.target.value))}
+            />
+          </label>
+          <label className="state-field">
+            <span>高</span>
+            <input
+              type="number"
+              value={(ov.height as number) ?? shape.height ?? ''}
+              onChange={(e) => set('height', e.target.value === '' ? undefined : Number(e.target.value))}
+            />
+          </label>
+        </div>
+      ) : null}
     </div>
   );
 }

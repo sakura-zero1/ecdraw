@@ -27,7 +27,10 @@ export default function AlignmentToolbar() {
   const selectedShapes = comp.shapeElements.filter((e) => selectedShapeIds.includes(e.id));
   const selectedPins = comp.pins.filter((p) => selectedPinIds.includes(p.id));
 
-  const shapeMode = selectedShapes.length >= 2;
+  // If all selected shapes share the same groupId, they are in a group — disable alignment
+  const allSameGroup = selectedShapes.length >= 2 && selectedShapes.every((s) => s.groupId && s.groupId === selectedShapes[0].groupId);
+
+  const shapeMode = selectedShapes.length >= 2 && !allSameGroup;
   const pinMode = !shapeMode && selectedPins.length >= 2;
   if (!shapeMode && !pinMode) return null;
 
