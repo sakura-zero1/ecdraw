@@ -11,32 +11,15 @@ import {
   saveComponentVersionByApi,
   updateComponentMetaByApi,
 } from '../../services/componentApi';
-import {
-  approveReviewByApi,
-  fetchReviewQueue,
-  rejectReviewByApi,
-  type ReviewFilterStatus,
-  type ReviewQueueItem,
-  type ReviewStatus,
-} from '../../services/reviewApi';
-import {
-  fetchDiagramReadonlySnapshot,
-  fetchPublishedDiagrams,
-  type DiagramListItem,
-  type DiagramSnapshot,
-} from '../../services/diagramApi';
-import { fetchAuditLogs, type AuditItem } from '../../services/auditApi';
 import SvgCanvas from '../canvas/SvgCanvas';
-import ReadonlyDiagramPreview from '../diagram/ReadonlyDiagramPreview';
 import PropertyPanel from '../panels/PropertyPanel';
 import PinListPanel from '../panels/PinListPanel';
 import ConnectivityMatrixPanel from '../panels/ConnectivityMatrixPanel';
 import CollapsibleSection from '../panels/CollapsibleSection';
+import ComponentThumbnail from '../panels/ComponentThumbnail';
 import './AppLayout.css';
 
 type PanelTab = 'property' | 'pins';
-const REVIEW_PAGE_SIZE = 10;
-const AUDIT_PAGE_SIZE = 20;
 
 function parseApiError(error: unknown) {
   if (!(error instanceof Error)) return '请求失败';
@@ -77,34 +60,6 @@ export default function AppLayout() {
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<PanelTab>('property');
   const [searchKeyword, setSearchKeyword] = useState('');
-  const [showReviewDialog, setShowReviewDialog] = useState(false);
-  const [reviewItems, setReviewItems] = useState<ReviewQueueItem[]>([]);
-  const [reviewStatusFilter, setReviewStatusFilter] = useState<ReviewFilterStatus>('PENDING');
-  const [reviewPage, setReviewPage] = useState(1);
-  const [reviewTotal, setReviewTotal] = useState(0);
-  const [reviewTotalPages, setReviewTotalPages] = useState(1);
-  const [reviewLoading, setReviewLoading] = useState(false);
-  const [reviewError, setReviewError] = useState('');
-  const [reviewActionLoadingId, setReviewActionLoadingId] = useState('');
-  const [reviewCommentDrafts, setReviewCommentDrafts] = useState<Record<string, string>>({});
-  const [showPublishedDialog, setShowPublishedDialog] = useState(false);
-  const [publishedList, setPublishedList] = useState<DiagramListItem[]>([]);
-  const [publishedLoading, setPublishedLoading] = useState(false);
-  const [publishedError, setPublishedError] = useState('');
-  const [selectedPublishedId, setSelectedPublishedId] = useState('');
-  const [readonlySnapshot, setReadonlySnapshot] = useState<DiagramSnapshot | null>(null);
-  const [readonlyVersionNo, setReadonlyVersionNo] = useState(0);
-  const [readonlyLoading, setReadonlyLoading] = useState(false);
-  const [showAuditDialog, setShowAuditDialog] = useState(false);
-  const [auditItems, setAuditItems] = useState<AuditItem[]>([]);
-  const [auditLoading, setAuditLoading] = useState(false);
-  const [auditError, setAuditError] = useState('');
-  const [auditPage, setAuditPage] = useState(1);
-  const [auditTotal, setAuditTotal] = useState(0);
-  const [auditTotalPages, setAuditTotalPages] = useState(1);
-  const [auditActionFilter, setAuditActionFilter] = useState('ALL');
-  const [auditTargetTypeFilter, setAuditTargetTypeFilter] = useState('ALL');
-  const [auditTargetIdFilter, setAuditTargetIdFilter] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Record<ComponentCategory, boolean>>(
     () =>
       CATEGORIES.reduce((acc, cat) => {
@@ -342,647 +297,175 @@ export default function AppLayout() {
     }
   };
 
-  const loadReviewList = useCallback(async () => {
-    if (!showReviewDialog) return;
-    setReviewLoading(true);
-    setReviewError('');
-    try {
-      const status = reviewStatusFilter === 'ALL' ? undefined : (reviewStatusFilter as ReviewStatus);
-      const result = await fetchReviewQueue({
-        status,
-        page: reviewPage,
-        pageSize: REVIEW_PAGE_SIZE,
-      });
-      setReviewItems(result.items);
-      setReviewTotal(result.total);
-      setReviewTotalPages(result.totalPages);
-    } catch (error) {
-      setReviewError(parseApiError(error));
-    } finally {
-      setReviewLoading(false);
-    }
-  }, [reviewPage, reviewStatusFilter, showReviewDialog]);
-
-  useEffect(() => {
-    void loadReviewList();
-  }, [loadReviewList]);
-
-  const handleReviewAction = async (id: string, action: 'approve' | 'reject') => {
-    setReviewActionLoadingId(id);
-    setReviewError('');
-    const comment = reviewCommentDrafts[id]?.trim();
-    try {
-      if (action === 'approve') {
-        await approveReviewByApi(id, comment || undefined);
-      } else {
-        await rejectReviewByApi(id, comment || undefined);
-      }
-      await loadReviewList();
-    } catch (error) {
-      setReviewError(parseApiError(error));
-    } finally {
-      setReviewActionLoadingId('');
-    }
-  };
-
-  const loadPublishedList = useCallback(async () => {
-    if (!showPublishedDialog) return;
-    setPublishedLoading(true);
-    setPublishedError('');
-    try {
-      const list = await fetchPublishedDiagrams();
-      setPublishedList(list);
-      if (!selectedPublishedId && list.length > 0) {
-        setSelectedPublishedId(list[0].id);
-      }
-      if (selectedPublishedId && !list.some((item) => item.id === selectedPublishedId)) {
-        setSelectedPublishedId(list[0]?.id ?? '');
-      }
-    } catch (error) {
-      setPublishedError(parseApiError(error));
-    } finally {
-      setPublishedLoading(false);
-    }
-  }, [selectedPublishedId, showPublishedDialog]);
-
-  useEffect(() => {
-    void loadPublishedList();
-  }, [loadPublishedList]);
-
-  useEffect(() => {
-    if (!showPublishedDialog || !selectedPublishedId) {
-      setReadonlySnapshot(null);
-      setReadonlyVersionNo(0);
-      return;
-    }
-
-    let cancelled = false;
-    setReadonlyLoading(true);
-    setPublishedError('');
-    void (async () => {
-      try {
-        const payload = await fetchDiagramReadonlySnapshot(selectedPublishedId);
-        if (cancelled) return;
-        setReadonlySnapshot(payload.snapshot);
-        setReadonlyVersionNo(payload.versionNo);
-      } catch (error) {
-        if (!cancelled) {
-          setPublishedError(parseApiError(error));
-          setReadonlySnapshot(null);
-          setReadonlyVersionNo(0);
-        }
-      } finally {
-        if (!cancelled) {
-          setReadonlyLoading(false);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedPublishedId, showPublishedDialog]);
-
-  const loadAuditList = useCallback(async () => {
-    if (!showAuditDialog) return;
-    setAuditLoading(true);
-    setAuditError('');
-    try {
-      const action = auditActionFilter === 'ALL' ? undefined : auditActionFilter;
-      const targetType = auditTargetTypeFilter === 'ALL' ? undefined : auditTargetTypeFilter;
-      const targetId = auditTargetIdFilter.trim() || undefined;
-      const result = await fetchAuditLogs({
-        action,
-        targetType,
-        targetId,
-        page: auditPage,
-        pageSize: AUDIT_PAGE_SIZE,
-      });
-      setAuditItems(result.items);
-      setAuditTotal(result.total);
-      setAuditTotalPages(result.totalPages);
-    } catch (error) {
-      setAuditError(parseApiError(error));
-    } finally {
-      setAuditLoading(false);
-    }
-  }, [auditActionFilter, auditPage, auditTargetIdFilter, auditTargetTypeFilter, showAuditDialog]);
-
-  useEffect(() => {
-    void loadAuditList();
-  }, [loadAuditList]);
-
   return (
     <div className="app-layout">
-      <header className="toolbar">
-        <div className="toolbar-left">
-          <h1 className="app-title">ECDraw</h1>
-          <span className="app-subtitle">电气元件绘制工具 · {syncStatus}</span>
-        </div>
-
-        <div className="toolbar-right">
-          <button
-            className="btn btn-primary"
-            disabled={saving || storageMode !== 'api'}
-            onClick={() => void handleSave()}
-          >
-            {saving ? '保存中...' : '保存'}
-          </button>
-          <button
-            className={`btn ${showAuditDialog ? 'btn-active' : ''}`}
-            onClick={() => {
-              setShowAuditDialog(true);
-              setAuditPage(1);
-            }}
-          >
-            审计追踪
-          </button>
-          <button
-            className={`btn ${showPublishedDialog ? 'btn-active' : ''}`}
-            onClick={() => {
-              setShowPublishedDialog(true);
-            }}
-          >
-            发布浏览
-          </button>
-          <button
-            className={`btn ${showReviewDialog ? 'btn-active' : ''}`}
-            onClick={() => {
-              setShowReviewDialog(true);
-              setReviewPage(1);
-            }}
-          >
-            审核队列
-          </button>
-          <button
-            className="btn"
-            onClick={() => {
-              void (async () => {
-                try {
-                  await hydrateFromApi();
-                } catch {
-                  setStorageMode('local');
-                  setSyncStatus('刷新失败，维持本地模式');
-                }
-              })();
-            }}
-          >
-            云端刷新
-          </button>
-          <button
-            className="btn"
-            onClick={() => {
-              const { components: comps } = useComponentStore.getState();
-              const { matrices: matrixMap } = useConnectionStore.getState();
-              const data = {
-                version: '1.0.0',
-                components: comps,
-                matrices: Object.values(matrixMap),
-                savedAt: new Date().toISOString(),
-              };
-              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = 'project.ecp.json';
-              a.click();
-              setTimeout(() => URL.revokeObjectURL(url), 1000);
-            }}
-          >
-            导出
-          </button>
-          <button
-            className="btn"
-            onClick={() => {
-              const input = document.createElement('input');
-              input.type = 'file';
-              input.accept = '.json';
-              input.onchange = async (e) => {
-                const file = (e.target as HTMLInputElement).files?.[0];
-                if (!file) return;
-                try {
-                  const text = await file.text();
-                  const data = JSON.parse(text) as {
-                    components?: ElectricalComponent[];
-                    matrices?: ConnectivityMatrix[];
-                  };
-                  if (data.components) useComponentStore.getState().loadComponents(data.components);
-                  if (data.matrices) useConnectionStore.getState().loadMatrices(data.matrices);
-                  setStorageMode('local');
-                  setSyncStatus('已导入本地数据');
-                } catch {
-                  alert('导入失败：文件格式不正确，请选择有效的 .ecp.json 文件');
-                }
-              };
-              input.click();
-            }}
-          >
-            导入
-          </button>
-        </div>
-      </header>
-
-      <div className="main-content">
-        {!sidebarCollapsed ? (
-          <aside className="sidebar">
+      <aside className={`sidebar${sidebarCollapsed ? ' collapsed' : ''}`}>
+        {sidebarCollapsed ? (
+          <button className="ce-panel-expand-btn" onClick={() => setSidebarCollapsed(false)} title="展开元件列表">▶</button>
+        ) : (
+          <>
             <div className="sidebar-header">
               <span>元件列表</span>
-              <div className="header-actions">
+              <div className="ce-panel-header-actions">
                 <span className="count-badge">
                   {normalizedKeyword ? `${visibleComponents.length}/${components.length}` : components.length}
                 </span>
-                <button className="icon-btn" title="收起列表" onClick={() => setSidebarCollapsed(true)}>◂</button>
+                <button className="ce-panel-header-btn" onClick={() => setSidebarCollapsed(true)} title="收起元件列表">◀</button>
               </div>
             </div>
-            <div className="sidebar-search">
-              <input
-                value={searchKeyword}
-                onChange={(e) => setSearchKeyword(e.target.value)}
-                placeholder="搜索名称/描述/分类"
-              />
-              <button className="btn btn-sm" onClick={() => setShowNewDialog(true)} style={{ marginLeft: 6, whiteSpace: 'nowrap' }}>+ 新建</button>
-            </div>
-            <div className="component-list">
-              {components.length === 0 && <div className="empty-hint">暂无元件，点击“新建元件”开始绘制</div>}
-              {components.length > 0 && visibleComponents.length === 0 && (
-                <div className="empty-hint">未找到匹配项，调整关键词后重试</div>
-              )}
+          <div className="sidebar-search">
+            <input
+              value={searchKeyword}
+              onChange={(e) => setSearchKeyword(e.target.value)}
+              placeholder="搜索名称/描述/分类"
+            />
+            <button className="btn btn-sm" onClick={() => setShowNewDialog(true)} style={{ marginLeft: 6, whiteSpace: 'nowrap' }}>+ 新建</button>
+          </div>
+          <div className="sidebar-actions">
+            <button
+              className="btn btn-sm"
+              data-testid="save-btn"
+              disabled={saving || storageMode !== 'api'}
+              onClick={() => void handleSave()}
+            >
+              保存
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => {
+                void (async () => {
+                  try {
+                    await hydrateFromApi();
+                  } catch {
+                    setStorageMode('local');
+                    setSyncStatus('刷新失败，维持本地模式');
+                  }
+                })();
+              }}
+            >
+              刷新
+            </button>
+          </div>
+          <div className="component-list">
+            {components.length === 0 && <div className="empty-hint">暂无元件，点击"新建元件"开始绘制</div>}
+            {components.length > 0 && visibleComponents.length === 0 && (
+              <div className="empty-hint">未找到匹配项，调整关键词后重试</div>
+            )}
 
-              {CATEGORIES.map((cat) => {
-                const items = groupedComponents[cat];
-                const collapsed = collapsedCategories[cat];
-                return (
-                  <div key={cat} className="category-group">
-                    <button
-                      className="category-header"
-                      onClick={() => setCollapsedCategories((prev) => ({ ...prev, [cat]: !prev[cat] }))}
-                      title={collapsed ? `展开${CATEGORY_LABELS[cat]}` : `收起${CATEGORY_LABELS[cat]}`}
-                    >
-                      <span className={`category-arrow ${collapsed ? '' : 'open'}`}>▸</span>
-                      <span className="category-title">{CATEGORY_LABELS[cat]}</span>
-                      <span className="category-count">{items.length}</span>
-                    </button>
+            {CATEGORIES.map((cat) => {
+              const items = groupedComponents[cat];
+              const collapsed = collapsedCategories[cat];
+              return (
+                <div key={cat} className="category-group">
+                  <button
+                    className="category-header"
+                    onClick={() => setCollapsedCategories((prev) => ({ ...prev, [cat]: !prev[cat] }))}
+                    title={collapsed ? `展开${CATEGORY_LABELS[cat]}` : `收起${CATEGORY_LABELS[cat]}`}
+                  >
+                    <span className={`category-arrow ${collapsed ? '' : 'open'}`}>▸</span>
+                    <span className="category-title">{CATEGORY_LABELS[cat]}</span>
+                    <span className="category-count">{items.length}</span>
+                  </button>
 
-                    {!collapsed &&
-                      items.map((comp) => (
-                        <div
-                          key={comp.id}
-                          className={`component-item ${comp.id === activeComponentId ? 'active' : ''}`}
-                          onClick={() => setActiveComponent(comp.id)}
-                        >
-                          <span className="comp-name" title={comp.name}>
-                            {comp.name}
-                          </span>
-                          <button
-                            className="item-action-btn"
-                            title="复制元件"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void handleDuplicate(comp);
-                            }}
-                          >
-                            ⧉
-                          </button>
-                          <button
-                            className="item-action-btn item-action-danger"
-                            title="删除元件"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteTarget(comp);
-                            }}
-                          >
-                            ✕
-                          </button>
+                  {!collapsed && (
+                    <div className="component-list-items">
+                    {items.map((comp) => (
+                      <div
+                        key={comp.id}
+                        className={`component-item ${comp.id === activeComponentId ? 'active' : ''}`}
+                        onClick={() => setActiveComponent(comp.id)}
+                      >
+                        <div className="comp-thumb-wrap">
+                          <ComponentThumbnail component={comp} matrix={matrices[comp.id]} />
+                          <div className="comp-card-actions">
+                            <button
+                              className="card-action-btn"
+                              title="复制元件"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleDuplicate(comp);
+                              }}
+                            >
+                              ⧉
+                            </button>
+                            <button
+                              className="card-action-btn card-action-danger"
+                              title="删除元件"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTarget(comp);
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </div>
                         </div>
-                      ))}
-                  </div>
-                );
-              })}
-            </div>
-          </aside>
-        ) : (
-          <button className="rail-toggle left" title="展开列表" onClick={() => setSidebarCollapsed(false)}>
-            ▸
-          </button>
-        )}
+                        <span className="comp-card-name" title={comp.name}>
+                          {comp.name}
+                        </span>
+                      </div>
+                    ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+            </>
+          )}
+        </aside>
 
         <main className="canvas-area">
           <SvgCanvas />
         </main>
 
-        {!panelCollapsed ? (
-          <aside className="panel">
-            <div className="panel-top">
+        <aside className={`panel${panelCollapsed ? ' collapsed' : ''}`}>
+          {panelCollapsed ? (
+            <button className="ce-panel-expand-btn" onClick={() => setPanelCollapsed(false)} title="展开属性面板">◀</button>
+          ) : (
+            <>
+              <div className="panel-top">
+                {activeComponent ? (
+                  <div className="panel-tabs">
+                    <button
+                      className={`tab-btn ${activeTab === 'property' ? 'active' : ''}`}
+                      onClick={() => setActiveTab('property')}
+                    >
+                      元件属性
+                    </button>
+                    <button className={`tab-btn ${activeTab === 'pins' ? 'active' : ''}`} onClick={() => setActiveTab('pins')}>
+                      引脚管理
+                    </button>
+                  </div>
+                ) : (
+                  <div className="panel-title-ghost">元件属性</div>
+                )}
+                <button className="ce-panel-header-btn" onClick={() => setPanelCollapsed(true)} title="收起属性面板">▶</button>
+              </div>
+
               {activeComponent ? (
-                <div className="panel-tabs">
-                  <button
-                    className={`tab-btn ${activeTab === 'property' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('property')}
-                  >
-                    元件属性
-                  </button>
-                  <button className={`tab-btn ${activeTab === 'pins' ? 'active' : ''}`} onClick={() => setActiveTab('pins')}>
-                    引脚管理
-                  </button>
+                <div className="panel-body">
+                  {activeTab === 'property' && (
+                    <CollapsibleSection title="元件属性">
+                      <PropertyPanel component={activeComponent} />
+                    </CollapsibleSection>
+                  )}
+
+                  {activeTab === 'pins' && (
+                    <>
+                      <CollapsibleSection title="引脚管理">
+                        <PinListPanel component={activeComponent} />
+                      </CollapsibleSection>
+                      <ConnectivityMatrixPanel component={activeComponent} />
+                    </>
+                  )}
                 </div>
               ) : (
-                <div className="panel-title-ghost">元件属性</div>
+                <div className="empty-hint">请选择或新建一个元件</div>
               )}
-              <button className="icon-btn" title="收起属性栏" onClick={() => setPanelCollapsed(true)}>
-                ▸
-              </button>
-            </div>
-
-            {activeComponent ? (
-              <div className="panel-body">
-                {activeTab === 'property' && (
-                  <CollapsibleSection title="元件属性">
-                    <PropertyPanel component={activeComponent} />
-                  </CollapsibleSection>
-                )}
-
-                {activeTab === 'pins' && (
-                  <>
-                    <CollapsibleSection title="引脚管理">
-                      <PinListPanel component={activeComponent} />
-                    </CollapsibleSection>
-                    <ConnectivityMatrixPanel component={activeComponent} />
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="empty-hint">请选择或新建一个元件</div>
-            )}
-          </aside>
-        ) : (
-          <button className="rail-toggle right" title="展开属性栏" onClick={() => setPanelCollapsed(false)}>
-            ◂
-          </button>
-        )}
-      </div>
-
-      {showAuditDialog && (
-        <div className="dialog-overlay" onClick={() => setShowAuditDialog(false)}>
-          <div className="dialog audit-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="review-header">
-              <h3>审计追踪</h3>
-              <div className="review-page-actions">
-                <button className="btn btn-sm" disabled={auditLoading} onClick={() => void loadAuditList()}>
-                  刷新
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={() => setShowAuditDialog(false)}>
-                  关闭
-                </button>
-              </div>
-            </div>
-
-            <div className="audit-filters">
-              <select
-                value={auditTargetTypeFilter}
-                onChange={(e) => {
-                  setAuditTargetTypeFilter(e.target.value);
-                  setAuditPage(1);
-                }}
-              >
-                <option value="ALL">全部目标</option>
-                <option value="Diagram">Diagram</option>
-                <option value="ReviewRequest">ReviewRequest</option>
-                <option value="Component">Component</option>
-              </select>
-              <select
-                value={auditActionFilter}
-                onChange={(e) => {
-                  setAuditActionFilter(e.target.value);
-                  setAuditPage(1);
-                }}
-              >
-                <option value="ALL">全部动作</option>
-                <option value="DIAGRAM_SUBMIT_REVIEW">DIAGRAM_SUBMIT_REVIEW</option>
-                <option value="REVIEW_APPROVE">REVIEW_APPROVE</option>
-                <option value="REVIEW_REJECT">REVIEW_REJECT</option>
-                <option value="DIAGRAM_SAVE">DIAGRAM_SAVE</option>
-              </select>
-              <input
-                value={auditTargetIdFilter}
-                onChange={(e) => {
-                  setAuditTargetIdFilter(e.target.value);
-                  setAuditPage(1);
-                }}
-                placeholder="targetId 过滤（可选）"
-              />
-            </div>
-
-            {auditError && <div className="review-error">{auditError}</div>}
-            {auditLoading && <div className="empty-hint">正在加载...</div>}
-
-            {!auditLoading && (
-              <div className="audit-list">
-                {auditItems.length === 0 && <div className="empty-hint">暂无审计记录</div>}
-                {auditItems.map((item) => (
-                  <div key={item.id} className="audit-item">
-                    <div className="audit-top">
-                      <strong>{item.action}</strong>
-                      <span>{new Date(item.createdAt).toLocaleString()}</span>
-                    </div>
-                    <div className="audit-meta">
-                      <span>用户: {item.user.username} ({item.user.role})</span>
-                      <span>目标: {item.targetType}/{item.targetId}</span>
-                    </div>
-                    <pre>{item.payload ? JSON.stringify(item.payload, null, 2) : '{}'}</pre>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="review-pagination">
-              <span>
-                第 {auditPage}/{auditTotalPages} 页，共 {auditTotal} 条
-              </span>
-              <div className="review-page-actions">
-                <button
-                  className="btn btn-sm btn-secondary"
-                  disabled={auditLoading || auditPage <= 1}
-                  onClick={() => setAuditPage((p) => Math.max(1, p - 1))}
-                >
-                  上一页
-                </button>
-                <button
-                  className="btn btn-sm btn-secondary"
-                  disabled={auditLoading || auditPage >= auditTotalPages}
-                  onClick={() => setAuditPage((p) => Math.min(auditTotalPages, p + 1))}
-                >
-                  下一页
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showPublishedDialog && (
-        <div className="dialog-overlay" onClick={() => setShowPublishedDialog(false)}>
-          <div className="dialog published-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="review-header">
-              <h3>已发布图纸</h3>
-              <div className="review-page-actions">
-                <button className="btn btn-sm" disabled={publishedLoading} onClick={() => void loadPublishedList()}>
-                  刷新
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={() => setShowPublishedDialog(false)}>
-                  关闭
-                </button>
-              </div>
-            </div>
-
-            {publishedError && <div className="review-error">{publishedError}</div>}
-
-            <div className="published-layout">
-              <aside className="published-list">
-                {publishedLoading && <div className="empty-hint">正在加载...</div>}
-                {!publishedLoading && publishedList.length === 0 && <div className="empty-hint">暂无已发布图纸</div>}
-                {!publishedLoading &&
-                  publishedList.map((item) => (
-                    <button
-                      key={item.id}
-                      className={`published-item ${selectedPublishedId === item.id ? 'active' : ''}`}
-                      onClick={() => setSelectedPublishedId(item.id)}
-                    >
-                      <strong>{item.name}</strong>
-                      <span>{new Date(item.updatedAt).toLocaleString()}</span>
-                    </button>
-                  ))}
-              </aside>
-
-              <section className="published-preview">
-                {readonlyLoading && <div className="empty-hint">正在加载图纸预览...</div>}
-                {!readonlyLoading && readonlySnapshot && (
-                  <>
-                    <div className="published-preview-meta">
-                      <span>版本: v{readonlyVersionNo}</span>
-                      <span>实例: {readonlySnapshot.instances.length}</span>
-                      <span>连线: {readonlySnapshot.connections.length}</span>
-                    </div>
-                    <ReadonlyDiagramPreview snapshot={readonlySnapshot} />
-                  </>
-                )}
-                {!readonlyLoading && !readonlySnapshot && <div className="empty-hint">请选择左侧图纸查看</div>}
-              </section>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showReviewDialog && (
-        <div className="dialog-overlay" onClick={() => setShowReviewDialog(false)}>
-          <div className="dialog review-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="review-header">
-              <h3>审核队列</h3>
-              <button className="btn btn-secondary btn-sm" onClick={() => setShowReviewDialog(false)}>
-                关闭
-              </button>
-            </div>
-
-            <div className="review-filters">
-              <select
-                value={reviewStatusFilter}
-                onChange={(e) => {
-                  setReviewStatusFilter(e.target.value as ReviewFilterStatus);
-                  setReviewPage(1);
-                }}
-              >
-                <option value="PENDING">待审核</option>
-                <option value="APPROVED">已通过</option>
-                <option value="REJECTED">已驳回</option>
-                <option value="ALL">全部</option>
-              </select>
-              <button className="btn btn-sm" disabled={reviewLoading} onClick={() => void loadReviewList()}>
-                刷新
-              </button>
-            </div>
-
-            {reviewError && <div className="review-error">{reviewError}</div>}
-            {reviewLoading && <div className="empty-hint">正在加载...</div>}
-            {!reviewLoading && reviewItems.length === 0 && <div className="empty-hint">暂无审核记录</div>}
-
-            {!reviewLoading && reviewItems.length > 0 && (
-              <div className="review-list">
-                {reviewItems.map((item) => {
-                  const processing = reviewActionLoadingId === item.id;
-                  const comment = reviewCommentDrafts[item.id] ?? '';
-                  return (
-                    <div key={item.id} className="review-item">
-                      <div className="review-item-top">
-                        <strong>{item.diagram.name}</strong>
-                        <span className={`review-status ${item.status.toLowerCase()}`}>{item.status}</span>
-                      </div>
-                      <div className="review-meta">
-                        <span>图纸版本: v{item.diagramVersion.versionNo}</span>
-                        <span>提交时间: {new Date(item.submittedAt).toLocaleString()}</span>
-                      </div>
-                      {item.status === 'PENDING' ? (
-                        <div className="review-actions">
-                          <input
-                            value={comment}
-                            onChange={(e) =>
-                              setReviewCommentDrafts((prev) => ({
-                                ...prev,
-                                [item.id]: e.target.value,
-                              }))
-                            }
-                            placeholder="审核意见（可选）"
-                          />
-                          <button
-                            className="btn btn-sm btn-primary"
-                            disabled={processing}
-                            onClick={() => void handleReviewAction(item.id, 'approve')}
-                          >
-                            通过
-                          </button>
-                          <button
-                            className="btn btn-sm btn-danger"
-                            disabled={processing}
-                            onClick={() => void handleReviewAction(item.id, 'reject')}
-                          >
-                            驳回
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="review-result">
-                          <span>审核人: {item.reviewerId ?? '-'}</span>
-                          <span>审核时间: {item.reviewedAt ? new Date(item.reviewedAt).toLocaleString() : '-'}</span>
-                          <span>意见: {item.comment || '无'}</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <div className="review-pagination">
-              <span>
-                第 {reviewPage}/{reviewTotalPages} 页，共 {reviewTotal} 条
-              </span>
-              <div className="review-page-actions">
-                <button
-                  className="btn btn-sm btn-secondary"
-                  disabled={reviewLoading || reviewPage <= 1}
-                  onClick={() => setReviewPage((p) => Math.max(1, p - 1))}
-                >
-                  上一页
-                </button>
-                <button
-                  className="btn btn-sm btn-secondary"
-                  disabled={reviewLoading || reviewPage >= reviewTotalPages}
-                  onClick={() => setReviewPage((p) => Math.min(reviewTotalPages, p + 1))}
-                >
-                  下一页
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+            </>
+          )}
+        </aside>
 
       {showNewDialog && (
         <div className="dialog-overlay" onClick={() => setShowNewDialog(false)}>
