@@ -3,7 +3,12 @@ import {
   createDiagramByApi,
   fetchDiagrams,
   submitDiagramReview,
+  updateDiagram,
+  duplicateDiagram,
+  requestDeleteDiagram,
+  deleteDiagram,
   type DiagramListItem,
+  type DiagramStatus,
 } from '../services/diagramApi';
 import { useDiagramStore } from '../stores/useDiagramStore';
 import DiagramCanvas from '../components/diagram/DiagramCanvas';
@@ -382,6 +387,76 @@ function LineDataPanel({
 
 // ---------- Sub-components ----------
 
+function TransformControls({ instanceId, instanceData }: { instanceId: string; instanceData: Record<string, unknown> }) {
+  const updateTransform = useDiagramStore((s) => s.updateInstanceTransform);
+  const data = instanceData as { rotation?: number; flipH?: boolean; flipV?: boolean };
+  const rotation = data.rotation ?? 0;
+  const flipH = !!data.flipH;
+  const flipV = !!data.flipV;
+
+  const [angleText, setAngleText] = useState(String(rotation));
+  const [angleDirty, setAngleDirty] = useState(false);
+
+  useEffect(() => {
+    setAngleText(String(rotation));
+    setAngleDirty(false);
+  }, [rotation]);
+
+  const rotate = (deg: number) => {
+    updateTransform(instanceId, { rotation: (rotation + deg + 360) % 360 });
+  };
+
+  const toggleFlipH = () => {
+    updateTransform(instanceId, { flipH: !flipH });
+  };
+
+  const toggleFlipV = () => {
+    updateTransform(instanceId, { flipV: !flipV });
+  };
+
+  const applyAngle = () => {
+    if (!angleDirty) return;
+    const n = Number(angleText);
+    if (!Number.isNaN(n)) {
+      updateTransform(instanceId, { rotation: ((n % 360) + 360) % 360 });
+    } else {
+      setAngleText(String(rotation));
+      setAngleDirty(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="de-field-group">
+        <div className="de-transform-row">
+          <button className="btn btn-sm" onClick={() => rotate(-90)} title="左转90°">↺ 90°</button>
+          <button className="btn btn-sm" onClick={() => rotate(90)} title="右转90°">↻ 90°</button>
+        </div>
+        <div className="de-transform-row">
+          <button className={`btn btn-sm${flipH ? ' active' : ''}`} onClick={toggleFlipH} title="水平翻转">水平翻转</button>
+          <button className={`btn btn-sm${flipV ? ' active' : ''}`} onClick={toggleFlipV} title="垂直翻转">垂直翻转</button>
+        </div>
+      </div>
+      <div className="de-field-group">
+        <label>
+          <span className="field-label">角度</span>
+          <div className="de-field-row">
+            <input
+              type="number"
+              value={angleText}
+              onChange={(e) => { setAngleText(e.target.value); setAngleDirty(true); }}
+              onBlur={applyAngle}
+              onKeyDown={(e) => { if (e.key === 'Enter') applyAngle(); }}
+              style={{ width: 80 }}
+            />
+            <span style={{ marginLeft: 4, color: 'var(--color-text-dim)', fontSize: 12 }}>°</span>
+          </div>
+        </label>
+      </div>
+    </>
+  );
+}
+
 function InstancePropertyPanel({
   instance,
   edges,
@@ -463,6 +538,11 @@ function InstancePropertyPanel({
             </span>
           </div>
         </div>
+      </div>
+
+      <div className="de-panel-section">
+        <div className="de-panel-section-title">变换</div>
+        <TransformControls instanceId={instance.id} instanceData={instance.instanceData} />
       </div>
 
       <div className="de-panel-section">
@@ -568,9 +648,286 @@ function EdgePropertyPanel({
   );
 }
 
+// ---------- Status Label ----------
+
+const STATUS_LABELS: Record<DiagramStatus, string> = {
+  DRAFT: '草稿',
+  PENDING_REVIEW: '审核中',
+  PUBLISHED: '已发布',
+  REJECTED: '已驳回',
+  PENDING_DELETE: '待删除',
+};
+
+const STATUS_COLORS: Record<DiagramStatus, string> = {
+  DRAFT: '#6b7280',
+  PENDING_REVIEW: '#f59e0b',
+  PUBLISHED: '#22c55e',
+  REJECTED: '#ef4444',
+  PENDING_DELETE: '#ef4444',
+};
+
+// ---------- Diagram Card ----------
+
+function DiagramCard({
+  item,
+  onOpen,
+  onSubmitReview,
+  onWithdrawReview,
+  onRename,
+  onDuplicate,
+  onDelete,
+}: {
+  item: DiagramListItem;
+  onOpen: (id: string) => void;
+  onSubmitReview: (id: string) => void;
+  onWithdrawReview: (id: string) => void;
+  onRename: (id: string, name: string) => void;
+  onDuplicate: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(item.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setEditName(item.name);
+  }, [item.name]);
+
+  const startEdit = () => {
+    setEditing(true);
+    setEditName(item.name);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  const confirmEdit = () => {
+    const trimmed = editName.trim();
+    if (trimmed && trimmed !== item.name) {
+      onRename(item.id, trimmed);
+    }
+    setEditing(false);
+  };
+
+  const canEdit = item.status === 'DRAFT' || item.status === 'REJECTED';
+  const canSubmitReview = item.status === 'DRAFT' || item.status === 'REJECTED';
+  const canWithdrawReview = item.status === 'PENDING_REVIEW';
+  const canDelete = item.status !== 'PENDING_DELETE' && item.status !== 'PENDING_REVIEW';
+  const canDuplicate = true;
+
+  return (
+    <div className="dg-card">
+      <div className="dg-card-header">
+        <span
+          className="dg-card-status"
+          style={{ background: STATUS_COLORS[item.status] || '#6b7280' }}
+        >
+          {STATUS_LABELS[item.status] || item.status}
+        </span>
+        <div className="dg-card-actions">
+          {canEdit && (
+            <button
+              className="dg-card-icon-btn"
+              title="进入编辑"
+              onClick={() => onOpen(item.id)}
+            >
+              ✎
+            </button>
+          )}
+          {canDuplicate && (
+            <button
+              className="dg-card-icon-btn"
+              title="复制图纸"
+              onClick={() => onDuplicate(item.id)}
+            >
+              ⧉
+            </button>
+          )}
+          {canDelete && (
+            <button
+              className="dg-card-icon-btn dg-card-icon-danger"
+              title="删除图纸"
+              onClick={() => onDelete(item.id)}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="dg-card-body" onClick={canEdit ? () => onOpen(item.id) : undefined}>
+        {editing ? (
+          <input
+            ref={inputRef}
+            className="dg-card-name-input"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onBlur={confirmEdit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') confirmEdit();
+              if (e.key === 'Escape') setEditing(false);
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span
+            className="dg-card-name"
+            onClick={canEdit ? (e) => { e.stopPropagation(); startEdit(); } : undefined}
+            title={canEdit ? '点击编辑名称' : item.name}
+          >
+            {item.name}
+          </span>
+        )}
+        {item.description && (
+          <span className="dg-card-desc">{item.description}</span>
+        )}
+      </div>
+
+      <div className="dg-card-footer">
+        <span className="dg-card-time">
+          {new Date(item.updatedAt).toLocaleDateString()}
+        </span>
+        {canWithdrawReview && (
+          <button
+            className="dg-card-review-btn"
+            onClick={() => onWithdrawReview(item.id)}
+          >
+            撤回审核
+          </button>
+        )}
+        {canSubmitReview && (
+          <button
+            className="dg-card-review-btn"
+            onClick={() => onSubmitReview(item.id)}
+          >
+            提交审核
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Diagram List ----------
+
+function DiagramList({
+  items,
+  loading,
+  error,
+  newDiagramName,
+  setNewDiagramName,
+  onCreate,
+  onOpen,
+  onSubmitReview,
+  onWithdrawReview,
+  onReload,
+  setError,
+}: {
+  items: DiagramListItem[];
+  loading: boolean;
+  error: string;
+  newDiagramName: string;
+  setNewDiagramName: (v: string) => void;
+  onCreate: () => void;
+  onOpen: (id: string) => void;
+  onSubmitReview: (id: string) => void;
+  onWithdrawReview: (id: string) => void;
+  onReload: () => void;
+  setError: (v: string) => void;
+}) {
+  const handleRename = async (id: string, name: string) => {
+    try {
+      await updateDiagram(id, { name });
+      await onReload();
+    } catch (e) {
+      setError(parseApiError(e));
+    }
+  };
+
+  const handleDuplicate = async (id: string) => {
+    try {
+      await duplicateDiagram(id);
+      await onReload();
+    } catch (e) {
+      setError(parseApiError(e));
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    const item = items.find((d) => d.id === id);
+    if (!item) return;
+
+    const isPublished = item.status === 'PUBLISHED';
+    const msg = isPublished
+      ? `确定要删除图纸"${item.name}"吗？已发布图纸删除需要审核通过后才会生效。`
+      : `确定要删除图纸"${item.name}"吗？删除后不可恢复。`;
+    const confirmed = window.confirm(msg);
+    if (!confirmed) return;
+
+    try {
+      if (isPublished) {
+        await requestDeleteDiagram(id);
+      } else {
+        await deleteDiagram(id);
+      }
+      await onReload();
+    } catch (e) {
+      setError(parseApiError(e));
+    }
+  };
+
+  return (
+    <div className="workspace-page">
+      <div className="page-head">
+        <h3>图纸管理</h3>
+      </div>
+
+      <div className="dg-create-bar">
+        <input
+          value={newDiagramName}
+          onChange={(e) => setNewDiagramName(e.target.value)}
+          placeholder="新建图纸名称"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void onCreate();
+          }}
+        />
+        <button className="btn btn-primary" onClick={() => void onCreate()}>
+          新建图纸
+        </button>
+      </div>
+
+      {error ? <div className="form-error">{error}</div> : null}
+
+      {loading && <div className="empty-hint">加载中...</div>}
+
+      {!loading && items.length === 0 && (
+        <div className="empty-hint">暂无图纸</div>
+      )}
+
+      {!loading && items.length > 0 && (
+        <div className="dg-card-grid">
+          {items.map((item) => (
+            <DiagramCard
+              key={item.id}
+              item={item}
+              onOpen={onOpen}
+              onSubmitReview={onSubmitReview}
+              onWithdrawReview={onWithdrawReview}
+              onRename={handleRename}
+              onDuplicate={handleDuplicate}
+              onDelete={handleDelete}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- Main Page ----------
 
 export default function DiagramEditorPage() {
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+
   const {
     diagramId,
     diagramInfo,
@@ -598,6 +955,8 @@ export default function DiagramEditorPage() {
     clearDiagram,
     undo,
     updateInstanceLabel,
+    saveDraft,
+    withdrawReview,
   } = useDiagramStore();
 
   const [items, setItems] = useState<DiagramListItem[]>([]);
@@ -605,15 +964,13 @@ export default function DiagramEditorPage() {
   const [listError, setListError] = useState('');
   const [newDiagramName, setNewDiagramName] = useState('');
 
-  // Naming dialog state
-  const [showNamingDialog, setShowNamingDialog] = useState(false);
-  const [newInstanceName, setNewInstanceName] = useState('');
-  const [pendingComponentId, setPendingComponentId] = useState<string | null>(null);
-  const [pendingDropX, setPendingDropX] = useState(0);
-  const [pendingDropY, setPendingDropY] = useState(0);
+  // Naming highlight state (flashing red border on unnamed instances)
+  const unnamedHighlightIds = useDiagramStore((s) => s.unnamedHighlightIds);
+  const setUnnamedHighlightIds = useCallback((ids: string[]) => {
+    useDiagramStore.setState({ unnamedHighlightIds: ids });
+  }, []);
 
   const canvasRef = useRef<DiagramCanvasHandle>(null);
-  const namingInputRef = useRef<HTMLInputElement>(null);
 
   const loadList = useCallback(async () => {
     setListLoading(true);
@@ -644,19 +1001,33 @@ export default function DiagramEditorPage() {
     }
   };
 
-  const handleSubmitReview = async (id: string) => {
-    const confirmed = window.confirm('确定要提交审核吗？提交后将无法继续编辑。');
-    if (!confirmed) return;
-
+  const handleSaveDraft = async () => {
+    if (!diagramId) return;
     try {
-      await submitDiagramReview(id);
-      // If this is the currently open diagram, go back to list
-      if (diagramId === id) {
-        clearDiagram();
+      await saveDraft();
+      alert('草稿已保存');
+    } catch {
+      // store already sets error
+    }
+  };
+
+  const handleWithdrawReview = async (id?: string) => {
+    const targetId = id ?? diagramId;
+    if (!targetId) return;
+    const confirmed = window.confirm('确定要撤回审核吗？图纸将回到草稿状态，可继续编辑。');
+    if (!confirmed) return;
+    try {
+      if (id) {
+        // From card list
+        const { withdrawDiagramReview } = await import('../services/diagramApi');
+        await withdrawDiagramReview(id);
+      } else {
+        // From editor
+        await withdrawReview();
       }
       await loadList();
-    } catch (e) {
-      setListError(parseApiError(e));
+    } catch {
+      // store already sets error
     }
   };
 
@@ -685,7 +1056,7 @@ export default function DiagramEditorPage() {
   }, []);
 
   const handleCanvasDrop = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
+    async (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       const componentId = e.dataTransfer.getData('text/plain');
       if (!componentId) return;
@@ -695,37 +1066,45 @@ export default function DiagramEditorPage() {
       if (!worldPos) return;
 
       // Center the instance on the drop point
-      const nodeWidth = 140;
-      const nodeHeight = 56;
+      const compMeta = componentMap[componentId];
+      const nodeWidth = compMeta?.displayWidth ?? 140;
+      const nodeHeight = compMeta?.displayHeight ?? 56;
       const dropX = worldPos.x - nodeWidth / 2;
       const dropY = worldPos.y - nodeHeight / 2;
 
-      // Open naming dialog
-      setPendingComponentId(componentId);
-      setPendingDropX(dropX);
-      setPendingDropY(dropY);
-      setNewInstanceName('');
-      setShowNamingDialog(true);
-
-      // Focus input after dialog opens
-      setTimeout(() => namingInputRef.current?.focus(), 50);
+      await addInstance(componentId, dropX, dropY);
     },
-    [],
+    [addInstance, componentMap],
   );
 
-  const handleConfirmPlacement = useCallback(async () => {
-    if (!pendingComponentId || !newInstanceName.trim()) return;
-    setShowNamingDialog(false);
-    await addInstance(pendingComponentId, newInstanceName.trim(), pendingDropX, pendingDropY);
-    setPendingComponentId(null);
-    setNewInstanceName('');
-  }, [pendingComponentId, newInstanceName, pendingDropX, pendingDropY, addInstance]);
+  const handleSubmitReview = async (id: string) => {
+    // Check for unnamed instances before submitting
+    const unnamed = instances.filter((inst) => {
+      const comp = componentMap[inst.componentId];
+      const defaultLabel = comp?.name || '未知';
+      return !inst.label || inst.label === defaultLabel;
+    });
 
-  const handleCancelNaming = useCallback(() => {
-    setShowNamingDialog(false);
-    setPendingComponentId(null);
-    setNewInstanceName('');
-  }, []);
+    if (unnamed.length > 0) {
+      setUnnamedHighlightIds(unnamed.map((inst) => inst.id));
+      setListError(`还有 ${unnamed.length} 个元件未命名，请为红色闪烁的元件命名后再提交审核。`);
+      return;
+    }
+
+    setUnnamedHighlightIds([]);
+    const confirmed = window.confirm('确定要提交审核吗？提交后将无法继续编辑。');
+    if (!confirmed) return;
+
+    try {
+      await submitDiagramReview(id);
+      if (diagramId === id) {
+        clearDiagram();
+      }
+      await loadList();
+    } catch (e) {
+      setListError(parseApiError(e));
+    }
+  };
 
   // ---------- Keyboard shortcuts ----------
 
@@ -768,45 +1147,22 @@ export default function DiagramEditorPage() {
     ? edges.find((e) => e.id === selectedEdgeId) ?? null
     : null;
 
-  // Filter diagrams: show user's DRAFT and REJECTED ones for editing
-  const editableDiagrams = items.filter(
-    (d) => d.status === 'DRAFT' || d.status === 'REJECTED',
-  );
-
   // ---- Render: Diagram Editor (canvas open) ----
   if (diagramId) {
+    const layoutClass = `de-editor-layout${leftCollapsed ? ' left-collapsed' : ''}${rightCollapsed ? ' right-collapsed' : ''}`;
     return (
-      <div className="de-editor-layout">
-        {/* Top bar */}
-        <div className="de-topbar">
-          <div className="de-topbar-left">
-            <button className="btn btn-sm" onClick={handleBackToList}>
-              ← 返回
-            </button>
-            <span className="de-topbar-title">
-              {diagramInfo?.name || '未命名图纸'}
-            </span>
-            <span className={`review-status ${String(diagramInfo?.status).toLowerCase()}`}>
-              {diagramInfo?.status || ''}
-            </span>
-          </div>
-          <div className="de-topbar-right">
-            <span className="de-zoom-label">缩放: {Math.round(zoom * 100)}%</span>
-            <button className="btn btn-sm" onClick={undo}>撤销</button>
-            {diagramInfo?.status === 'DRAFT' || diagramInfo?.status === 'REJECTED' ? (
-              <button
-                className="btn btn-sm btn-primary"
-                onClick={() => void handleSubmitReview(diagramId)}
-              >
-                提交审核
-              </button>
-            ) : null}
-          </div>
-        </div>
-
+      <div className={layoutClass}>
         {/* Left panel: Component Library */}
-        <div className="de-left-panel">
-          <ComponentLibraryPanel />
+        <div className={`de-left-panel${leftCollapsed ? ' collapsed' : ''}`}>
+          {leftCollapsed ? (
+            <button className="de-panel-expand-btn" onClick={() => setLeftCollapsed(false)} title="展开元件库">▶</button>
+          ) : (
+            <ComponentLibraryPanel
+              headerExtra={
+                <button className="de-panel-header-btn" onClick={() => setLeftCollapsed(true)} title="收起元件库">◀</button>
+              }
+            />
+          )}
         </div>
 
         {/* Center: Canvas (drop target) */}
@@ -815,6 +1171,45 @@ export default function DiagramEditorPage() {
           onDragOver={handleCanvasDragOver}
           onDrop={handleCanvasDrop}
         >
+          {/* Floating toolbar overlay */}
+          <div className="de-floating-toolbar">
+            <button className="btn btn-sm" onClick={handleBackToList}>
+              ← 返回
+            </button>
+            <span className="de-toolbar-title">
+              {diagramInfo?.name || '未命名图纸'}
+            </span>
+            <span className={`review-status ${String(diagramInfo?.status).toLowerCase()}`}>
+              {diagramInfo?.status || ''}
+            </span>
+            <span className="de-zoom-label">{Math.round(zoom * 100)}%</span>
+            <button className="btn btn-sm" onClick={undo}>撤销</button>
+            {(diagramInfo?.status === 'DRAFT' || diagramInfo?.status === 'REJECTED') && (
+              <button
+                className="btn btn-sm"
+                onClick={() => void handleSaveDraft()}
+              >
+                保存草稿
+              </button>
+            )}
+            {diagramInfo?.status === 'PENDING_REVIEW' && (
+              <button
+                className="btn btn-sm"
+                onClick={() => void handleWithdrawReview()}
+              >
+                撤回审核
+              </button>
+            )}
+            {(diagramInfo?.status === 'DRAFT' || diagramInfo?.status === 'REJECTED') && (
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={() => void handleSubmitReview(diagramId)}
+              >
+                提交审核
+              </button>
+            )}
+          </div>
+
           {loading ? (
             <div className="de-empty-center">加载中...</div>
           ) : (
@@ -830,148 +1225,71 @@ export default function DiagramEditorPage() {
               panY={panY}
               onSelectInstance={selectInstance}
               onSelectEdge={selectEdge}
+              onRemoveEdge={(id) => void removeEdge(id)}
               onMoveInstance={moveInstance}
               onPersistInstanceMove={persistInstanceMove}
               onSetZoom={setZoom}
               onSetPan={setPan}
               onConnectPins={handleConnectPins}
+              unnamedHighlightIds={unnamedHighlightIds}
             />
           )}
         </div>
 
         {/* Right panel: Instance/Edge properties */}
-        <div className="de-right-panel">
-          <div className="de-panel-top">
-            <span className="de-panel-title">
-              {selectedInstance ? '实例属性' : selectedEdge ? '连线属性' : '属性面板'}
-            </span>
-          </div>
-          {selectedInstance ? (
-            <InstancePropertyPanel
-              instance={selectedInstance}
-              edges={edges}
-              componentMap={componentMap}
-              allInstances={instances}
-              onUpdateLabel={updateInstanceLabel}
-              onRemoveInstance={(id) => void removeInstance(id)}
-              onRemoveEdge={(id) => void removeEdge(id)}
-            />
-          ) : selectedEdge ? (
-            <EdgePropertyPanel
-              edge={selectedEdge}
-              instances={instances}
-              onRemoveEdge={(id) => void removeEdge(id)}
-            />
+        <div className={`de-right-panel${rightCollapsed ? ' collapsed' : ''}`}>
+          {rightCollapsed ? (
+            <button className="de-panel-expand-btn" onClick={() => setRightCollapsed(false)} title="展开属性面板">◀</button>
           ) : (
-            <div className="de-empty-hint">
-              {instances.length === 0 ? '暂无实例' : '点击节点查看属性'}
-            </div>
+            <>
+              <div className="de-panel-top">
+                <span className="de-panel-title">
+                  {selectedInstance ? '实例属性' : selectedEdge ? '连线属性' : '属性面板'}
+                </span>
+                <button className="de-panel-header-btn" onClick={() => setRightCollapsed(true)} title="收起属性面板">▶</button>
+              </div>
+              {selectedInstance ? (
+                <InstancePropertyPanel
+                  instance={selectedInstance}
+                  edges={edges}
+                  componentMap={componentMap}
+                  allInstances={instances}
+                  onUpdateLabel={updateInstanceLabel}
+                  onRemoveInstance={(id) => void removeInstance(id)}
+                  onRemoveEdge={(id) => void removeEdge(id)}
+                />
+              ) : selectedEdge ? (
+                <EdgePropertyPanel
+                  edge={selectedEdge}
+                  instances={instances}
+                  onRemoveEdge={(id) => void removeEdge(id)}
+                />
+              ) : (
+                <div className="de-empty-hint">
+                  {instances.length === 0 ? '暂无实例' : '点击节点查看属性'}
+                </div>
+              )}
+            </>
           )}
         </div>
-
-        {/* Naming dialog */}
-        {showNamingDialog && (
-          <div className="dialog-overlay" onClick={handleCancelNaming}>
-            <div className="dialog" onClick={(e) => e.stopPropagation()}>
-              <h3>命名实例</h3>
-              <label>
-                实例名称（必填）
-                <input
-                  ref={namingInputRef}
-                  value={newInstanceName}
-                  onChange={(e) => setNewInstanceName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newInstanceName.trim()) {
-                      void handleConfirmPlacement();
-                    }
-                    if (e.key === 'Escape') {
-                      handleCancelNaming();
-                    }
-                  }}
-                  placeholder="例如：1号变压器"
-                  autoFocus
-                />
-              </label>
-              <div className="dialog-actions">
-                <button className="btn btn-secondary" onClick={handleCancelNaming}>取消</button>
-                <button
-                  className="btn btn-primary"
-                  disabled={!newInstanceName.trim()}
-                  onClick={() => void handleConfirmPlacement()}
-                >
-                  放置
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Error overlay */}
-        {error && <div className="de-error-toast">{error}</div>}
       </div>
     );
   }
 
   // ---- Render: Diagram list (no canvas open) ----
   return (
-    <div className="workspace-page">
-      <div className="page-head">
-        <h3>图纸编辑</h3>
-      </div>
-
-      <div className="card">
-        <div className="form-row">
-          <input
-            value={newDiagramName}
-            onChange={(e) => setNewDiagramName(e.target.value)}
-            placeholder="新建图纸名称"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void handleCreate();
-            }}
-          />
-          <button className="btn btn-primary" onClick={() => void handleCreate()}>
-            新建图纸
-          </button>
-        </div>
-      </div>
-
-      {listError ? <div className="form-error">{listError}</div> : null}
-
-      <div className="review-list">
-        {listLoading && <div className="empty-hint">加载中...</div>}
-        {!listLoading && editableDiagrams.length === 0 && (
-          <div className="empty-hint">暂无可编辑图纸</div>
-        )}
-        {editableDiagrams.map((item) => (
-          <div key={item.id} className="review-item">
-            <div className="review-item-top">
-              <strong>{item.name}</strong>
-              <span className={`review-status ${String(item.status).toLowerCase()}`}>
-                {item.status}
-              </span>
-            </div>
-            <div className="review-meta">
-              <span>更新时间: {new Date(item.updatedAt).toLocaleString()}</span>
-            </div>
-            <div className="review-actions">
-              <span />
-              <button
-                className="btn btn-sm"
-                onClick={() => void handleOpenDiagram(item.id)}
-              >
-                编辑
-              </button>
-              <button
-                className="btn btn-sm btn-primary"
-                onClick={() => void handleSubmitReview(item.id)}
-              >
-                提交审核
-              </button>
-              <span />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+    <DiagramList
+      items={items}
+      loading={listLoading}
+      error={listError}
+      newDiagramName={newDiagramName}
+      setNewDiagramName={setNewDiagramName}
+      onCreate={handleCreate}
+      onOpen={handleOpenDiagram}
+      onSubmitReview={handleSubmitReview}
+      onWithdrawReview={handleWithdrawReview}
+      onReload={loadList}
+      setError={setListError}
+    />
   );
 }
