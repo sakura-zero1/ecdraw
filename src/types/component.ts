@@ -78,6 +78,7 @@ export interface Pin {
   position: Position;
   pinType: PinType;
   visible: boolean;
+  groupId?: string;
 }
 
 export type PinType = 'input' | 'output' | 'bidirectional' | 'power' | 'ground';

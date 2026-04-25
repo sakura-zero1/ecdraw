@@ -4,6 +4,8 @@ import { immer } from 'zustand/middleware/immer';
 import { v4 as uuid } from 'uuid';
 import type { ElectricalComponent, Pin, PinType, ComponentCategory, ShapeElement } from '../types';
 import { useConnectionStore } from './useConnectionStore';
+import { getGroupBounds, scaleShapeInGroup } from '../utils/alignment';
+import type { Bounds } from '../utils/alignment';
 
 interface ComponentStore {
   components: ElectricalComponent[];
@@ -36,6 +38,7 @@ interface ComponentStore {
   loadComponents: (components: ElectricalComponent[]) => void;
 
   importSubComponent: (targetComponentId: string, sourceComponent: ElectricalComponent, offsetX: number, offsetY: number) => string[];
+  importSubComponentScaled: (targetId: string, sourceComp: ElectricalComponent, centerX: number, centerY: number) => string[];
 }
 
 const MAX_UNDO = 50;
@@ -315,6 +318,79 @@ export const useComponentStore = create<ComponentStore>()(
         comp.pins.push(...newPins);
         comp.updatedAt = new Date().toISOString();
       });
+
+      return newShapeIds;
+    },
+
+    importSubComponentScaled: (targetId, sourceComp, centerX, centerY) => {
+      get().pushUndo();
+      const contentBounds = getGroupBounds(sourceComp.shapeElements);
+      if (!contentBounds || (contentBounds.width === 0 && contentBounds.height === 0)) return [];
+
+      const dw = sourceComp.displayWidth ?? 140;
+      const dh = sourceComp.displayHeight ?? 90;
+      const cw = contentBounds.width || 1;
+      const ch = contentBounds.height || 1;
+      const s = Math.min(dw / cw, dh / ch);
+
+      const targetBounds: Bounds = {
+        left: centerX - (cw * s) / 2,
+        top: centerY - (ch * s) / 2,
+        right: centerX + (cw * s) / 2,
+        bottom: centerY + (ch * s) / 2,
+        width: cw * s,
+        height: ch * s,
+        cx: centerX,
+        cy: centerY,
+      };
+
+      const groupId = uuid();
+      const newShapeIds: string[] = [];
+      const newShapes = sourceComp.shapeElements.map((shape) => {
+        const newId = uuid();
+        newShapeIds.push(newId);
+        const updates = scaleShapeInGroup(shape, contentBounds, targetBounds);
+        return { ...shape, ...updates, id: newId, groupId, linkedConnectionId: undefined, stateClosed: undefined, stateOpen: undefined } as ShapeElement;
+      });
+
+      const newPins = sourceComp.pins.map((p) => {
+        const relX = p.position.x - contentBounds.left;
+        const relY = p.position.y - contentBounds.top;
+        return {
+          ...p,
+          id: uuid(),
+          groupId,
+          position: {
+            x: Math.round(targetBounds.left + relX * s),
+            y: Math.round(targetBounds.top + relY * s),
+          },
+        };
+      });
+
+      const pinIdMap: Record<string, string> = {};
+      sourceComp.pins.forEach((oldPin, i) => { pinIdMap[oldPin.id] = newPins[i].id; });
+
+      set((state) => {
+        const comp = state.components.find((c) => c.id === targetId);
+        if (!comp) return;
+        comp.shapeElements.push(...newShapes);
+        comp.pins.push(...newPins);
+        comp.updatedAt = new Date().toISOString();
+      });
+
+      // Copy connectivity matrix: map connections to new pin IDs
+      const sourceMatrix = useConnectionStore.getState().matrices[sourceComp.id];
+      if (sourceMatrix && sourceMatrix.connections.length > 0) {
+        const connStore = useConnectionStore.getState();
+        for (const conn of sourceMatrix.connections) {
+          const pinAId = pinIdMap[conn.pinAId];
+          const pinBId = pinIdMap[conn.pinBId];
+          if (!pinAId || !pinBId) continue;
+          const connId = connStore.addConnection(targetId, pinAId, pinBId);
+          if (conn.state !== 'closed') connStore.setConnectionState(targetId, connId, conn.state);
+          if (!conn.visible) connStore.toggleConnectionVisible(targetId, connId);
+        }
+      }
 
       return newShapeIds;
     },
