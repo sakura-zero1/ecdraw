@@ -237,6 +237,9 @@ router.delete('/:id', authGuard, requireRole('ADMIN', 'COMPONENT_EDITOR'), async
     return;
   }
 
+  // Delete all DiagramInstances referencing this component (cascades to edges, district/gis/line data)
+  await prisma.diagramInstance.deleteMany({ where: { componentId: id } });
+
   await prisma.component.delete({ where: { id } });
 
   await writeAudit(req.user!.id, 'COMPONENT_DELETE', 'Component', id, {

@@ -67,7 +67,11 @@ export const useConnectionStore = create<ConnectionStore>()(
       toggleConnectionState: (componentId, connectionId) => {
         set((state) => {
           const conn = state.matrices[componentId]?.connections.find((c) => c.id === connectionId);
-          if (conn) conn.state = conn.state === 'closed' ? 'open' : 'closed';
+          if (conn) {
+            if (conn.state === 'closed') conn.state = 'open';
+            else if (conn.state === 'open') conn.state = 'none';
+            else conn.state = 'closed';
+          }
         });
       },
 
@@ -92,10 +96,12 @@ export const useConnectionStore = create<ConnectionStore>()(
 
           if (!existing) {
             matrix.connections.push(newConnection(componentId, pinAId, pinBId));
+          } else if (existing.state === 'none') {
+            existing.state = 'closed';
           } else if (existing.state === 'closed') {
             existing.state = 'open';
           } else {
-            matrix.connections = matrix.connections.filter((c) => c.id !== existing.id);
+            existing.state = 'none';
           }
         });
       },

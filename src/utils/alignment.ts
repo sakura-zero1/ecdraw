@@ -35,7 +35,7 @@ export function getShapeBounds(el: ShapeElement): Bounds {
   }
 }
 
-function moveShapeBy(el: ShapeElement, dx: number, dy: number): Partial<ShapeElement> {
+export function moveShapeBy(el: ShapeElement, dx: number, dy: number): Partial<ShapeElement> {
   const updates: Record<string, number> = {};
   const pos = getShapePositionKeys(el);
   for (const [k, v] of Object.entries(pos)) {
@@ -55,6 +55,196 @@ function getShapePositionKeys(el: ShapeElement): Record<string, number> {
 }
 
 export type AlignMode = 'left' | 'center-h' | 'right' | 'top' | 'center-v' | 'bottom' | 'dist-h' | 'dist-v';
+
+export function getGroupBounds(shapes: ShapeElement[]): Bounds | null {
+  if (shapes.length === 0) return null;
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  for (const el of shapes) {
+    const b = getShapeBounds(el);
+    if (b.width === 0 && b.height === 0) continue;
+    left = Math.min(left, b.left);
+    top = Math.min(top, b.top);
+    right = Math.max(right, b.right);
+    bottom = Math.max(bottom, b.bottom);
+  }
+  if (!isFinite(left)) return null;
+  return { left, top, right, bottom, width: right - left, height: bottom - top, cx: (left + right) / 2, cy: (top + bottom) / 2 };
+}
+
+export function getGroupResizeHandles(b: Bounds): Array<{ key: string; x: number; y: number }> {
+  return [
+    { key: 'nw', x: b.left, y: b.top },
+    { key: 'n', x: b.cx, y: b.top },
+    { key: 'ne', x: b.right, y: b.top },
+    { key: 'e', x: b.right, y: b.cy },
+    { key: 'se', x: b.right, y: b.bottom },
+    { key: 's', x: b.cx, y: b.bottom },
+    { key: 'sw', x: b.left, y: b.bottom },
+    { key: 'w', x: b.left, y: b.cy },
+  ];
+}
+
+export function scaleShapeInGroup(
+  shape: ShapeElement,
+  origBounds: Bounds,
+  newBounds: Bounds,
+): Partial<ShapeElement> {
+  const origW = origBounds.width || 1;
+  const origH = origBounds.height || 1;
+  const scaleX = newBounds.width / origW;
+  const scaleY = newBounds.height / origH;
+
+  switch (shape.type) {
+    case 'rect': {
+      const relX = (shape.x ?? 0) - origBounds.left;
+      const relY = (shape.y ?? 0) - origBounds.top;
+      return {
+        x: Math.round(newBounds.left + relX * scaleX),
+        y: Math.round(newBounds.top + relY * scaleY),
+        width: Math.round(Math.max(2, (shape.width ?? 0) * scaleX)),
+        height: Math.round(Math.max(2, (shape.height ?? 0) * scaleY)),
+      };
+    }
+    case 'circle': {
+      const relX = (shape.cx ?? 0) - origBounds.left;
+      const relY = (shape.cy ?? 0) - origBounds.top;
+      return {
+        cx: Math.round(newBounds.left + relX * scaleX),
+        cy: Math.round(newBounds.top + relY * scaleY),
+        r: Math.round(Math.max(2, (shape.r ?? 0) * (scaleX + scaleY) / 2)),
+      };
+    }
+    case 'ellipse': {
+      const relX = (shape.cx ?? 0) - origBounds.left;
+      const relY = (shape.cy ?? 0) - origBounds.top;
+      return {
+        cx: Math.round(newBounds.left + relX * scaleX),
+        cy: Math.round(newBounds.top + relY * scaleY),
+        rx: Math.round(Math.max(2, (shape.rx ?? 0) * scaleX)),
+        ry: Math.round(Math.max(2, (shape.ry ?? 0) * scaleY)),
+      };
+    }
+    case 'line': {
+      return {
+        x1: Math.round(newBounds.left + ((shape.x1 ?? 0) - origBounds.left) * scaleX),
+        y1: Math.round(newBounds.top + ((shape.y1 ?? 0) - origBounds.top) * scaleY),
+        x2: Math.round(newBounds.left + ((shape.x2 ?? 0) - origBounds.left) * scaleX),
+        y2: Math.round(newBounds.top + ((shape.y2 ?? 0) - origBounds.top) * scaleY),
+      };
+    }
+    default:
+      return {};
+  }
+}
+
+function rotatePoint90CW(px: number, py: number, cx: number, cy: number): [number, number] {
+  return [Math.round(cx + (py - cy)), Math.round(cy - (px - cx))];
+}
+
+function rotatePoint90CCW(px: number, py: number, cx: number, cy: number): [number, number] {
+  return [Math.round(cx - (py - cy)), Math.round(cy + (px - cx))];
+}
+
+function rotateShape90CW(shape: ShapeElement, cx: number, cy: number): Partial<ShapeElement> {
+  switch (shape.type) {
+    case 'rect': {
+      const x = shape.x ?? 0, y = shape.y ?? 0, w = shape.width ?? 0, h = shape.height ?? 0;
+      const [ncx, ncy] = rotatePoint90CW(x + w / 2, y + h / 2, cx, cy);
+      return { x: Math.round(ncx - h / 2), y: Math.round(ncy - w / 2), width: Math.round(h), height: Math.round(w) };
+    }
+    case 'ellipse': {
+      const ecx = shape.cx ?? 0, ecy = shape.cy ?? 0;
+      const [ncx, ncy] = rotatePoint90CW(ecx, ecy, cx, cy);
+      return { cx: ncx, cy: ncy, rx: Math.round(shape.ry ?? 0), ry: Math.round(shape.rx ?? 0) };
+    }
+    case 'line': {
+      const [nx1, ny1] = rotatePoint90CW(shape.x1 ?? 0, shape.y1 ?? 0, cx, cy);
+      const [nx2, ny2] = rotatePoint90CW(shape.x2 ?? 0, shape.y2 ?? 0, cx, cy);
+      return { x1: nx1, y1: ny1, x2: nx2, y2: ny2 };
+    }
+    case 'circle': {
+      const [ncx, ncy] = rotatePoint90CW(shape.cx ?? 0, shape.cy ?? 0, cx, cy);
+      return { cx: ncx, cy: ncy };
+    }
+    default: return {};
+  }
+}
+
+function rotateShape90CCW(shape: ShapeElement, cx: number, cy: number): Partial<ShapeElement> {
+  switch (shape.type) {
+    case 'rect': {
+      const x = shape.x ?? 0, y = shape.y ?? 0, w = shape.width ?? 0, h = shape.height ?? 0;
+      const [ncx, ncy] = rotatePoint90CCW(x + w / 2, y + h / 2, cx, cy);
+      return { x: Math.round(ncx - h / 2), y: Math.round(ncy - w / 2), width: Math.round(h), height: Math.round(w) };
+    }
+    case 'ellipse': {
+      const ecx = shape.cx ?? 0, ecy = shape.cy ?? 0;
+      const [ncx, ncy] = rotatePoint90CCW(ecx, ecy, cx, cy);
+      return { cx: ncx, cy: ncy, rx: Math.round(shape.ry ?? 0), ry: Math.round(shape.rx ?? 0) };
+    }
+    case 'line': {
+      const [nx1, ny1] = rotatePoint90CCW(shape.x1 ?? 0, shape.y1 ?? 0, cx, cy);
+      const [nx2, ny2] = rotatePoint90CCW(shape.x2 ?? 0, shape.y2 ?? 0, cx, cy);
+      return { x1: nx1, y1: ny1, x2: nx2, y2: ny2 };
+    }
+    case 'circle': {
+      const [ncx, ncy] = rotatePoint90CCW(shape.cx ?? 0, shape.cy ?? 0, cx, cy);
+      return { cx: ncx, cy: ncy };
+    }
+    default: return {};
+  }
+}
+
+export function rotateShapes(shapes: ShapeElement[], clockwise: boolean): Map<string, Partial<ShapeElement>> {
+  const result = new Map<string, Partial<ShapeElement>>();
+  const bounds = getGroupBounds(shapes);
+  if (!bounds) return result;
+  const fn = clockwise ? rotateShape90CW : rotateShape90CCW;
+  for (const s of shapes) result.set(s.id, fn(s, bounds.cx, bounds.cy));
+  return result;
+}
+
+function flipShapeH(shape: ShapeElement, cx: number, _cy: number): Partial<ShapeElement> {
+  switch (shape.type) {
+    case 'rect': {
+      const x = shape.x ?? 0, w = shape.width ?? 0;
+      return { x: Math.round(2 * cx - x - w) };
+    }
+    case 'line':
+      return { x1: Math.round(2 * cx - (shape.x1 ?? 0)), x2: Math.round(2 * cx - (shape.x2 ?? 0)) };
+    case 'circle':
+      return { cx: Math.round(2 * cx - (shape.cx ?? 0)) };
+    case 'ellipse':
+      return { cx: Math.round(2 * cx - (shape.cx ?? 0)) };
+    default: return {};
+  }
+}
+
+function flipShapeV(shape: ShapeElement, _cx: number, cy: number): Partial<ShapeElement> {
+  switch (shape.type) {
+    case 'rect': {
+      const y = shape.y ?? 0, h = shape.height ?? 0;
+      return { y: Math.round(2 * cy - y - h) };
+    }
+    case 'line':
+      return { y1: Math.round(2 * cy - (shape.y1 ?? 0)), y2: Math.round(2 * cy - (shape.y2 ?? 0)) };
+    case 'circle':
+      return { cy: Math.round(2 * cy - (shape.cy ?? 0)) };
+    case 'ellipse':
+      return { cy: Math.round(2 * cy - (shape.cy ?? 0)) };
+    default: return {};
+  }
+}
+
+export function flipShapes(shapes: ShapeElement[], horizontal: boolean): Map<string, Partial<ShapeElement>> {
+  const result = new Map<string, Partial<ShapeElement>>();
+  const bounds = getGroupBounds(shapes);
+  if (!bounds) return result;
+  const fn = horizontal ? flipShapeH : flipShapeV;
+  const center = horizontal ? bounds.cx : bounds.cy;
+  for (const s of shapes) result.set(s.id, fn(s, bounds.cx, bounds.cy));
+  return result;
+}
 
 export function computeAlignment(elements: ShapeElement[], mode: AlignMode): Map<string, Partial<ShapeElement>> {
   const result = new Map<string, Partial<ShapeElement>>();
@@ -107,28 +297,24 @@ export function computeAlignment(elements: ShapeElement[], mode: AlignMode): Map
     }
     case 'dist-h': {
       if (bounds.length < 3) break;
-      const sorted = [...bounds].sort((a, b) => a.b.left - b.b.left);
-      const totalSpan = sorted[sorted.length - 1].b.right - sorted[0].b.left;
-      const totalWidth = sorted.reduce((sum, { b }) => sum + b.width, 0);
-      const gap = (totalSpan - totalWidth) / (sorted.length - 1);
-      let cursor = sorted[0].b.left;
-      for (const { el, b } of sorted) {
-        result.set(el.id, moveShapeBy(el, Math.round(cursor - b.left), 0));
-        cursor += b.width + gap;
-      }
+      const sorted = [...bounds].sort((a, b) => a.b.cx - b.b.cx);
+      const minCx = sorted[0].b.cx;
+      const maxCx = sorted[sorted.length - 1].b.cx;
+      const step = (maxCx - minCx) / (sorted.length - 1);
+      sorted.forEach(({ el, b }, i) => {
+        result.set(el.id, moveShapeBy(el, Math.round(minCx + step * i - b.cx), 0));
+      });
       break;
     }
     case 'dist-v': {
       if (bounds.length < 3) break;
-      const sorted = [...bounds].sort((a, b) => a.b.top - b.b.top);
-      const totalSpan = sorted[sorted.length - 1].b.bottom - sorted[0].b.top;
-      const totalHeight = sorted.reduce((sum, { b }) => sum + b.height, 0);
-      const gap = (totalSpan - totalHeight) / (sorted.length - 1);
-      let cursor = sorted[0].b.top;
-      for (const { el, b } of sorted) {
-        result.set(el.id, moveShapeBy(el, 0, Math.round(cursor - b.top)));
-        cursor += b.height + gap;
-      }
+      const sorted = [...bounds].sort((a, b) => a.b.cy - b.b.cy);
+      const minCy = sorted[0].b.cy;
+      const maxCy = sorted[sorted.length - 1].b.cy;
+      const step = (maxCy - minCy) / (sorted.length - 1);
+      sorted.forEach(({ el, b }, i) => {
+        result.set(el.id, moveShapeBy(el, 0, Math.round(minCy + step * i - b.cy)));
+      });
       break;
     }
   }

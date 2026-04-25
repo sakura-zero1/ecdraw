@@ -141,7 +141,7 @@ export default function DashboardPage() {
         <div className="dashboard-recent">
           <h4>最近操作</h4>
           {data.recentAudits.length === 0 ? (
-            <div style={{ color: '#94a3b8', fontSize: '12px' }}>暂无操作记录</div>
+            <div style={{ color: 'var(--gray-400)', fontSize: '12px' }}>暂无操作记录</div>
           ) : (
             data.recentAudits.map((audit) => (
               <div key={audit.id} className="dashboard-recent-item">
@@ -155,7 +155,7 @@ export default function DashboardPage() {
                 </span>
                 <span className="dashboard-recent-user">{audit.user.username}</span>
                 <span className="dashboard-recent-action">{audit.action}</span>
-                <span style={{ color: '#94a3b8' }}>{audit.targetType}</span>
+                <span style={{ color: 'var(--gray-400)' }}>{audit.targetType}</span>
               </div>
             ))
           )}

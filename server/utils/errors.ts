@@ -1,4 +1,4 @@
-import type { Request, Response, NextFunction } from 'express';
+import type { Request, Response } from 'express';
 
 export class AppError extends Error {
   constructor(public statusCode: number, message: string) {
@@ -7,7 +7,8 @@ export class AppError extends Error {
   }
 }
 
-export function errorHandler(err: Error, _req: Request, res: Response, _next: NextFunction): void {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function errorHandler(err: Error, _req: Request, res: Response, _next: void): void {
   if (err instanceof AppError) {
     res.status(err.statusCode).json({ message: err.message });
     return;

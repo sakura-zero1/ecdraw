@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { fetchComponentLibrary } from '../../services/componentApi';
 import { CATEGORIES, CATEGORY_LABELS } from '../../constants/categories';
 import type { ElectricalComponent } from '../../types';
+import ComponentThumbnail from '../panels/ComponentThumbnail';
 
 // ---------- Category icon (simple SVG) ----------
 
@@ -147,7 +148,7 @@ export default function ComponentLibraryPanel(_props: ComponentLibraryPanelProps
                       onDragStart={(e) => handleDragStart(e, comp.id)}
                       title={comp.description || comp.name}
                     >
-                      <CategoryIcon category={comp.category} />
+                      <ComponentThumbnail component={comp} />
                       <span className="de-lib-item-name">{comp.name}</span>
                     </div>
                   ))}

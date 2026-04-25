@@ -8,14 +8,17 @@ export interface LineSegmentEdge {
   targetPinId: string;
 }
 
+export type WireOwnership = 'user' | 'public';
+export type WireType = 'overhead' | 'cable';
+
 export interface LineSegmentData {
   id: string;
   diagramEdgeId: string;
-  startPole: string | null;
-  endPole: string | null;
   length: number | null;
   wireModel: string | null;
-  impedance: number | null;
+  wireOwnership: WireOwnership | null;
+  wireType: WireType | null;
+  isMainDisplay: boolean | null;
   updatedBy: string;
   createdAt: string;
   updatedAt: string;
@@ -40,11 +43,11 @@ export async function upsertLineSegment(edgeId: string, data: Partial<Omit<LineS
 
 export async function batchUpsertLineSegments(items: Array<{
   diagramEdgeId: string;
-  startPole?: string | null;
-  endPole?: string | null;
   length?: number | null;
   wireModel?: string | null;
-  impedance?: number | null;
+  wireOwnership?: WireOwnership | null;
+  wireType?: WireType | null;
+  isMainDisplay?: boolean | null;
 }>): Promise<{ count: number }> {
   await requireAuth();
   return apiRequest<{ count: number }>('/api/lines/batch', { method: 'POST', body: { items } });

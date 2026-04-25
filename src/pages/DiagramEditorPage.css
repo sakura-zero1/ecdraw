@@ -236,6 +236,46 @@
   white-space: nowrap;
 }
 
+.de-conn-label-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.de-conn-label-row:last-child {
+  border-bottom: none;
+}
+
+.de-conn-pin-pair {
+  font-size: 11px;
+  color: var(--gray-500);
+  font-family: monospace;
+}
+
+.de-conn-label-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.de-conn-name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--gray-300);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--white);
+  color: var(--gray-800);
+}
+
+.de-conn-name-input:focus {
+  outline: none;
+  border-color: var(--blue-500);
+}
+
 .de-empty-hint {
   padding: 22px;
   text-align: center;
@@ -495,6 +535,29 @@
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.de-data-field-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.de-data-field-row > input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.de-data-field > select {
+  padding: 5px 8px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--gray-700);
+  background: #fff;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .de-data-hint {

@@ -50,7 +50,6 @@ router.get('/', authGuard, requireRole('ADMIN', 'REVIEWER'), async (req, res) =>
             name: true,
             status: true,
             ownerId: true,
-            currentVersionId: true,
           },
         },
         diagramVersion: {
@@ -94,10 +93,8 @@ router.post('/:id/approve', authGuard, requireRole('ADMIN', 'REVIEWER'), async (
     res.status(409).json({ message: '该审核记录已处理' });
     return;
   }
-  if (review.submitterId === req.user!.id) {
-    res.status(403).json({ message: '不能审核自己提交的图纸' });
-    return;
-  }
+
+  const isDeleteRequest = review.diagram.status === 'PENDING_DELETE';
 
   const result = await prisma.$transaction(async (tx) => {
     const updatedReview = await tx.reviewRequest.update({
@@ -110,24 +107,28 @@ router.post('/:id/approve', authGuard, requireRole('ADMIN', 'REVIEWER'), async (
       },
     });
 
-    const updatedDiagram = await tx.diagram.update({
-      where: { id: review.diagramId },
-      data: {
-        status: 'PUBLISHED',
-        currentVersionId: review.diagramVersionId,
-      },
-      select: {
-        id: true,
-        name: true,
-        status: true,
-        currentVersionId: true,
-      },
-    });
-
-    return { updatedReview, updatedDiagram };
+    if (isDeleteRequest) {
+      // Approve delete: actually delete the diagram
+      await tx.diagram.delete({ where: { id: review.diagramId } });
+      return { updatedReview, updatedDiagram: null, deleted: true };
+    } else {
+      // Approve publish
+      const updatedDiagram = await tx.diagram.update({
+        where: { id: review.diagramId },
+        data: {
+          status: 'PUBLISHED',
+        },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+        },
+      });
+      return { updatedReview, updatedDiagram, deleted: false };
+    }
   });
 
-  await writeAudit(req.user!.id, 'REVIEW_APPROVE', 'ReviewRequest', id, {
+  await writeAudit(req.user!.id, isDeleteRequest ? 'REVIEW_APPROVE_DELETE' : 'REVIEW_APPROVE', 'ReviewRequest', id, {
     diagramId: review.diagramId,
     diagramVersionId: review.diagramVersionId,
     comment: comment === undefined ? null : String(comment),
@@ -157,10 +158,8 @@ router.post('/:id/reject', authGuard, requireRole('ADMIN', 'REVIEWER'), async (r
     res.status(409).json({ message: '该审核记录已处理' });
     return;
   }
-  if (review.submitterId === req.user!.id) {
-    res.status(403).json({ message: '不能审核自己提交的图纸' });
-    return;
-  }
+
+  const isDeleteRequest = review.diagram.status === 'PENDING_DELETE';
 
   const result = await prisma.$transaction(async (tx) => {
     const updatedReview = await tx.reviewRequest.update({
@@ -173,16 +172,14 @@ router.post('/:id/reject', authGuard, requireRole('ADMIN', 'REVIEWER'), async (r
       },
     });
 
+    const newStatus = isDeleteRequest ? 'DRAFT' : 'REJECTED';
     const updatedDiagram = await tx.diagram.update({
       where: { id: review.diagramId },
-      data: {
-        status: 'REJECTED',
-      },
+      data: { status: newStatus },
       select: {
         id: true,
         name: true,
         status: true,
-        currentVersionId: true,
       },
     });
 

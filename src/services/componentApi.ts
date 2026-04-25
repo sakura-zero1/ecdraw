@@ -47,6 +47,8 @@ function toComponent(row: ApiComponent): ElectricalComponent {
     ? (snapshot as {
         width?: number;
         height?: number;
+        displayWidth?: number;
+        displayHeight?: number;
         shapeElements?: ElectricalComponent['shapeElements'];
         pins?: ElectricalComponent['pins'];
       })
@@ -59,6 +61,8 @@ function toComponent(row: ApiComponent): ElectricalComponent {
     description: row.description ?? '',
     width: Number(payload?.width) > 0 ? Number(payload?.width) : fallbackWidth,
     height: Number(payload?.height) > 0 ? Number(payload?.height) : fallbackHeight,
+    displayWidth: Number(payload?.displayWidth) > 0 ? Number(payload?.displayWidth) : 140,
+    displayHeight: Number(payload?.displayHeight) > 0 ? Number(payload?.displayHeight) : 90,
     shapeElements: Array.isArray(payload?.shapeElements) ? payload.shapeElements : [],
     pins: Array.isArray(payload?.pins) ? payload.pins : [],
     createdAt: row.createdAt,
@@ -71,6 +75,8 @@ function buildSnapshot(component: ElectricalComponent, matrix: ConnectivityMatri
     schemaVersion: 1,
     width: component.width,
     height: component.height,
+    displayWidth: component.displayWidth,
+    displayHeight: component.displayHeight,
     shapeElements: component.shapeElements,
     pins: component.pins,
     matrix,

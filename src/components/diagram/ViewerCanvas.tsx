@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 // ---------- Types ----------
 
@@ -24,7 +24,7 @@ export interface TopologyEdge {
   targetInstanceId: string;
   sourcePinId: string;
   targetPinId: string;
-  lineSegmentData: { id: string; startPole: string | null; endPole: string | null; length: number | null; wireModel: string | null; impedance: number | null } | null;
+  lineSegmentData: { id: string; length: number | null; wireModel: string | null; wireOwnership: string | null; wireType: string | null; isMainDisplay: boolean | null } | null;
 }
 
 export interface ViewerCanvasProps {
@@ -119,6 +119,7 @@ export default function ViewerCanvas({
     startPanY: number;
   } | null>(null);
   const animFrameRef = useRef<number>(0);
+  const [isPanning, setIsPanning] = useState(false);
 
   // ---- Compute visible instances and edges based on viewMode ----
 
@@ -296,12 +297,33 @@ export default function ViewerCanvas({
       const tx = targetPos.x + NODE_WIDTH / 2;
       const ty = targetPos.y + NODE_HEIGHT / 2;
 
-      ctx.strokeStyle = EDGE_COLOR;
+      const lineData = edge.lineSegmentData;
+      let edgeColor = EDGE_COLOR;
+      if (lineData?.wireOwnership === 'user') {
+        edgeColor = 'rgb(85,48,217)';
+      } else if (lineData?.wireOwnership === 'public') {
+        edgeColor = '#000000';
+      }
+
+      const isCable = lineData?.wireType === 'cable';
+      const isMainDisplay = lineData?.isMainDisplay ?? true;
+      const edgeAlpha = isMainDisplay ? 1 : 0.5;
+
+      ctx.save();
+      ctx.globalAlpha = edgeAlpha;
+      ctx.strokeStyle = edgeColor;
       ctx.lineWidth = 2 / zoom;
+      if (isCable) {
+        ctx.setLineDash([8 / zoom, 4 / zoom]);
+      }
       ctx.beginPath();
       ctx.moveTo(sx, sy);
       ctx.lineTo(tx, ty);
       ctx.stroke();
+      if (isCable) {
+        ctx.setLineDash([]);
+      }
+      ctx.restore();
     }
 
     // ---- Nodes ----
@@ -505,6 +527,7 @@ export default function ViewerCanvas({
           startPanX: panX,
           startPanY: panY,
         };
+        setIsPanning(true);
         return;
       }
 
@@ -524,6 +547,7 @@ export default function ViewerCanvas({
         startPanX: panX,
         startPanY: panY,
       };
+      setIsPanning(true);
       onSelectInstance(null);
     },
     [screenToWorld, panX, panY, hitTestInstance, onSelectInstance],
@@ -542,6 +566,7 @@ export default function ViewerCanvas({
 
   const handleMouseUp = useCallback(() => {
     panRef.current = null;
+    setIsPanning(false);
   }, []);
 
   const handleWheel = useCallback(
@@ -570,11 +595,6 @@ export default function ViewerCanvas({
     e.preventDefault();
   }, []);
 
-  const getCursor = useCallback(() => {
-    if (panRef.current) return 'grabbing';
-    return 'default';
-  }, []);
-
   return (
     <div
       ref={containerRef}
@@ -591,7 +611,7 @@ export default function ViewerCanvas({
           width: '100%',
           height: '100%',
           display: 'block',
-          cursor: getCursor(),
+          cursor: isPanning ? 'grabbing' : 'default',
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}

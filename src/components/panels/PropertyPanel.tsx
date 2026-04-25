@@ -51,6 +51,37 @@ export default function PropertyPanel({ component }: Props) {
         <textarea value={component.description} onChange={(e) => updateComponent(component.id, { description: e.target.value })} rows={2} />
       </label>
 
+      <div style={{ borderTop: '1px solid var(--color-border)', marginTop: 10, paddingTop: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>输出尺寸（配网图显示）</div>
+        <div className="form-row">
+          <label>
+            宽
+            <input
+              type="number"
+              min={40}
+              max={1200}
+              value={component.displayWidth ?? 140}
+              onChange={(e) => updateComponent(component.id, { displayWidth: Number(e.target.value) || 0 })}
+              onBlur={() => updateComponent(component.id, { displayWidth: Math.max(40, Math.min(1200, component.displayWidth ?? 140)) })}
+            />
+          </label>
+          <label>
+            高
+            <input
+              type="number"
+              min={30}
+              max={800}
+              value={component.displayHeight ?? 90}
+              onChange={(e) => updateComponent(component.id, { displayHeight: Number(e.target.value) || 0 })}
+              onBlur={() => updateComponent(component.id, { displayHeight: Math.max(30, Math.min(800, component.displayHeight ?? 90)) })}
+            />
+          </label>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 4 }}>
+          画布下方显示 1:1 实际大小预览
+        </div>
+      </div>
+
       <div style={{ fontSize: 11, color: 'var(--color-text-dim)', marginTop: 4 }}>
         画布: {component.width} x {component.height} | 图形: {component.shapeElements.length} | 引脚: {component.pins.length}
       </div>

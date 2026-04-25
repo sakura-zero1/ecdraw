@@ -92,7 +92,7 @@ npm run db:studio    # Prisma Studio
 
 ### 前端核心组件
 
-- **DiagramCanvas** (`src/components/diagram/DiagramCanvas.tsx`) — 配网图编辑器 Canvas（拖放、连线、引脚交互、缩放平移）
+- **DiagramCanvas** (`src/components/diagram/DiagramCanvas.tsx`) — 配网图编辑器 Canvas（拖放、连线、引脚交互、缩放平移、实例标签拖动/双击编辑、连接标签、线路台账渲染）
 - **ViewerCanvas** (`src/components/diagram/ViewerCanvas.tsx`) — 只读查询 Canvas（3 种视图 + 停电模拟叠加层）
 - **ComponentLibraryPanel** (`src/components/diagram/ComponentLibraryPanel.tsx`) — 元件库拖放面板
 - **AppShell** (`src/components/layout/AppShell.tsx`) — 认证后布局（侧边栏 + 顶栏 + Outlet）
@@ -105,7 +105,47 @@ npm run db:studio    # Prisma Studio
 | `useComponentStore` | 元件编辑器状态（SVG 画布） |
 | `useConnectionStore` | 元件连通矩阵 |
 | `useCanvasStore` | 元件画布视口/工具/选择 |
-| `useDiagramStore` | 配网图编辑器状态（实例/边/视口/撤销栈） |
+| `useDiagramStore` | 配网图编辑器状态（实例/边/视口/撤销栈/componentConnections/实例标签位置） |
+
+## 关键实现细节
+
+### DiagramInstance.instanceData 结构
+
+`instanceData` 是 JSON 字段，存储实例级可变数据：
+
+```ts
+{
+  rotation?: number;        // 旋转角度
+  flipH?: boolean;          // 水平翻转
+  flipV?: boolean;          // 垂直翻转
+  labelOffsetX?: number;   // 名称标签 X 偏移（世界坐标）
+  labelOffsetY?: number;   // 名称标签 Y 偏移（世界坐标）
+  connectionLabels?: {     // 内部连接标签
+    [connId: string]: { name: string; visible: boolean; offsetX: number; offsetY: number }
+  }
+}
+```
+
+### Canvas 渲染坐标系
+
+- Canvas 使用 `ctx.translate(panX, panY); ctx.scale(zoom, zoom)` 世界坐标变换
+- 默认初始缩放 50%（zoom=0.5），所有文字在世界坐标下渲染（跟随缩放）
+- 标签文字基准大小 40px（50% 缩放下显示为 20px）
+- 连线颜色：默认灰色，用户产权紫色(`rgb(85,48,217)`)，公用黑色，电缆虚线
+- `getDominantShapeColor(shapes)` 取元件形状填充面积最大/边框最长的颜色用于标签文字色
+
+### 图纸编辑器交互优先级（hit test）
+
+鼠标事件命中检测顺序：边缘删除按钮 → 连接模式引脚 → 引脚 → 实例名称标签 → 内部连接标签 → 节点 → 边 → 空白
+
+### 数据完整度 → 可用功能
+
+| 数据层 | 精简/完整视图 | 地理视图 | 停电模拟 | 潮流计算 |
+|---|---|---|---|---|
+| 仅拓扑 | ✓ | - | - | - |
+| + 台区 | ✓ | - | ✓ | - |
+| + 地理 | ✓ | ✓ | ✓ | - |
+| + 线路 | ✓ | ✓ | ✓ | ✓ |
 
 ## 约定
 
@@ -116,12 +156,5 @@ npm run db:studio    # Prisma Studio
 - 数据导入使用 SheetJS (xlsx) 前端解析，批量 upsert 后端端点（上限 500 条）
 - 台区/线路/地理数据免审，仅拓扑数据需审核
 - 审计日志记录所有数据变更
-
-## 数据完整度 → 可用功能
-
-| 数据层 | 精简/完整视图 | 地理视图 | 停电模拟 | 潮流计算 |
-|---|---|---|---|---|
-| 仅拓扑 | ✓ | - | - | - |
-| + 台区 | ✓ | - | ✓ | - |
-| + 地理 | ✓ | ✓ | ✓ | - |
-| + 线路 | ✓ | ✓ | ✓ | ✓ |
+- 删除元件时需先删除引用它的 DiagramInstance（外键约束）
+- `fetchComponentLibrary()` 返回 `{ components, matrices }`，matrices 是 ConnectivityMatrix 数组

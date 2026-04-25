@@ -886,6 +886,22 @@ a.shell-overflow-item {
 .audit-summary-label { font-size: 11px; color: var(--gray-500); }
 .audit-summary-value { font-size: 20px; font-weight: 700; color: var(--gray-900); }
 
+/* ===== Toast ===== */
+
+.toast {
+  position: fixed;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  background: var(--success);
+  color: #fff;
+  padding: 8px 18px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 /* ===== Responsive ===== */
 
 @media (max-width: 900px) {

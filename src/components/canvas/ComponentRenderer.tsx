@@ -14,7 +14,7 @@ function resolveShapeProps(el: ShapeElement, matrices: Record<string, Connectivi
     const matrix = matrices[compId];
     if (matrix) {
       const conn = matrix.connections.find((c: { id: string }) => c.id === el.linkedConnectionId);
-      if (conn) {
+      if (conn && conn.state !== 'none') {
         const override = conn.state === 'closed' ? el.stateClosed : el.stateOpen;
         if (override) return { ...el, ...override };
         return el;

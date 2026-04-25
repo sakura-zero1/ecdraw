@@ -6,7 +6,7 @@ import {
   type DiagramListItem,
   type DiagramSnapshot,
 } from '../services/diagramApi';
-import { fetchLinesByDiagram, upsertLineSegment, batchUpsertLineSegments, type LineSegmentData } from '../services/lineApi';
+import { fetchLinesByDiagram, upsertLineSegment, batchUpsertLineSegments, type LineSegmentData, type WireOwnership, type WireType } from '../services/lineApi';
 
 function parseApiError(error: unknown): string {
   if (!(error instanceof Error)) return '请求失败';
@@ -18,6 +18,9 @@ function parseApiError(error: unknown): string {
   }
 }
 
+const WIRE_OWNERSHIP_LABELS: Record<string, string> = { user: '用户', public: '公用' };
+const WIRE_TYPE_LABELS: Record<string, string> = { overhead: '架空', cable: '电缆' };
+
 export default function LinePage() {
   const [diagrams, setDiagrams] = useState<DiagramListItem[]>([]);
   const [selectedId, setSelectedId] = useState('');
@@ -27,16 +30,15 @@ export default function LinePage() {
   const [error, setError] = useState('');
   const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
-    startPole: '',
-    endPole: '',
     length: '',
     wireModel: '',
-    impedance: '',
+    wireOwnership: '' as WireOwnership | '',
+    wireType: '' as WireType | '',
+    isMainDisplay: false,
   });
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
 
-  // Load published diagrams
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -56,7 +58,6 @@ export default function LinePage() {
     return () => { cancelled = true; };
   }, []);
 
-  // On diagram select: fetch snapshot + line data
   useEffect(() => {
     if (!selectedId) {
       setSnapshot(null);
@@ -89,7 +90,6 @@ export default function LinePage() {
     setTimeout(() => setToast(''), 2500);
   }, []);
 
-  // Build instance label lookup from snapshot
   const instanceLabelMap: Record<string, string> = {};
   if (snapshot?.instances) {
     for (const inst of snapshot.instances) {
@@ -100,11 +100,11 @@ export default function LinePage() {
   const startEdit = (edgeId: string) => {
     const existing = lineSegments.find((l) => l.diagramEdgeId === edgeId);
     setEditForm({
-      startPole: existing?.startPole ?? '',
-      endPole: existing?.endPole ?? '',
       length: existing?.length != null ? String(existing.length) : '',
       wireModel: existing?.wireModel ?? '',
-      impedance: existing?.impedance != null ? String(existing.impedance) : '',
+      wireOwnership: existing?.wireOwnership ?? '',
+      wireType: existing?.wireType ?? '',
+      isMainDisplay: existing?.isMainDisplay ?? false,
     });
     setEditingEdgeId(edgeId);
   };
@@ -118,11 +118,11 @@ export default function LinePage() {
     setError('');
     try {
       const data = {
-        startPole: editForm.startPole || null,
-        endPole: editForm.endPole || null,
         length: editForm.length ? Number(editForm.length) : null,
         wireModel: editForm.wireModel || null,
-        impedance: editForm.impedance ? Number(editForm.impedance) : null,
+        wireOwnership: editForm.wireOwnership || null,
+        wireType: editForm.wireType || null,
+        isMainDisplay: editForm.isMainDisplay,
       };
       const updated = await upsertLineSegment(edgeId, data);
       setLineSegments((prev) =>
@@ -139,8 +139,6 @@ export default function LinePage() {
     }
   };
 
-  // Collect edges from line segments data (they come with diagramEdge info)
-  // Also include edges from snapshot connections that may not have line data yet
   const allEdges: { edgeId: string; sourceId: string; targetId: string; data: LineSegmentData | null }[] = [];
 
   for (const seg of lineSegments) {
@@ -152,7 +150,6 @@ export default function LinePage() {
     });
   }
 
-  // Add snapshot connections that don't have line data yet
   const edgeIdSet = new Set(allEdges.map((e) => e.edgeId));
   for (const conn of snapshot?.connections ?? []) {
     if (!edgeIdSet.has(conn.id)) {
@@ -176,11 +173,11 @@ export default function LinePage() {
         '起点名称': sourceLabel,
         '终点名称': targetLabel,
         '线路ID': edge.edgeId,
-        '起始杆号': edge.data?.startPole ?? '',
-        '终止杆号': edge.data?.endPole ?? '',
-        '长度(m)': edge.data?.length ?? '',
+        '长度(km)': edge.data?.length ?? '',
         '导线型号': edge.data?.wireModel ?? '',
-        '阻抗(Ω)': edge.data?.impedance ?? '',
+        '导线产权': edge.data?.wireOwnership ? WIRE_OWNERSHIP_LABELS[edge.data.wireOwnership] ?? edge.data.wireOwnership : '',
+        '导线类型': edge.data?.wireType ? WIRE_TYPE_LABELS[edge.data.wireType] ?? edge.data.wireType : '',
+        '是否主显示': edge.data?.isMainDisplay ? '是' : '否',
       };
     });
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -196,13 +193,16 @@ export default function LinePage() {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws) as Record<string, string>[];
 
+      const ownershipReverse: Record<string, WireOwnership> = { '用户': 'user', '公用': 'public' };
+      const typeReverse: Record<string, WireType> = { '架空': 'overhead', '电缆': 'cable' };
+
       const items: Array<{
         diagramEdgeId: string;
-        startPole?: string | null;
-        endPole?: string | null;
         length?: number | null;
         wireModel?: string | null;
-        impedance?: number | null;
+        wireOwnership?: WireOwnership | null;
+        wireType?: WireType | null;
+        isMainDisplay?: boolean | null;
       }> = [];
 
       const edgeIdSet = new Set(allEdges.map((e) => e.edgeId));
@@ -210,13 +210,16 @@ export default function LinePage() {
       for (const row of rows) {
         const edgeId = row['线路ID'];
         if (!edgeId || !edgeIdSet.has(edgeId)) continue;
+        const ownershipVal = row['导线产权'];
+        const typeVal = row['导线类型'];
+        const mainDisplayVal = row['是否主显示'];
         items.push({
           diagramEdgeId: edgeId,
-          startPole: row['起始杆号'] || null,
-          endPole: row['终止杆号'] || null,
-          length: row['长度(m)'] != null && row['长度(m)'] !== '' ? Number(row['长度(m)']) : null,
+          length: row['长度(km)'] != null && row['长度(km)'] !== '' ? Number(row['长度(km)']) : null,
           wireModel: row['导线型号'] || null,
-          impedance: row['阻抗(Ω)'] != null && row['阻抗(Ω)'] !== '' ? Number(row['阻抗(Ω)']) : null,
+          wireOwnership: (ownershipReverse[ownershipVal] || ownershipVal || null) as WireOwnership | null,
+          wireType: (typeReverse[typeVal] || typeVal || null) as WireType | null,
+          isMainDisplay: mainDisplayVal === '是' ? true : mainDisplayVal === '否' ? false : null,
         });
       }
 
@@ -226,7 +229,6 @@ export default function LinePage() {
       }
 
       await batchUpsertLineSegments(items);
-      // Refresh line data
       const lines = await fetchLinesByDiagram(selectedId);
       setLineSegments(lines);
       showToast(`成功导入 ${items.length} 条线路数据`);
@@ -255,11 +257,7 @@ export default function LinePage() {
         <section className="published-preview">
           {error && <div className="form-error">{error}</div>}
           {toast && (
-            <div style={{
-              position: 'fixed', top: 16, right: 16, zIndex: 9999,
-              background: '#10b981', color: '#fff', padding: '8px 18px',
-              borderRadius: 8, fontSize: 13, fontWeight: 600,
-            }}>
+            <div className="toast">
               {toast}
             </div>
           )}
@@ -298,11 +296,11 @@ export default function LinePage() {
                   <tr>
                     <th>起点</th>
                     <th>终点</th>
-                    <th>起始杆号</th>
-                    <th>终止杆号</th>
-                    <th>长度 (m)</th>
+                    <th>长度 (km)</th>
                     <th>导线型号</th>
-                    <th>阻抗 (Ohm)</th>
+                    <th>导线产权</th>
+                    <th>导线类型</th>
+                    <th>主显示</th>
                     <th>操作</th>
                   </tr>
                 </thead>
@@ -317,24 +315,6 @@ export default function LinePage() {
                         <td style={{ textAlign: 'left' }}>{targetLabel}</td>
                         {isEditing ? (
                           <>
-                            <td>
-                              <input
-                                type="text"
-                                value={editForm.startPole}
-                                onChange={(e) => setEditForm((f) => ({ ...f, startPole: e.target.value }))}
-                                placeholder="起始杆号"
-                                style={{ width: 70, fontSize: 12 }}
-                              />
-                            </td>
-                            <td>
-                              <input
-                                type="text"
-                                value={editForm.endPole}
-                                onChange={(e) => setEditForm((f) => ({ ...f, endPole: e.target.value }))}
-                                placeholder="终止杆号"
-                                style={{ width: 70, fontSize: 12 }}
-                              />
-                            </td>
                             <td>
                               <input
                                 type="number"
@@ -355,13 +335,32 @@ export default function LinePage() {
                               />
                             </td>
                             <td>
+                              <select
+                                value={editForm.wireOwnership}
+                                onChange={(e) => setEditForm((f) => ({ ...f, wireOwnership: e.target.value as WireOwnership | '' }))}
+                                style={{ width: 70, fontSize: 12 }}
+                              >
+                                <option value="">请选择</option>
+                                <option value="user">用户</option>
+                                <option value="public">公用</option>
+                              </select>
+                            </td>
+                            <td>
+                              <select
+                                value={editForm.wireType}
+                                onChange={(e) => setEditForm((f) => ({ ...f, wireType: e.target.value as WireType | '' }))}
+                                style={{ width: 70, fontSize: 12 }}
+                              >
+                                <option value="">请选择</option>
+                                <option value="overhead">架空</option>
+                                <option value="cable">电缆</option>
+                              </select>
+                            </td>
+                            <td>
                               <input
-                                type="number"
-                                step="any"
-                                value={editForm.impedance}
-                                onChange={(e) => setEditForm((f) => ({ ...f, impedance: e.target.value }))}
-                                placeholder="阻抗"
-                                style={{ width: 60, fontSize: 12 }}
+                                type="checkbox"
+                                checked={editForm.isMainDisplay}
+                                onChange={(e) => setEditForm((f) => ({ ...f, isMainDisplay: e.target.checked }))}
                               />
                             </td>
                             <td>
@@ -379,11 +378,11 @@ export default function LinePage() {
                           </>
                         ) : (
                           <>
-                            <td>{edge.data?.startPole ?? '-'}</td>
-                            <td>{edge.data?.endPole ?? '-'}</td>
                             <td>{edge.data?.length ?? '-'}</td>
                             <td>{edge.data?.wireModel ?? '-'}</td>
-                            <td>{edge.data?.impedance ?? '-'}</td>
+                            <td>{edge.data?.wireOwnership ? WIRE_OWNERSHIP_LABELS[edge.data.wireOwnership] ?? edge.data.wireOwnership : '-'}</td>
+                            <td>{edge.data?.wireType ? WIRE_TYPE_LABELS[edge.data.wireType] ?? edge.data.wireType : '-'}</td>
+                            <td>{edge.data?.isMainDisplay ? '是' : '否'}</td>
                             <td>
                               <button className="btn btn-sm btn-primary" onClick={() => startEdit(edge.edgeId)}>
                                 编辑

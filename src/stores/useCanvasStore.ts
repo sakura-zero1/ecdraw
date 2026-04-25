@@ -11,9 +11,11 @@ interface CanvasStore {
   selectedShapeIds: string[];
   flashedShapeIds: string[];
   flashNonce: number;
+  hoveredShapeIds: string[];
+  groupEditingGroupId: string | null;
 
   // Clipboard
-  clipboard: ShapeElement | null;
+  clipboard: ShapeElement[];
 
   // Drawing defaults
   defaultFill: string;
@@ -29,11 +31,15 @@ interface CanvasStore {
   selectConnection: (id: string | null) => void;
   selectShape: (id: string | null, multi?: boolean) => void;
   clearSelection: () => void;
-  setClipboard: (el: ShapeElement | null) => void;
+  setClipboard: (els: ShapeElement[]) => void;
   setDefaultFill: (color: string) => void;
   setDefaultStroke: (color: string) => void;
   setDefaultStrokeWidth: (w: number) => void;
   flashShapes: (shapeIds: string[], durationMs?: number) => void;
+  setHoveredShapes: (ids: string[]) => void;
+  clearHoveredShapes: () => void;
+  enterGroupEditing: (groupId: string) => void;
+  exitGroupEditing: () => void;
 }
 
 /** Convenience: get first selected shape id */
@@ -53,7 +59,9 @@ export const useCanvasStore = create<CanvasStore>()(
     selectedShapeIds: [],
     flashedShapeIds: [],
     flashNonce: 0,
-    clipboard: null,
+    hoveredShapeIds: [],
+    groupEditingGroupId: null,
+    clipboard: [],
     defaultFill: 'transparent',
     defaultStroke: '#000000',
     defaultStrokeWidth: 5,
@@ -88,6 +96,7 @@ export const useCanvasStore = create<CanvasStore>()(
         state.selectedShapeIds = [];
         state.selectedPinIds = [];
         state.selectedPinId = null;
+        state.groupEditingGroupId = null;
       });
     },
 
@@ -144,12 +153,13 @@ export const useCanvasStore = create<CanvasStore>()(
         state.selectedShapeIds = [];
         state.selectedPinIds = [];
         state.selectedPinId = null;
+        state.groupEditingGroupId = null;
       });
     },
 
-    setClipboard: (el) => {
+    setClipboard: (els) => {
       set((state) => {
-        state.clipboard = el;
+        state.clipboard = els;
       });
     },
 
@@ -186,6 +196,32 @@ export const useCanvasStore = create<CanvasStore>()(
           }
         });
       }, durationMs);
+    },
+
+    setHoveredShapes: (ids) => {
+      set((state) => {
+        state.hoveredShapeIds = ids;
+      });
+    },
+
+    clearHoveredShapes: () => {
+      set((state) => {
+        state.hoveredShapeIds = [];
+      });
+    },
+
+    enterGroupEditing: (groupId) => {
+      set((state) => {
+        state.groupEditingGroupId = groupId;
+        state.selectedShapeIds = [];
+      });
+    },
+
+    exitGroupEditing: () => {
+      set((state) => {
+        state.groupEditingGroupId = null;
+        state.selectedShapeIds = [];
+      });
     },
   }))
 );

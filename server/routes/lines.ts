@@ -53,7 +53,7 @@ router.get('/:id', authGuard, async (req, res) => {
 // PUT /edge/:edgeId — upsert line data by edge ID
 router.put('/edge/:edgeId', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR', 'LINE_EDITOR'), async (req, res) => {
   const { edgeId } = req.params;
-  const { startPole, endPole, length, wireModel, impedance } = req.body ?? {};
+  const { length, wireModel, wireOwnership, wireType, isMainDisplay } = req.body ?? {};
 
   // Verify edge exists
   const edge = await prisma.diagramEdge.findUnique({ where: { id: edgeId } });
@@ -63,11 +63,11 @@ router.put('/edge/:edgeId', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR', 'L
   }
 
   const data = {
-    startPole: startPole !== undefined ? String(startPole) : null,
-    endPole: endPole !== undefined ? String(endPole) : null,
     length: length !== undefined ? Number(length) : null,
     wireModel: wireModel !== undefined ? String(wireModel) : null,
-    impedance: impedance !== undefined ? Number(impedance) : null,
+    wireOwnership: wireOwnership !== undefined ? String(wireOwnership) : null,
+    wireType: wireType !== undefined ? String(wireType) : null,
+    isMainDisplay: isMainDisplay !== undefined ? Boolean(isMainDisplay) : true,
     updatedBy: req.user!.id,
   };
 
@@ -93,11 +93,11 @@ router.post('/batch', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR', 'LINE_ED
   try {
     const { items } = req.body as { items: Array<{
       diagramEdgeId: string;
-      startPole?: string | null;
-      endPole?: string | null;
       length?: number | null;
       wireModel?: string | null;
-      impedance?: number | null;
+      wireOwnership?: string | null;
+      wireType?: string | null;
+      isMainDisplay?: boolean | null;
     }> };
     if (!Array.isArray(items) || items.length === 0) {
       res.status(400).json({ message: 'items 不能为空数组' });
@@ -114,19 +114,19 @@ router.post('/batch', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR', 'LINE_ED
           where: { diagramEdgeId: item.diagramEdgeId },
           create: {
             diagramEdgeId: item.diagramEdgeId,
-            startPole: item.startPole ?? null,
-            endPole: item.endPole ?? null,
             length: item.length ?? null,
             wireModel: item.wireModel ?? null,
-            impedance: item.impedance ?? null,
+            wireOwnership: item.wireOwnership ?? null,
+            wireType: item.wireType ?? null,
+            isMainDisplay: item.isMainDisplay ?? true,
             updatedBy: req.user!.id,
           },
           update: {
-            ...(item.startPole !== undefined ? { startPole: item.startPole } : {}),
-            ...(item.endPole !== undefined ? { endPole: item.endPole } : {}),
             ...(item.length !== undefined ? { length: item.length } : {}),
             ...(item.wireModel !== undefined ? { wireModel: item.wireModel } : {}),
-            ...(item.impedance !== undefined ? { impedance: item.impedance } : {}),
+            ...(item.wireOwnership !== undefined ? { wireOwnership: item.wireOwnership } : {}),
+            ...(item.wireType !== undefined ? { wireType: item.wireType } : {}),
+            ...(item.isMainDisplay !== undefined ? { isMainDisplay: item.isMainDisplay } : {}),
             updatedBy: req.user!.id,
           },
         })

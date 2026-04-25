@@ -67,6 +67,7 @@ async function getLatestDiagramVersion(diagramId: string) {
   });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function saveDiagramSnapshot(diagramId: string, snapshot: unknown, userId: string) {
   return prisma.$transaction(async (tx) => {
     const latest = await tx.diagramVersion.findFirst({
@@ -197,7 +198,7 @@ router.get('/:id', authGuard, async (req, res) => {
   res.json(diagram);
 });
 
-// GET /:id/editor — get diagram for editor with snapshot
+// GET /:id/editor — get diagram for editor (real instances + edges)
 router.get('/:id/editor', authGuard, async (req, res) => {
   const { id } = req.params;
   const diagram = await prisma.diagram.findUnique({ where: { id } });
@@ -212,10 +213,80 @@ router.get('/:id/editor', authGuard, async (req, res) => {
 
   const latestVersion = await getLatestDiagramVersion(id);
   const snapshot = normalizeDiagramSnapshot(latestVersion?.snapshot);
+
+  let realInstances = await prisma.diagramInstance.findMany({ where: { diagramId: id } });
+  let realEdges = await prisma.diagramEdge.findMany({ where: { diagramId: id } });
+
+  // Migrate legacy snapshot data into real DiagramInstance/DiagramEdge records
+  if (realInstances.length === 0 && snapshot.instances.length > 0) {
+    const instanceIdMap = new Map<string, string>();
+
+    realInstances = await prisma.$transaction(async (tx) => {
+      const created: typeof realInstances = [];
+      for (const inst of snapshot.instances) {
+        const row = await tx.diagramInstance.create({
+          data: {
+            diagramId: id,
+            componentId: String(inst.componentId ?? ''),
+            label: String(inst.label ?? ''),
+            positionX: Number(inst.x) || 0,
+            positionY: Number(inst.y) || 0,
+            instanceData: (inst as Record<string, unknown>).instanceData ?? {},
+          },
+        });
+        instanceIdMap.set(String(inst.id ?? ''), row.id);
+        created.push(row);
+      }
+
+      for (const conn of snapshot.connections) {
+        const newSourceId = instanceIdMap.get(String(conn.fromInstanceId ?? ''));
+        const newTargetId = instanceIdMap.get(String(conn.toInstanceId ?? ''));
+        if (newSourceId && newTargetId) {
+          await tx.diagramEdge.create({
+            data: {
+              diagramId: id,
+              sourceInstanceId: newSourceId,
+              targetInstanceId: newTargetId,
+              sourcePinId: String(conn.fromPinId ?? ''),
+              targetPinId: String(conn.toPinId ?? ''),
+            },
+          });
+        }
+      }
+
+      return created;
+    });
+
+    realEdges = await prisma.diagramEdge.findMany({ where: { diagramId: id } });
+  }
+
+  const instances = realInstances.map((inst) => ({
+    id: inst.id,
+    componentId: inst.componentId,
+    label: inst.label,
+    x: inst.positionX,
+    y: inst.positionY,
+    instanceData: inst.instanceData,
+  }));
+
+  const connections = realEdges.map((edge) => ({
+    id: edge.id,
+    fromInstanceId: edge.sourceInstanceId,
+    toInstanceId: edge.targetInstanceId,
+    fromPinId: edge.sourcePinId,
+    toPinId: edge.targetPinId,
+  }));
+
   res.json({
     diagram,
     versionNo: latestVersion?.versionNo || 0,
-    snapshot,
+    snapshot: {
+      schemaVersion: snapshot.schemaVersion,
+      instances,
+      connections,
+      selection: snapshot.selection,
+      viewport: snapshot.viewport,
+    },
   });
 });
 
@@ -247,7 +318,7 @@ router.post('/', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR'), async (req, 
       },
     });
 
-    const version = await tx.diagramVersion.create({
+    await tx.diagramVersion.create({
       data: {
         diagramId: created.id,
         versionNo: 1,
@@ -256,9 +327,8 @@ router.post('/', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR'), async (req, 
       },
     });
 
-    return tx.diagram.update({
+    return tx.diagram.findUnique({
       where: { id: created.id },
-      data: { currentVersionId: version.id },
       include: {
         versions: {
           orderBy: { versionNo: 'desc' },
@@ -307,7 +377,7 @@ router.post('/:id/save', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR'), asyn
     });
     const nextVersionNo = (latest?.versionNo || 0) + 1;
 
-    const version = await tx.diagramVersion.create({
+    await tx.diagramVersion.create({
       data: {
         diagramId: id,
         versionNo: nextVersionNo,
@@ -319,14 +389,7 @@ router.post('/:id/save', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR'), asyn
     return tx.diagram.update({
       where: { id },
       data: {
-        currentVersionId: version.id,
         status: 'DRAFT',
-      },
-      include: {
-        versions: {
-          orderBy: { versionNo: 'desc' },
-          take: 1,
-        },
       },
     });
   });
@@ -364,6 +427,211 @@ router.delete('/:id', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR'), async (
   });
 
   res.status(204).send();
+});
+
+// PATCH /:id — update diagram metadata (name, description)
+router.patch('/:id', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR'), async (req, res) => {
+  const { id } = req.params;
+  const { name, description } = req.body ?? {};
+
+  if (name === undefined && description === undefined) {
+    res.status(400).json({ message: '至少提供 name 或 description' });
+    return;
+  }
+
+  const diagram = await prisma.diagram.findUnique({ where: { id } });
+  if (!diagram) {
+    res.status(404).json({ message: '图纸不存在' });
+    return;
+  }
+  if (!canWriteDiagram(req.user!, diagram)) {
+    res.status(403).json({ message: '无权限修改该图纸' });
+    return;
+  }
+  if (diagram.status !== 'DRAFT' && diagram.status !== 'REJECTED') {
+    res.status(400).json({ message: '仅草稿或驳回状态的图纸允许修改' });
+    return;
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (name !== undefined) updates.name = String(name);
+  if (description !== undefined) updates.description = String(description);
+
+  const updated = await prisma.diagram.update({
+    where: { id },
+    data: updates,
+    include: {
+      versions: { orderBy: { versionNo: 'desc' }, take: 1 },
+    },
+  });
+
+  await writeAudit(req.user!.id, 'DIAGRAM_UPDATE', 'Diagram', id, updates);
+
+  res.json(updated);
+});
+
+// POST /:id/duplicate — duplicate a diagram
+router.post('/:id/duplicate', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR'), async (req, res) => {
+  const { id } = req.params;
+
+  const diagram = await prisma.diagram.findUnique({
+    where: { id },
+    include: {
+      versions: { orderBy: { versionNo: 'desc' }, take: 1 },
+      instances: true,
+      edges: true,
+    },
+  });
+
+  if (!diagram) {
+    res.status(404).json({ message: '图纸不存在' });
+    return;
+  }
+  if (!canReadDiagram(req.user!, diagram)) {
+    res.status(403).json({ message: '无权限查看该图纸' });
+    return;
+  }
+
+  // Determine duplicate name: "原名称 副本" or "原名称 副本N"
+  const baseName = diagram.name;
+  const existingDuplicates = await prisma.diagram.findMany({
+    where: { name: { startsWith: baseName + ' 副本' } },
+    select: { name: true },
+  });
+  const suffixCount = existingDuplicates.length;
+  const newName = suffixCount === 0
+    ? `${baseName} 副本`
+    : `${baseName} 副本${suffixCount + 1}`;
+
+  const result = await prisma.$transaction(async (tx) => {
+    // Create new diagram
+    const newDiagram = await tx.diagram.create({
+      data: {
+        name: newName,
+        description: diagram.description,
+        ownerId: req.user!.id,
+        status: 'DRAFT',
+      },
+    });
+
+    // Copy latest version snapshot
+    const latestVersion = diagram.versions[0];
+    if (latestVersion) {
+      await tx.diagramVersion.create({
+        data: {
+          diagramId: newDiagram.id,
+          versionNo: 1,
+          snapshot: latestVersion.snapshot,
+          createdBy: req.user!.id,
+        },
+      });
+    }
+
+    // Map old instance IDs to new instance IDs
+    const instanceIdMap = new Map<string, string>();
+
+    // Copy instances
+    for (const inst of diagram.instances) {
+      const newInst = await tx.diagramInstance.create({
+        data: {
+          diagramId: newDiagram.id,
+          componentId: inst.componentId,
+          label: inst.label,
+          positionX: inst.positionX,
+          positionY: inst.positionY,
+          instanceData: inst.instanceData,
+        },
+      });
+      instanceIdMap.set(inst.id, newInst.id);
+    }
+
+    // Copy edges (only if both source and target instances were copied)
+    for (const edge of diagram.edges) {
+      const newSourceId = instanceIdMap.get(edge.sourceInstanceId);
+      const newTargetId = instanceIdMap.get(edge.targetInstanceId);
+      if (newSourceId && newTargetId) {
+        await tx.diagramEdge.create({
+          data: {
+            diagramId: newDiagram.id,
+            sourceInstanceId: newSourceId,
+            targetInstanceId: newTargetId,
+            sourcePinId: edge.sourcePinId,
+            targetPinId: edge.targetPinId,
+          },
+        });
+      }
+    }
+
+    return tx.diagram.findUnique({
+      where: { id: newDiagram.id },
+      include: {
+        versions: { orderBy: { versionNo: 'desc' }, take: 1 },
+      },
+    });
+  });
+
+  await writeAudit(req.user!.id, 'DIAGRAM_DUPLICATE', 'Diagram', result!.id, {
+    sourceDiagramId: id,
+    sourceName: diagram.name,
+    newName,
+  });
+
+  res.status(201).json(result);
+});
+
+// POST /:id/request-delete — request diagram deletion (requires review)
+router.post('/:id/request-delete', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR'), async (req, res) => {
+  const { id } = req.params;
+  const diagram = await prisma.diagram.findUnique({ where: { id } });
+
+  if (!diagram) {
+    res.status(404).json({ message: '图纸不存在' });
+    return;
+  }
+  if (!canWriteDiagram(req.user!, diagram)) {
+    res.status(403).json({ message: '无权限删除该图纸' });
+    return;
+  }
+  if (diagram.status === 'PENDING_DELETE') {
+    res.status(400).json({ message: '该图纸已在删除审核中' });
+    return;
+  }
+  if (diagram.status === 'PENDING_REVIEW') {
+    res.status(400).json({ message: '该图纸正在发布审核中，无法同时申请删除' });
+    return;
+  }
+
+  // Need a version for ReviewRequest — ensure at least one exists
+  const latestVersion = await getLatestDiagramVersion(id);
+  if (!latestVersion) {
+    res.status(400).json({ message: '图纸缺少版本数据' });
+    return;
+  }
+
+  const previousStatus = diagram.status;
+
+  const review = await prisma.$transaction(async (tx) => {
+    await tx.diagram.update({
+      where: { id },
+      data: { status: 'PENDING_DELETE' },
+    });
+
+    return tx.reviewRequest.create({
+      data: {
+        diagramId: id,
+        diagramVersionId: latestVersion.id,
+        submitterId: req.user!.id,
+        status: 'PENDING',
+      },
+    });
+  });
+
+  await writeAudit(req.user!.id, 'DIAGRAM_REQUEST_DELETE', 'Diagram', id, {
+    previousStatus,
+    reviewRequestId: review.id,
+  });
+
+  res.status(201).json(review);
 });
 
 // ===================== DiagramInstance CRUD =====================
@@ -613,7 +881,8 @@ router.post('/:id/submit-review', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITO
     res.status(400).json({ message: '已发布图纸不可重复提交审核' });
     return;
   }
-  if (!diagram.currentVersionId) {
+  const latestVersion = await getLatestDiagramVersion(id);
+  if (!latestVersion) {
     res.status(400).json({ message: '图纸缺少可审核版本，请先保存草稿' });
     return;
   }
@@ -639,7 +908,7 @@ router.post('/:id/submit-review', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITO
     return tx.reviewRequest.create({
       data: {
         diagramId: id,
-        diagramVersionId: diagram.currentVersionId!,
+        diagramVersionId: latestVersion.id,
         submitterId: req.user!.id,
         status: 'PENDING',
       },
@@ -647,11 +916,48 @@ router.post('/:id/submit-review', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITO
   });
 
   await writeAudit(req.user!.id, 'DIAGRAM_SUBMIT_REVIEW', 'Diagram', id, {
-    diagramVersionId: diagram.currentVersionId,
+    diagramVersionId: latestVersion.id,
     reviewRequestId: review.id,
   });
 
   res.status(201).json(review);
+});
+
+// POST /:id/withdraw-review — withdraw diagram from review back to draft
+router.post('/:id/withdraw-review', authGuard, requireRole('ADMIN', 'DIAGRAM_EDITOR'), async (req, res) => {
+  const { id } = req.params;
+  const diagram = await prisma.diagram.findUnique({ where: { id } });
+
+  if (!diagram) {
+    res.status(404).json({ message: '图纸不存在' });
+    return;
+  }
+  if (!canWriteDiagram(req.user!, diagram)) {
+    res.status(403).json({ message: '无权限撤回该图纸审核' });
+    return;
+  }
+  if (diagram.status !== 'PENDING_REVIEW') {
+    res.status(400).json({ message: '仅审核中的图纸可以撤回' });
+    return;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.diagram.update({
+      where: { id },
+      data: { status: 'DRAFT' },
+    });
+
+    // Close pending review request
+    await tx.reviewRequest.updateMany({
+      where: { diagramId: id, status: 'PENDING' },
+      data: { status: 'WITHDRAWN' },
+    });
+  });
+
+  await writeAudit(req.user!.id, 'DIAGRAM_WITHDRAW_REVIEW', 'Diagram', id, {});
+
+  const updated = await prisma.diagram.findUnique({ where: { id } });
+  res.json(updated);
 });
 
 export default router;

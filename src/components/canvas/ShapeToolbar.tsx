@@ -1,6 +1,7 @@
 ﻿import { useCanvasStore } from '../../stores/useCanvasStore';
 import { useComponentStore } from '../../stores/useComponentStore';
 import type { ToolMode } from '../../types';
+import { rotateShapes, flipShapes } from '../../utils/alignment';
 import './ShapeToolbar.css';
 
 const TOOLS: { mode: ToolMode; icon: string; label: string }[] = [
@@ -61,6 +62,44 @@ export default function ShapeToolbar() {
   const handleUngroup = () => {
     if (!activeComponentId || selectedShapeIds.length === 0) return;
     ungroupShapeElements(activeComponentId, selectedShapeIds);
+  };
+
+  // Check if all selected shapes share the same group
+  const component = activeComponentId ? getComponent(activeComponentId) : null;
+  const selectedShapes = component?.shapeElements.filter(e => selectedShapeIds.includes(e.id)) ?? [];
+  const groupIds = [...new Set(selectedShapes.map(s => s.groupId).filter(Boolean))];
+  const isSingleGroup = groupIds.length === 1 && selectedShapes.length >= 2;
+
+  const handleRotateCW = () => {
+    if (!activeComponentId || selectedShapes.length < 2) return;
+    const updates = rotateShapes(selectedShapes, true);
+    for (const [id, upd] of updates) {
+      updateShapeElement(activeComponentId, id, upd);
+    }
+  };
+
+  const handleRotateCCW = () => {
+    if (!activeComponentId || selectedShapes.length < 2) return;
+    const updates = rotateShapes(selectedShapes, false);
+    for (const [id, upd] of updates) {
+      updateShapeElement(activeComponentId, id, upd);
+    }
+  };
+
+  const handleFlipH = () => {
+    if (!activeComponentId || selectedShapes.length < 2) return;
+    const updates = flipShapes(selectedShapes, true);
+    for (const [id, upd] of updates) {
+      updateShapeElement(activeComponentId, id, upd);
+    }
+  };
+
+  const handleFlipV = () => {
+    if (!activeComponentId || selectedShapes.length < 2) return;
+    const updates = flipShapes(selectedShapes, false);
+    for (const [id, upd] of updates) {
+      updateShapeElement(activeComponentId, id, upd);
+    }
   };
 
   const applyFill = (color: string) => {
@@ -147,6 +186,30 @@ export default function ShapeToolbar() {
           <span className="tool-icon">⊟</span>
           <span className="tool-label">解组</span>
         </button>
+      </div>
+
+      <div className="tool-divider" />
+      <div className="tool-group">
+        <button className="tool-btn" onClick={handleRotateCCW} disabled={!isSingleGroup} title="逆时针旋转 90°">
+          <span className="tool-icon">↺</span>
+          <span className="tool-label">逆旋</span>
+        </button>
+        <button className="tool-btn" onClick={handleRotateCW} disabled={!isSingleGroup} title="顺时针旋转 90°">
+          <span className="tool-icon">↻</span>
+          <span className="tool-label">顺旋</span>
+        </button>
+        <button className="tool-btn" onClick={handleFlipH} disabled={!isSingleGroup} title="水平翻转">
+          <span className="tool-icon">⇔</span>
+          <span className="tool-label">水平翻转</span>
+        </button>
+        <button className="tool-btn" onClick={handleFlipV} disabled={!isSingleGroup} title="垂直翻转">
+          <span className="tool-icon">⇕</span>
+          <span className="tool-label">垂直翻转</span>
+        </button>
+      </div>
+
+      <div className="tool-divider" />
+      <div className="tool-group">
         <button className="tool-btn btn-danger" onClick={handleDelete} disabled={selectedShapeIds.length === 0} title="删除选中图形">
           <span className="tool-icon">✕</span>
           <span className="tool-label">删除</span>

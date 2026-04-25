@@ -306,7 +306,7 @@ export default function AuditPage() {
                         <h4 style={{ margin: '0 0 8px', fontSize: '13px', fontWeight: '600' }}>
                           详细信息
                         </h4>
-                        <pre style={{ margin: 0, background: '#f4f8fc', border: '1px solid #dbe7f4', borderRadius: '6px', padding: '8px', fontSize: '11px', color: '#334155', overflow: 'auto', maxHeight: '200px' }}>
+                        <pre style={{ margin: 0, background: 'var(--gray-50)', border: '1px solid var(--gray-200)', borderRadius: 'var(--radius)', padding: '8px', fontSize: '11px', color: 'var(--gray-700)', overflow: 'auto', maxHeight: '200px' }}>
                           {JSON.stringify(item.payload, null, 2)}
                         </pre>
                       </div>

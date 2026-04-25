@@ -1,6 +1,6 @@
 import { apiRequest, ensureApiAuth } from './apiClient';
 
-export type DiagramStatus = 'DRAFT' | 'PENDING_REVIEW' | 'PUBLISHED' | 'REJECTED';
+export type DiagramStatus = 'DRAFT' | 'PENDING_REVIEW' | 'PUBLISHED' | 'REJECTED' | 'PENDING_DELETE';
 
 export interface DiagramListItem {
   id: string;
@@ -112,6 +112,50 @@ export async function submitDiagramReview(diagramId: string) {
   });
 }
 
+export async function saveDiagram(diagramId: string, snapshot: Record<string, unknown>) {
+  await requireAuth();
+  return apiRequest<DiagramListItem>(`/api/diagrams/${diagramId}/save`, {
+    method: 'POST',
+    body: { snapshot },
+  });
+}
+
+export async function withdrawDiagramReview(diagramId: string) {
+  await requireAuth();
+  return apiRequest(`/api/diagrams/${diagramId}/withdraw-review`, {
+    method: 'POST',
+  });
+}
+
+export async function updateDiagram(diagramId: string, data: { name?: string; description?: string }) {
+  await requireAuth();
+  return apiRequest<DiagramListItem>(`/api/diagrams/${diagramId}`, {
+    method: 'PATCH',
+    body: data,
+  });
+}
+
+export async function duplicateDiagram(diagramId: string) {
+  await requireAuth();
+  return apiRequest<DiagramListItem>(`/api/diagrams/${diagramId}/duplicate`, {
+    method: 'POST',
+  });
+}
+
+export async function requestDeleteDiagram(diagramId: string) {
+  await requireAuth();
+  return apiRequest(`/api/diagrams/${diagramId}/request-delete`, {
+    method: 'POST',
+  });
+}
+
+export async function deleteDiagram(diagramId: string) {
+  await requireAuth();
+  return apiRequest<void>(`/api/diagrams/${diagramId}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function fetchDiagramReadonlySnapshot(diagramId: string) {
   await requireAuth();
   return apiRequest<DiagramEditorResponse>(`/api/diagrams/${diagramId}/editor`);
@@ -181,7 +225,8 @@ export async function fetchDiagramForEditor(diagramId: string): Promise<DiagramE
   await requireAuth();
   const response = await apiRequest<DiagramEditorResponse>(`/api/diagrams/${diagramId}/editor`);
 
-  // Map snapshot instances (legacy format) to DiagramInstance format
+  // Map snapshot instances to DiagramInstance format
+  // Backend now returns real DB IDs when instances exist in the DiagramInstance table
   const instances: DiagramInstance[] = response.snapshot.instances.map((inst, idx) => ({
     id: inst.id ?? `snap-${idx}`,
     diagramId,
@@ -189,12 +234,12 @@ export async function fetchDiagramForEditor(diagramId: string): Promise<DiagramE
     label: inst.label ?? '',
     positionX: Number(inst.x) || 0,
     positionY: Number(inst.y) || 0,
-    instanceData: {},
+    instanceData: (inst as unknown as Record<string, unknown>).instanceData as Record<string, unknown> ?? {},
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }));
 
-  // Map snapshot connections (legacy format) to DiagramEdge format
+  // Map snapshot connections to DiagramEdge format
   const edges: DiagramEdge[] = response.snapshot.connections.map((conn, idx) => ({
     id: conn.id ?? `snap-conn-${idx}`,
     diagramId,
@@ -236,7 +281,7 @@ export interface TopologyResponse {
     targetInstanceId: string;
     sourcePinId: string;
     targetPinId: string;
-    lineSegmentData: { id: string; startPole: string | null; endPole: string | null; length: number | null; wireModel: string | null; impedance: number | null } | null;
+    lineSegmentData: { id: string; length: number | null; wireModel: string | null; wireOwnership: string | null; wireType: string | null; isMainDisplay: boolean | null } | null;
   }>;
 }
 

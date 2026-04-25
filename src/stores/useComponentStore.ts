@@ -29,11 +29,13 @@ interface ComponentStore {
   updateShapeElement: (componentId: string, elementId: string, updates: Partial<ShapeElement>) => void;
   removeShapeElement: (componentId: string, elementId: string) => void;
   cloneShapeElement: (componentId: string, elementId: string) => string | null;
-  cloneFromClipboard: (componentId: string, element: ShapeElement) => string | null;
+  cloneFromClipboard: (componentId: string, element: ShapeElement, groupIdOverride?: string) => string | null;
   groupShapeElements: (componentId: string, elementIds: string[]) => string | null;
   ungroupShapeElements: (componentId: string, elementIds: string[]) => void;
 
   loadComponents: (components: ElectricalComponent[]) => void;
+
+  importSubComponent: (targetComponentId: string, sourceComponent: ElectricalComponent, offsetX: number, offsetY: number) => string[];
 }
 
 const MAX_UNDO = 50;
@@ -73,6 +75,7 @@ export const useComponentStore = create<ComponentStore>()(
       set((state) => {
         state.components.push({
           id, name, category, description: '', width, height,
+          displayWidth: 140, displayHeight: 90,
           shapeElements: [], pins: [], createdAt: now, updatedAt: now,
         });
         state.activeComponentId = id;
@@ -237,12 +240,12 @@ export const useComponentStore = create<ComponentStore>()(
       return newId;
     },
 
-    cloneFromClipboard: (componentId, element) => {
+    cloneFromClipboard: (componentId, element, groupIdOverride?) => {
       const comp = get().components.find((c) => c.id === componentId);
       if (!comp) return null;
       get().pushUndo();
       const newId = uuid();
-      const cloned: ShapeElement = { ...element, id: newId, groupId: undefined };
+      const cloned: ShapeElement = { ...element, id: newId, groupId: groupIdOverride ?? undefined };
       // Offset position by 20px
       if ('x' in cloned && cloned.x !== undefined) cloned.x += 20;
       if ('y' in cloned && cloned.y !== undefined) cloned.y += 20;
@@ -259,9 +262,71 @@ export const useComponentStore = create<ComponentStore>()(
       return newId;
     },
 
+    importSubComponent: (targetComponentId, sourceComponent, offsetX, offsetY) => {
+      get().pushUndo();
+      const groupId = uuid();
+      const newShapeIds: string[] = [];
+
+      const newShapes = sourceComponent.shapeElements.map((s) => {
+        const newId = uuid();
+        newShapeIds.push(newId);
+        const cloned: ShapeElement = { ...s, id: newId, groupId, linkedConnectionId: undefined, stateClosed: undefined, stateOpen: undefined };
+        if ('x' in cloned && cloned.x !== undefined) cloned.x += offsetX;
+        if ('y' in cloned && cloned.y !== undefined) cloned.y += offsetY;
+        if ('cx' in cloned && cloned.cx !== undefined) cloned.cx += offsetX;
+        if ('cy' in cloned && cloned.cy !== undefined) cloned.cy += offsetY;
+        if ('x1' in cloned && cloned.x1 !== undefined) cloned.x1 += offsetX;
+        if ('y1' in cloned && cloned.y1 !== undefined) cloned.y1 += offsetY;
+        if ('x2' in cloned && cloned.x2 !== undefined) cloned.x2 += offsetX;
+        if ('y2' in cloned && cloned.y2 !== undefined) cloned.y2 += offsetY;
+        return cloned;
+      });
+
+      // For path d attribute, do proper x/y offset
+      for (const shape of newShapes) {
+        if (shape.type === 'path' && shape.d) {
+          const nums = shape.d.match(/[+-]?\d*\.?\d+/g);
+          if (nums && nums.length >= 2) {
+            let numIdx = 0;
+            const rebuilt = shape.d.replace(/[+-]?\d*\.?\d+/g, () => {
+              const orig = nums[numIdx++];
+              const val = parseFloat(orig);
+              if (isNaN(val)) return orig;
+              // Even index = x, odd index = y
+              const isY = numIdx % 2 === 0;
+              const offset = isY ? offsetY : offsetX;
+              return String(val + offset);
+            });
+            shape.d = rebuilt;
+          }
+        }
+      }
+
+      const newPins = sourceComponent.pins.map((p) => ({
+        ...p,
+        id: uuid(),
+        position: { x: p.position.x + offsetX, y: p.position.y + offsetY },
+      }));
+
+      set((state) => {
+        const comp = state.components.find((c) => c.id === targetComponentId);
+        if (!comp) return;
+        comp.shapeElements.push(...newShapes);
+        comp.pins.push(...newPins);
+        comp.updatedAt = new Date().toISOString();
+      });
+
+      return newShapeIds;
+    },
+
     loadComponents: (components) => {
       set((state) => {
-        state.components = components.map((c) => ({ ...c, shapeElements: c.shapeElements ?? [] }));
+        state.components = components.map((c) => ({
+          ...c,
+          shapeElements: c.shapeElements ?? [],
+          displayWidth: c.displayWidth ?? 140,
+          displayHeight: c.displayHeight ?? 90,
+        }));
         state.activeComponentId = components.length > 0 ? components[0].id : null;
         state.undoStack = [];
       });
@@ -308,6 +373,8 @@ export const useComponentStore = create<ComponentStore>()(
         ...c,
         shapeElements: c.shapeElements ?? [],
         pins: c.pins ?? [],
+        displayWidth: c.displayWidth ?? 140,
+        displayHeight: c.displayHeight ?? 90,
       }));
       const activeComponentId = components.some((c) => c.id === p.activeComponentId)
         ? p.activeComponentId ?? null

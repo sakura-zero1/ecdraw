@@ -1,4 +1,4 @@
-export type ConnectionState = 'closed' | 'open';
+export type ConnectionState = 'none' | 'closed' | 'open';
 
 export interface Connection {
   id: string;

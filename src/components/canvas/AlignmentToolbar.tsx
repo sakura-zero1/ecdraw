@@ -10,8 +10,8 @@ const ALIGN_BUTTONS: { mode: AlignMode; icon: string; label: string }[] = [
   { mode: 'top', icon: '⇡', label: '顶部对齐' },
   { mode: 'center-v', icon: '↕', label: '垂直居中' },
   { mode: 'bottom', icon: '⇣', label: '底部对齐' },
-  { mode: 'dist-h', icon: '⟷', label: '横向等距' },
-  { mode: 'dist-v', icon: '⟺', label: '纵向等距' },
+  { mode: 'dist-h', icon: '⦀', label: '横向等距' },
+  { mode: 'dist-v', icon: '≡', label: '纵向等距' },
 ];
 
 export default function AlignmentToolbar() {
@@ -27,8 +27,9 @@ export default function AlignmentToolbar() {
   const selectedShapes = comp.shapeElements.filter((e) => selectedShapeIds.includes(e.id));
   const selectedPins = comp.pins.filter((p) => selectedPinIds.includes(p.id));
 
-  // If all selected shapes share the same groupId, they are in a group — disable alignment
-  const allSameGroup = selectedShapes.length >= 2 && selectedShapes.every((s) => s.groupId && s.groupId === selectedShapes[0].groupId);
+  // If all selected shapes share the same groupId, they are in a group — disable alignment unless in group-editing mode
+  const groupEditingGroupId = useCanvasStore((s) => s.groupEditingGroupId);
+  const allSameGroup = selectedShapes.length >= 2 && selectedShapes.every((s) => s.groupId && s.groupId === selectedShapes[0].groupId) && !groupEditingGroupId;
 
   const shapeMode = selectedShapes.length >= 2 && !allSameGroup;
   const pinMode = !shapeMode && selectedPins.length >= 2;

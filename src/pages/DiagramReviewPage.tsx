@@ -133,7 +133,7 @@ export default function DiagramReviewPage() {
               {isExpanded && (
                 <div className="review-preview-area">
                   {previewLoading ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '13px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--gray-500)', fontSize: '13px' }}>
                       加载拓扑预览...
                     </div>
                   ) : previewData ? (
@@ -150,7 +150,7 @@ export default function DiagramReviewPage() {
                       onSelectInstance={setPreviewSelectedId}
                     />
                   ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8', fontSize: '13px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--gray-400)', fontSize: '13px' }}>
                       无法加载预览
                     </div>
                   )}

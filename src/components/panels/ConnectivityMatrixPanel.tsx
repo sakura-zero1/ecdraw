@@ -73,7 +73,7 @@ export default function ConnectivityMatrixPanel({ component: comp }: Props) {
                       if (isSelf) {
                         cellClass = 'matrix-cell';
                         cellText = '';
-                      } else if (conn) {
+                      } else if (conn && conn.state !== 'none') {
                         cellClass = `matrix-cell ${conn.state}`;
                         cellText = conn.state === 'closed' ? '通' : '断';
                       }
@@ -109,25 +109,28 @@ export default function ConnectivityMatrixPanel({ component: comp }: Props) {
             </div>
           </div>
 
-          {connections.length > 0 && (
+          {connections.some((c) => c.state !== 'none') && (
             <div style={{ marginTop: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-dim)', marginBottom: 6 }}>
                 连接详情
               </div>
-              {connections.map((conn) => (
+              {connections.filter((c) => c.state !== 'none').map((conn) => (
                 <ConnectionDetail
                   key={conn.id}
                   comp={comp}
                   conn={conn}
                   pins={pins}
-                  onToggleState={() => toggleConnectionState(comp.id, conn.id)}
+                  onToggleState={() => {
+                    const nextState = conn.state === 'closed' ? 'open' as const : 'closed' as const;
+                    useConnectionStore.getState().setConnectionState(comp.id, conn.id, nextState);
+                  }}
                   onToggleVisible={() => toggleConnectionVisible(comp.id, conn.id)}
                 />
               ))}
             </div>
           )}
 
-          {connections.length > 0 && (
+          {connections.some((c) => c.state !== 'none') && (
             <div className="animation-controls">
               <button className="btn btn-sm" onClick={handleAnimateAll}>
                 播放开断动画
@@ -210,8 +213,24 @@ function ShapeLinkSection({
   const shapeLabelMap = buildShapeLabelMap(shapes);
   const flashShapes = useCanvasStore((s) => s.flashShapes);
   const selectShape = useCanvasStore((s) => s.selectShape);
+  const setHoveredShapes = useCanvasStore((s) => s.setHoveredShapes);
+  const clearHoveredShapes = useCanvasStore((s) => s.clearHoveredShapes);
   const linked = shapes.filter((s) => s.linkedConnectionId === connId);
   const unlinked = shapes.filter((s) => s.linkedConnectionId !== connId);
+
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isOpen]);
 
   const linkShape = (shapeId: string) => {
     onUpdate(comp.id, shapeId, { linkedConnectionId: connId });
@@ -233,6 +252,8 @@ function ShapeLinkSection({
             <span
               style={{ fontSize: 10, color: 'var(--color-text-dim)', cursor: 'pointer' }}
               title="在画布中高亮"
+              onMouseEnter={() => setHoveredShapes([shape.id])}
+              onMouseLeave={clearHoveredShapes}
               onClick={() => {
                 selectShape(shape.id);
                 flashShapes([shape.id], 1600);
@@ -266,24 +287,59 @@ function ShapeLinkSection({
       ))}
 
       {unlinked.length > 0 && (
-        <div style={{ marginTop: 4 }}>
-          <select
-            value=""
-            onChange={(e) => {
-              if (!e.target.value) return;
-              selectShape(e.target.value);
-              flashShapes([e.target.value], 1600);
-              linkShape(e.target.value);
-            }}
-            style={{ fontSize: 10, width: '100%' }}
+        <div ref={dropdownRef} style={{ marginTop: 4, position: 'relative' }}>
+          <button
+            className="btn btn-sm"
+            onClick={() => setIsOpen(!isOpen)}
+            style={{ fontSize: 10, width: '100%', textAlign: 'left' }}
           >
-            <option value="">+ 关联图形</option>
-            {unlinked.map((s) => (
-              <option key={s.id} value={s.id}>
-                {shapeLabelMap.get(s.id) ?? s.type}
-              </option>
-            ))}
-          </select>
+            + 关联图形 {isOpen ? '▲' : '▼'}
+          </button>
+          {isOpen && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                zIndex: 100,
+                background: 'var(--color-bg, #fff)',
+                border: '1px solid var(--color-border, #d0d0d0)',
+                borderRadius: 4,
+                maxHeight: 160,
+                overflowY: 'auto',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+              }}
+            >
+              {unlinked.map((s) => (
+                <div
+                  key={s.id}
+                  style={{
+                    padding: '3px 8px',
+                    fontSize: 10,
+                    cursor: 'pointer',
+                    color: 'var(--color-text, #333)',
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLElement).style.background = 'var(--color-active-bg, #eef2ff)';
+                    setHoveredShapes([s.id]);
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.background = 'transparent';
+                    clearHoveredShapes();
+                  }}
+                  onClick={() => {
+                    selectShape(s.id);
+                    flashShapes([s.id], 1600);
+                    linkShape(s.id);
+                    setIsOpen(false);
+                  }}
+                >
+                  {shapeLabelMap.get(s.id) ?? s.type}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

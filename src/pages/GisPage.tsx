@@ -210,11 +210,7 @@ export default function GisPage() {
         <section className="published-preview">
           {error && <div className="form-error">{error}</div>}
           {toast && (
-            <div style={{
-              position: 'fixed', top: 16, right: 16, zIndex: 9999,
-              background: '#10b981', color: '#fff', padding: '8px 18px',
-              borderRadius: 8, fontSize: 13, fontWeight: 600,
-            }}>
+            <div className="toast">
               {toast}
             </div>
           )}

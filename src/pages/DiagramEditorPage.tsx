@@ -16,6 +16,8 @@ import type { DiagramCanvasHandle } from '../components/diagram/DiagramCanvas';
 import ComponentLibraryPanel from '../components/diagram/ComponentLibraryPanel';
 import { CATEGORY_LABELS } from '../constants/categories';
 import type { DiagramInstance, DiagramEdge } from '../services/diagramApi';
+import type { ConnectivityMatrix } from '../types/connection';
+import type { Pin } from '../types';
 import { fetchDistrictsByDiagram, upsertDistrict, type DistrictData } from '../services/districtApi';
 import { fetchLinesByDiagram, upsertLineSegment, type LineSegmentData } from '../services/lineApi';
 import { fetchGisByDiagram, upsertGis, type GisData } from '../services/gisApi';
@@ -256,20 +258,22 @@ function GisDataPanel({
 function LineDataPanel({
   edgeId,
   diagramId,
+  onLineDataChanged,
 }: {
   edgeId: string;
   diagramId: string;
+  onLineDataChanged?: () => void;
 }) {
   const [, setLine] = useState<LineSegmentData | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
-  const [startPole, setStartPole] = useState('');
-  const [endPole, setEndPole] = useState('');
   const [length, setLength] = useState<string>('');
   const [wireModel, setWireModel] = useState('');
-  const [impedance, setImpedance] = useState<string>('');
+  const [wireOwnership, setWireOwnership] = useState<'user' | 'public' | ''>('');
+  const [wireType, setWireType] = useState<'overhead' | 'cable' | ''>('');
+  const [isMainDisplay, setIsMainDisplay] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -280,17 +284,17 @@ function LineDataPanel({
         const found = items.find((l) => l.diagramEdgeId === edgeId) || null;
         setLine(found);
         if (found) {
-          setStartPole(found.startPole || '');
-          setEndPole(found.endPole || '');
           setLength(found.length != null ? String(found.length) : '');
           setWireModel(found.wireModel || '');
-          setImpedance(found.impedance != null ? String(found.impedance) : '');
+          setWireOwnership(found.wireOwnership || '');
+          setWireType(found.wireType || '');
+          setIsMainDisplay(found.isMainDisplay ?? false);
         } else {
-          setStartPole('');
-          setEndPole('');
           setLength('');
           setWireModel('');
-          setImpedance('');
+          setWireOwnership('');
+          setWireType('');
+          setIsMainDisplay(false);
         }
       })
       .catch(() => {
@@ -308,15 +312,38 @@ function LineDataPanel({
     setMessage('');
     try {
       const data: Partial<Omit<LineSegmentData, 'id' | 'diagramEdgeId' | 'updatedBy' | 'createdAt' | 'updatedAt'>> = {
-        startPole: startPole || null,
-        endPole: endPole || null,
         length: length ? Number(length) : null,
         wireModel: wireModel || null,
-        impedance: impedance ? Number(impedance) : null,
+        wireOwnership: wireOwnership || null,
+        wireType: wireType || null,
+        isMainDisplay,
       };
-      const result = await upsertLineSegment(edgeId, data);
-      setLine(result);
-      setMessage('保存成功');
+      await upsertLineSegment(edgeId, data);
+
+      const items = await fetchLinesByDiagram(diagramId);
+      const found = items.find((l) => l.diagramEdgeId === edgeId) || null;
+      setLine(found);
+      if (found) {
+        setLength(found.length != null ? String(found.length) : '');
+        setWireModel(found.wireModel || '');
+        setWireOwnership(found.wireOwnership || '');
+        setWireType(found.wireType || '');
+        setIsMainDisplay(found.isMainDisplay ?? false);
+      }
+
+      const savedOk =
+        (found?.length ?? null) === (data.length ?? null) &&
+        (found?.wireModel ?? null) === (data.wireModel ?? null) &&
+        (found?.wireOwnership ?? null) === (data.wireOwnership ?? null) &&
+        (found?.wireType ?? null) === (data.wireType ?? null) &&
+        (found?.isMainDisplay ?? false) === (data.isMainDisplay ?? false);
+
+      if (savedOk) {
+        setMessage('保存成功');
+      } else {
+        setMessage('保存可能未完全生效，部分字段未被后端识别');
+      }
+      onLineDataChanged?.();
     } catch (e) {
       setMessage(parseApiError(e));
     } finally {
@@ -330,25 +357,10 @@ function LineDataPanel({
     <CollapsibleSection title="线路台账">
       <div className="de-data-fields">
         <label className="de-data-field">
-          <span>起始杆号</span>
-          <input
-            value={startPole}
-            onChange={(e) => setStartPole(e.target.value)}
-            placeholder="请输入"
-          />
-        </label>
-        <label className="de-data-field">
-          <span>终止杆号</span>
-          <input
-            value={endPole}
-            onChange={(e) => setEndPole(e.target.value)}
-            placeholder="请输入"
-          />
-        </label>
-        <label className="de-data-field">
           <span>长度 (km)</span>
           <input
             type="number"
+            step="0.01"
             value={length}
             onChange={(e) => setLength(e.target.value)}
             placeholder="请输入"
@@ -363,13 +375,33 @@ function LineDataPanel({
           />
         </label>
         <label className="de-data-field">
-          <span>阻抗 (Ω)</span>
+          <span>导线产权</span>
+          <select
+            value={wireOwnership}
+            onChange={(e) => setWireOwnership(e.target.value as 'user' | 'public' | '')}
+          >
+            <option value="">请选择</option>
+            <option value="user">用户</option>
+            <option value="public">公用</option>
+          </select>
+        </label>
+        <label className="de-data-field">
+          <span>导线类型</span>
+          <select
+            value={wireType}
+            onChange={(e) => setWireType(e.target.value as 'overhead' | 'cable' | '')}
+          >
+            <option value="">请选择</option>
+            <option value="overhead">架空</option>
+            <option value="cable">电缆</option>
+          </select>
+        </label>
+        <label className="de-data-field de-data-field-row">
+          <span>是否主显示</span>
           <input
-            type="number"
-            step="0.01"
-            value={impedance}
-            onChange={(e) => setImpedance(e.target.value)}
-            placeholder="请输入"
+            type="checkbox"
+            checked={isMainDisplay}
+            onChange={(e) => setIsMainDisplay(e.target.checked)}
           />
         </label>
         <button
@@ -397,10 +429,13 @@ function TransformControls({ instanceId, instanceData }: { instanceId: string; i
   const [angleText, setAngleText] = useState(String(rotation));
   const [angleDirty, setAngleDirty] = useState(false);
 
-  useEffect(() => {
+  // Sync local state when rotation prop changes
+  const [prevRotation, setPrevRotation] = useState(rotation);
+  if (prevRotation !== rotation) {
     setAngleText(String(rotation));
     setAngleDirty(false);
-  }, [rotation]);
+    setPrevRotation(rotation);
+  }
 
   const rotate = (deg: number) => {
     updateTransform(instanceId, { rotation: (rotation + deg + 360) % 360 });
@@ -461,18 +496,22 @@ function InstancePropertyPanel({
   instance,
   edges,
   componentMap,
+  componentConnections,
   allInstances,
   onUpdateLabel,
   onRemoveInstance,
   onRemoveEdge,
+  onUpdateConnectionLabel,
 }: {
   instance: DiagramInstance;
   edges: DiagramEdge[];
-  componentMap: Record<string, { name: string; category: string }>;
+  componentMap: Record<string, { name: string; category: string; pins?: Pin[] }>;
+  componentConnections: Record<string, ConnectivityMatrix>;
   allInstances: DiagramInstance[];
   onUpdateLabel: (id: string, label: string) => void;
   onRemoveInstance: (id: string) => void;
   onRemoveEdge: (id: string) => void;
+  onUpdateConnectionLabel: (instanceId: string, connId: string, data: { name?: string; visible?: boolean }) => void;
 }) {
   const comp = componentMap[instance.componentId];
   const category = comp?.category || 'junctionPoint';
@@ -485,10 +524,15 @@ function InstancePropertyPanel({
   const [editLabel, setEditLabel] = useState(instance.label);
   const [dirty, setDirty] = useState(false);
 
-  useEffect(() => {
+  // Sync local state when instance changes
+  const [prevInstanceId, setPrevInstanceId] = useState(instance.id);
+  const [prevLabel, setPrevLabel] = useState(instance.label);
+  if (prevInstanceId !== instance.id || prevLabel !== instance.label) {
     setEditLabel(instance.label);
     setDirty(false);
-  }, [instance.id, instance.label]);
+    setPrevInstanceId(instance.id);
+    setPrevLabel(instance.label);
+  }
 
   const handleLabelSave = () => {
     if (dirty && editLabel.trim()) {
@@ -570,6 +614,14 @@ function InstancePropertyPanel({
         })}
       </div>
 
+      {/* Connection labels for internal connections */}
+      <ConnectionLabelsSection
+        instance={instance}
+        componentConnections={componentConnections}
+        componentMap={componentMap}
+        onUpdateConnectionLabel={onUpdateConnectionLabel}
+      />
+
       {/* Additional data: District for loadPoint */}
       {diagramId && category === 'loadPoint' && (
         <div className="de-panel-section">
@@ -597,16 +649,87 @@ function InstancePropertyPanel({
   );
 }
 
+// ---------- Connection Labels Section ----------
+
+interface ConnectionLabelEntry {
+  name: string;
+  visible: boolean;
+  offsetX: number;
+  offsetY: number;
+}
+
+function ConnectionLabelsSection({
+  instance,
+  componentConnections,
+  componentMap,
+  onUpdateConnectionLabel,
+}: {
+  instance: DiagramInstance;
+  componentConnections: Record<string, ConnectivityMatrix>;
+  componentMap: Record<string, { name: string; category: string; pins?: Pin[] }>;
+  onUpdateConnectionLabel: (instanceId: string, connId: string, data: { name?: string; visible?: boolean }) => void;
+}) {
+  const matrix = componentConnections[instance.componentId];
+  if (!matrix || matrix.connections.length === 0) return null;
+
+  const pins = componentMap[instance.componentId]?.pins ?? [];
+  const pinLabelMap = Object.fromEntries(pins.map((p) => [p.id, p.label]));
+  const instanceData = (instance.instanceData as Record<string, unknown>) ?? {};
+  const connectionLabels = (instanceData.connectionLabels as Record<string, ConnectionLabelEntry>) ?? {};
+
+  return (
+    <div className="de-panel-section">
+      <div className="de-panel-section-title">内部连接 ({matrix.connections.length})</div>
+      {matrix.connections.map((conn) => {
+        const labelA = pinLabelMap[conn.pinAId] || conn.pinAId;
+        const labelB = pinLabelMap[conn.pinBId] || conn.pinBId;
+        const entry = connectionLabels[conn.id];
+        const name = entry?.name ?? '';
+        const visible = entry?.visible ?? true;
+
+        return (
+          <div key={conn.id} className="de-conn-label-row">
+            <span className="de-conn-pin-pair" title={`${labelA} ↔ ${labelB}`}>
+              {labelA} ↔ {labelB}
+            </span>
+            <div className="de-conn-label-controls">
+              <input
+                className="de-conn-name-input"
+                value={name}
+                placeholder="名称"
+                onChange={(e) => {
+                  onUpdateConnectionLabel(instance.id, conn.id, { name: e.target.value });
+                }}
+              />
+              <button
+                className={`btn btn-sm ${visible ? 'btn-primary' : ''}`}
+                title={visible ? '隐藏标签' : '显示标签'}
+                onClick={() => {
+                  onUpdateConnectionLabel(instance.id, conn.id, { visible: !visible });
+                }}
+              >
+                {visible ? '👁' : '👁‍🗨'}
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ---------- Edge Property Panel ----------
 
 function EdgePropertyPanel({
   edge,
   instances,
   onRemoveEdge,
+  onLineDataChanged,
 }: {
   edge: DiagramEdge;
   instances: DiagramInstance[];
   onRemoveEdge: (id: string) => void;
+  onLineDataChanged?: () => void;
 }) {
   const source = instances.find((i) => i.id === edge.sourceInstanceId);
   const target = instances.find((i) => i.id === edge.targetInstanceId);
@@ -631,7 +754,7 @@ function EdgePropertyPanel({
       {/* Line segment data */}
       {diagramId && (
         <div className="de-panel-section">
-          <LineDataPanel edgeId={edge.id} diagramId={diagramId} />
+          <LineDataPanel edgeId={edge.id} diagramId={diagramId} onLineDataChanged={onLineDataChanged} />
         </div>
       )}
 
@@ -689,9 +812,12 @@ function DiagramCard({
   const [editName, setEditName] = useState(item.name);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  // Sync local state when item.name changes
+  const [prevName, setPrevName] = useState(item.name);
+  if (prevName !== item.name) {
     setEditName(item.name);
-  }, [item.name]);
+    setPrevName(item.name);
+  }
 
   const startEdit = () => {
     setEditing(true);
@@ -934,8 +1060,8 @@ export default function DiagramEditorPage() {
     instances,
     edges,
     componentMap,
+    componentConnections,
     loading,
-    error,
     selectedInstanceId,
     selectedEdgeId,
     zoom,
@@ -943,6 +1069,7 @@ export default function DiagramEditorPage() {
     panY,
     loadDiagram,
     addInstance,
+    addInstanceFromClipboard,
     moveInstance,
     persistInstanceMove,
     removeInstance,
@@ -954,7 +1081,13 @@ export default function DiagramEditorPage() {
     setPan,
     clearDiagram,
     undo,
+    ensureComponentInMap,
+    refreshComponentMap,
     updateInstanceLabel,
+    moveConnectionLabel,
+    updateConnectionLabel,
+    moveInstanceLabel,
+    persistInstanceLabelMove,
     saveDraft,
     withdrawReview,
   } = useDiagramStore();
@@ -971,6 +1104,32 @@ export default function DiagramEditorPage() {
   }, []);
 
   const canvasRef = useRef<DiagramCanvasHandle>(null);
+
+  // Clipboard for copy/paste instances
+  const clipboardRef = useRef<{
+    componentId: string;
+    label: string;
+    instanceData: Record<string, unknown>;
+  } | null>(null);
+
+  // Line segment data for canvas rendering
+  const [lineDataMap, setLineDataMap] = useState<Record<string, LineSegmentData>>({});
+  const refreshLineData = useCallback(() => {
+    if (!diagramId) return;
+    fetchLinesByDiagram(diagramId)
+      .then((items) => {
+        const map: Record<string, LineSegmentData> = {};
+        for (const item of items) {
+          map[item.diagramEdgeId] = item;
+        }
+        setLineDataMap(map);
+      })
+      .catch(() => {});
+  }, [diagramId]);
+
+  useEffect(() => {
+    refreshLineData();
+  }, [refreshLineData]);
 
   const loadList = useCallback(async () => {
     setListLoading(true);
@@ -1061,6 +1220,9 @@ export default function DiagramEditorPage() {
       const componentId = e.dataTransfer.getData('text/plain');
       if (!componentId) return;
 
+      // Ensure the component data (shapeElements, pins, etc.) is in the map
+      await ensureComponentInMap(componentId);
+
       // Convert screen coords to world coords via the canvas ref
       const worldPos = canvasRef.current?.screenToWorld(e.clientX, e.clientY);
       if (!worldPos) return;
@@ -1074,7 +1236,7 @@ export default function DiagramEditorPage() {
 
       await addInstance(componentId, dropX, dropY);
     },
-    [addInstance, componentMap],
+    [addInstance, componentMap, ensureComponentInMap],
   );
 
   const handleSubmitReview = async (id: string) => {
@@ -1112,9 +1274,10 @@ export default function DiagramEditorPage() {
     if (!diagramId) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if typing in an input/textarea
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      const hasMod = e.ctrlKey || e.metaKey;
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
@@ -1125,9 +1288,44 @@ export default function DiagramEditorPage() {
         }
       }
 
-      if (e.key === 'z' && (e.ctrlKey || e.metaKey)) {
+      if (hasMod && e.key === 'z') {
         e.preventDefault();
         undo();
+      }
+
+      if (hasMod && e.key === 'c') {
+        if (selectedInstanceId) {
+          const inst = instances.find((i) => i.id === selectedInstanceId);
+          if (inst) {
+            e.preventDefault();
+            clipboardRef.current = {
+              componentId: inst.componentId,
+              label: inst.label,
+              instanceData: JSON.parse(JSON.stringify(inst.instanceData)),
+            };
+          }
+        }
+      }
+
+      if (hasMod && e.key === 'v') {
+        if (clipboardRef.current) {
+          e.preventDefault();
+          const clip = clipboardRef.current;
+          const offset = 40;
+          const selectedInst = instances.find((i) => i.id === selectedInstanceId);
+          const pasteX = (selectedInst ? selectedInst.positionX + offset : 100);
+          const pasteY = (selectedInst ? selectedInst.positionY + offset : 100);
+          void addInstanceFromClipboard(clip.componentId, pasteX, pasteY, clip.label, clip.instanceData);
+        }
+      }
+
+      if (hasMod && e.key === 's') {
+        e.preventDefault();
+        if (diagramInfo?.status === 'DRAFT' || diagramInfo?.status === 'REJECTED') {
+          void saveDraft().then(() => {
+            alert('草稿已保存');
+          }).catch(() => {});
+        }
       }
 
       if (e.key === 'Escape') {
@@ -1137,7 +1335,25 @@ export default function DiagramEditorPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [diagramId, selectedInstanceId, selectedEdgeId, removeInstance, removeEdge, undo, selectInstance]);
+  }, [diagramId, selectedInstanceId, selectedEdgeId, instances, removeInstance, removeEdge, undo, selectInstance, addInstanceFromClipboard, panX, panY, zoom, saveDraft, diagramInfo]);
+
+  // ---------- Auto-refresh component map when diagram is open ----------
+
+  useEffect(() => {
+    if (!diagramId) return;
+
+    // Refresh on window focus (user returns from component editor or another tab)
+    const onFocus = () => { void refreshComponentMap(); };
+    window.addEventListener('focus', onFocus);
+
+    // Poll every 30 seconds to pick up component changes made in another session
+    const interval = setInterval(() => { void refreshComponentMap(); }, 30_000);
+
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      clearInterval(interval);
+    };
+  }, [diagramId, refreshComponentMap]);
 
   const selectedInstance = selectedInstanceId
     ? instances.find((i) => i.id === selectedInstanceId) ?? null
@@ -1232,6 +1448,13 @@ export default function DiagramEditorPage() {
               onSetPan={setPan}
               onConnectPins={handleConnectPins}
               unnamedHighlightIds={unnamedHighlightIds}
+              componentConnections={componentConnections}
+              onMoveConnectionLabel={moveConnectionLabel}
+              onUpdateConnectionLabel={(instanceId, connId, data) => void updateConnectionLabel(instanceId, connId, data)}
+              onMoveInstanceLabel={moveInstanceLabel}
+              onPersistInstanceLabelMove={(id) => void persistInstanceLabelMove(id)}
+              onUpdateInstanceLabel={(id, label) => void updateInstanceLabel(id, label)}
+              lineDataMap={lineDataMap}
             />
           )}
         </div>
@@ -1253,16 +1476,19 @@ export default function DiagramEditorPage() {
                   instance={selectedInstance}
                   edges={edges}
                   componentMap={componentMap}
+                  componentConnections={componentConnections}
                   allInstances={instances}
                   onUpdateLabel={updateInstanceLabel}
                   onRemoveInstance={(id) => void removeInstance(id)}
                   onRemoveEdge={(id) => void removeEdge(id)}
+                  onUpdateConnectionLabel={(instanceId, connId, data) => void updateConnectionLabel(instanceId, connId, data)}
                 />
               ) : selectedEdge ? (
                 <EdgePropertyPanel
                   edge={selectedEdge}
                   instances={instances}
                   onRemoveEdge={(id) => void removeEdge(id)}
+                  onLineDataChanged={refreshLineData}
                 />
               ) : (
                 <div className="de-empty-hint">

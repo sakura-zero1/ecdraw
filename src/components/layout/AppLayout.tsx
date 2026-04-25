@@ -11,7 +11,7 @@ import {
   saveComponentVersionByApi,
   updateComponentMetaByApi,
 } from '../../services/componentApi';
-import SvgCanvas from '../canvas/SvgCanvas';
+import SvgCanvas from '../canvas/ComponentCanvas';
 import PropertyPanel from '../panels/PropertyPanel';
 import PinListPanel from '../panels/PinListPanel';
 import ConnectivityMatrixPanel from '../panels/ConnectivityMatrixPanel';
@@ -20,19 +20,6 @@ import ComponentThumbnail from '../panels/ComponentThumbnail';
 import './AppLayout.css';
 
 type PanelTab = 'property' | 'pins';
-
-function parseApiError(error: unknown) {
-  if (!(error instanceof Error)) return '请求失败';
-  try {
-    const payload = JSON.parse(error.message) as { message?: string };
-    if (payload && typeof payload.message === 'string' && payload.message.trim()) {
-      return payload.message;
-    }
-  } catch {
-    return error.message || '请求失败';
-  }
-  return error.message || '请求失败';
-}
 
 function matrixListToMap(list: ConnectivityMatrix[]) {
   return list.reduce<Record<string, ConnectivityMatrix>>((acc, matrix) => {
@@ -53,11 +40,16 @@ export default function AppLayout() {
   const [deleteTarget, setDeleteTarget] = useState<ElectricalComponent | null>(null);
 
   const [storageMode, setStorageMode] = useState<'api' | 'local'>('local');
-  const [syncStatus, setSyncStatus] = useState('本地模式');
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_syncStatus, setSyncStatus] = useState('本地模式');
   const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState('');
 
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 2200);
+  }, []);
+
   const [activeTab, setActiveTab] = useState<PanelTab>('property');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Record<ComponentCategory, boolean>>(
@@ -262,7 +254,7 @@ export default function AppLayout() {
       try {
         await deleteComponentByApi(comp.id);
       } catch {
-        setSyncStatus('删除失败');
+        showToast('删除失败，请检查网络或重新登录');
         setDeleteTarget(null);
         return;
       }
@@ -273,7 +265,7 @@ export default function AppLayout() {
 
   const handleSave = async () => {
     if (storageMode !== 'api') {
-      setSyncStatus('本地模式无法保存到云端');
+      showToast('本地模式，无法保存到云端');
       return;
     }
     const comp = useComponentStore.getState().components.find((c) => c.id === useComponentStore.getState().activeComponentId);
@@ -289,9 +281,9 @@ export default function AppLayout() {
       lastMetaSignaturesRef.current[comp.id] = JSON.stringify({
         name: comp.name, category: comp.category, description: comp.description,
       });
-      setSyncStatus(`已保存 ${new Date().toLocaleTimeString()}`);
+      showToast('保存成功');
     } catch {
-      setSyncStatus('保存失败');
+      showToast('保存失败');
     } finally {
       setSaving(false);
     }
@@ -299,18 +291,14 @@ export default function AppLayout() {
 
   return (
     <div className="app-layout">
-      <aside className={`sidebar${sidebarCollapsed ? ' collapsed' : ''}`}>
-        {sidebarCollapsed ? (
-          <button className="ce-panel-expand-btn" onClick={() => setSidebarCollapsed(false)} title="展开元件列表">▶</button>
-        ) : (
-          <>
+      {toast && <div className="ce-toast">{toast}</div>}
+      <aside className="sidebar">
             <div className="sidebar-header">
               <span>元件列表</span>
               <div className="ce-panel-header-actions">
                 <span className="count-badge">
                   {normalizedKeyword ? `${visibleComponents.length}/${components.length}` : components.length}
                 </span>
-                <button className="ce-panel-header-btn" onClick={() => setSidebarCollapsed(true)} title="收起元件列表">◀</button>
               </div>
             </div>
           <div className="sidebar-search">
@@ -323,12 +311,12 @@ export default function AppLayout() {
           </div>
           <div className="sidebar-actions">
             <button
-              className="btn btn-sm"
+              className="btn btn-sm btn-primary"
               data-testid="save-btn"
               disabled={saving || storageMode !== 'api'}
               onClick={() => void handleSave()}
             >
-              保存
+              {saving ? '保存中...' : '保存'}
             </button>
             <button
               className="btn btn-sm"
@@ -336,9 +324,10 @@ export default function AppLayout() {
                 void (async () => {
                   try {
                     await hydrateFromApi();
+                    showToast('刷新成功');
                   } catch {
                     setStorageMode('local');
-                    setSyncStatus('刷新失败，维持本地模式');
+                    showToast('刷新失败');
                   }
                 })();
               }}
@@ -374,6 +363,11 @@ export default function AppLayout() {
                         key={comp.id}
                         className={`component-item ${comp.id === activeComponentId ? 'active' : ''}`}
                         onClick={() => setActiveComponent(comp.id)}
+                        draggable={comp.id !== activeComponentId}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', comp.id);
+                          e.dataTransfer.effectAllowed = 'copy';
+                        }}
                       >
                         <div className="comp-thumb-wrap">
                           <ComponentThumbnail component={comp} matrix={matrices[comp.id]} />
@@ -411,19 +405,13 @@ export default function AppLayout() {
               );
             })}
           </div>
-            </>
-          )}
         </aside>
 
         <main className="canvas-area">
-          <SvgCanvas />
+          <SvgCanvas onSave={handleSave} />
         </main>
 
-        <aside className={`panel${panelCollapsed ? ' collapsed' : ''}`}>
-          {panelCollapsed ? (
-            <button className="ce-panel-expand-btn" onClick={() => setPanelCollapsed(false)} title="展开属性面板">◀</button>
-          ) : (
-            <>
+        <aside className="panel">
               <div className="panel-top">
                 {activeComponent ? (
                   <div className="panel-tabs">
@@ -440,7 +428,6 @@ export default function AppLayout() {
                 ) : (
                   <div className="panel-title-ghost">元件属性</div>
                 )}
-                <button className="ce-panel-header-btn" onClick={() => setPanelCollapsed(true)} title="收起属性面板">▶</button>
               </div>
 
               {activeComponent ? (
@@ -463,8 +450,6 @@ export default function AppLayout() {
               ) : (
                 <div className="empty-hint">请选择或新建一个元件</div>
               )}
-            </>
-          )}
         </aside>
 
       {showNewDialog && (

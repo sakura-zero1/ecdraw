@@ -7,12 +7,15 @@ import {
   createDiagramEdge,
   deleteDiagramEdge,
   fetchDiagramForEditor,
+  saveDiagram,
+  withdrawDiagramReview,
   type DiagramInstance,
   type DiagramEdge,
   type DiagramListItem,
 } from '../services/diagramApi';
 import { fetchComponentLibrary } from '../services/componentApi';
-import type { Pin } from '../types';
+import type { Pin, ShapeElement } from '../types';
+import type { ConnectivityMatrix } from '../types/connection';
 
 const MAX_UNDO = 50;
 
@@ -20,6 +23,11 @@ export interface ComponentMeta {
   name: string;
   category: string;
   pins?: Pin[];
+  shapeElements?: ShapeElement[];
+  width?: number;
+  height?: number;
+  displayWidth?: number;
+  displayHeight?: number;
 }
 
 interface Snapshot {
@@ -34,6 +42,7 @@ interface DiagramEditorState {
   instances: DiagramInstance[];
   edges: DiagramEdge[];
   componentMap: Record<string, ComponentMeta>;
+  componentConnections: Record<string, ConnectivityMatrix>;
   loading: boolean;
   error: string;
 
@@ -49,9 +58,13 @@ interface DiagramEditorState {
   // Undo
   undoStack: string[];
 
+  // Highlight unnamed instances (flashing red border)
+  unnamedHighlightIds: string[];
+
   // Actions
   loadDiagram: (diagramId: string) => Promise<void>;
-  addInstance: (componentId: string, label: string, x: number, y: number) => Promise<void>;
+  addInstance: (componentId: string, x: number, y: number) => Promise<void>;
+  addInstanceFromClipboard: (componentId: string, x: number, y: number, label: string, instanceData: Record<string, unknown>) => Promise<void>;
   moveInstance: (id: string, x: number, y: number) => void;
   persistInstanceMove: (id: string) => Promise<void>;
   removeInstance: (id: string) => Promise<void>;
@@ -69,7 +82,16 @@ interface DiagramEditorState {
   setZoom: (z: number) => void;
   setPan: (x: number, y: number) => void;
   clearDiagram: () => void;
+  ensureComponentInMap: (componentId: string) => Promise<void>;
+  refreshComponentMap: () => Promise<void>;
   updateInstanceLabel: (id: string, label: string) => Promise<void>;
+  updateInstanceTransform: (id: string, transform: { rotation?: number; flipH?: boolean; flipV?: boolean }) => Promise<void>;
+  moveConnectionLabel: (instanceId: string, connId: string, offsetX: number, offsetY: number) => void;
+  updateConnectionLabel: (instanceId: string, connId: string, data: { name?: string; visible?: boolean; offsetX?: number; offsetY?: number }) => Promise<void>;
+  moveInstanceLabel: (id: string, offsetX: number, offsetY: number) => void;
+  persistInstanceLabelMove: (id: string) => Promise<void>;
+  saveDraft: () => Promise<void>;
+  withdrawReview: () => Promise<void>;
 }
 
 export const useDiagramStore = create<DiagramEditorState>()(
@@ -79,14 +101,16 @@ export const useDiagramStore = create<DiagramEditorState>()(
     instances: [],
     edges: [],
     componentMap: {},
+    componentConnections: {},
     loading: false,
     error: '',
     selectedInstanceId: null,
     selectedEdgeId: null,
-    zoom: 1,
+    zoom: 0.5,
     panX: 0,
     panY: 0,
     undoStack: [],
+    unnamedHighlightIds: [],
 
     loadDiagram: async (diagramId: string) => {
       set((state) => {
@@ -98,14 +122,23 @@ export const useDiagramStore = create<DiagramEditorState>()(
         const data = await fetchDiagramForEditor(diagramId);
 
         // Load component library to build componentMap
-        const { components } = await fetchComponentLibrary();
+        const { components, matrices } = await fetchComponentLibrary();
         const compMap: Record<string, ComponentMeta> = {};
         for (const comp of components) {
           compMap[comp.id] = {
             name: comp.name,
             category: comp.category,
             pins: comp.pins,
+            shapeElements: comp.shapeElements,
+            width: comp.width,
+            height: comp.height,
+            displayWidth: comp.displayWidth,
+            displayHeight: comp.displayHeight,
           };
+        }
+        const connMap: Record<string, ConnectivityMatrix> = {};
+        for (const m of matrices) {
+          connMap[m.componentId] = m;
         }
 
         set((state) => {
@@ -114,11 +147,12 @@ export const useDiagramStore = create<DiagramEditorState>()(
           state.instances = data.instances;
           state.edges = data.edges;
           state.componentMap = compMap;
+          state.componentConnections = connMap;
           state.loading = false;
           state.selectedInstanceId = null;
           state.selectedEdgeId = null;
           state.undoStack = [];
-          state.zoom = 1;
+          state.zoom = 0.5;
           state.panX = 0;
           state.panY = 0;
         });
@@ -131,7 +165,7 @@ export const useDiagramStore = create<DiagramEditorState>()(
       }
     },
 
-    addInstance: async (componentId: string, label: string, x: number, y: number) => {
+    addInstance: async (componentId: string, x: number, y: number) => {
       const diagramId = get().diagramId;
       if (!diagramId) return;
 
@@ -140,7 +174,6 @@ export const useDiagramStore = create<DiagramEditorState>()(
       try {
         const instance = await createDiagramInstance(diagramId, {
           componentId,
-          label,
           positionX: x,
           positionY: y,
         });
@@ -151,6 +184,35 @@ export const useDiagramStore = create<DiagramEditorState>()(
         });
       } catch (e) {
         const message = e instanceof Error ? e.message : '添加实例失败';
+        set((state) => {
+          state.error = message;
+        });
+      }
+    },
+
+    addInstanceFromClipboard: async (componentId: string, x: number, y: number, label: string, instanceData: Record<string, unknown>) => {
+      const diagramId = get().diagramId;
+      if (!diagramId) return;
+
+      get().pushUndo();
+
+      try {
+        const cleanData = { ...instanceData };
+        delete (cleanData as Record<string, unknown>).connectionLabels;
+        const instance = await createDiagramInstance(diagramId, {
+          componentId,
+          positionX: x,
+          positionY: y,
+          label,
+          instanceData: cleanData,
+        });
+        set((state) => {
+          state.instances.push(instance);
+          state.selectedInstanceId = instance.id;
+          state.selectedEdgeId = null;
+        });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : '粘贴实例失败';
         set((state) => {
           state.error = message;
         });
@@ -318,12 +380,44 @@ export const useDiagramStore = create<DiagramEditorState>()(
         state.selectedInstanceId = null;
         state.selectedEdgeId = null;
         state.undoStack = [];
-        state.zoom = 1;
+        state.unnamedHighlightIds = [];
+        state.zoom = 0.5;
         state.panX = 0;
         state.panY = 0;
         state.error = '';
         state.loading = false;
       });
+    },
+
+    ensureComponentInMap: async (componentId: string) => {
+      const existing = get().componentMap[componentId];
+      if (existing?.shapeElements && existing.shapeElements.length > 0) return;
+      await get().refreshComponentMap();
+    },
+
+    refreshComponentMap: async () => {
+      try {
+        const { components, matrices } = await fetchComponentLibrary();
+        set((state) => {
+          for (const comp of components) {
+            state.componentMap[comp.id] = {
+              name: comp.name,
+              category: comp.category,
+              pins: comp.pins,
+              shapeElements: comp.shapeElements,
+              width: comp.width,
+              height: comp.height,
+              displayWidth: comp.displayWidth,
+              displayHeight: comp.displayHeight,
+            };
+          }
+          for (const m of matrices) {
+            state.componentConnections[m.componentId] = m;
+          }
+        });
+      } catch {
+        // Silently fail
+      }
     },
 
     updateInstanceLabel: async (id: string, label: string) => {
@@ -335,12 +429,172 @@ export const useDiagramStore = create<DiagramEditorState>()(
         if (instance) {
           instance.label = label;
         }
+        // Remove from unnamed highlight once user gives it a custom name
+        const comp = state.componentMap[instance?.componentId ?? ''];
+        const defaultLabel = comp?.name || '未知';
+        if (label && label !== defaultLabel) {
+          state.unnamedHighlightIds = state.unnamedHighlightIds.filter((uid) => uid !== id);
+        }
       });
 
       try {
         await updateDiagramInstance(diagramId, id, { label });
       } catch {
         // Silent fail
+      }
+    },
+
+    updateInstanceTransform: async (id: string, transform: { rotation?: number; flipH?: boolean; flipV?: boolean }) => {
+      const diagramId = get().diagramId;
+      if (!diagramId) return;
+
+      get().pushUndo();
+
+      let newInstanceData: Record<string, unknown> = {};
+      set((state) => {
+        const instance = state.instances.find((i) => i.id === id);
+        if (instance) {
+          const data = { ...(instance.instanceData as Record<string, unknown>) };
+          if (transform.rotation !== undefined) data.rotation = transform.rotation;
+          if (transform.flipH !== undefined) data.flipH = transform.flipH;
+          if (transform.flipV !== undefined) data.flipV = transform.flipV;
+          instance.instanceData = data;
+          newInstanceData = data;
+        }
+      });
+
+      try {
+        await updateDiagramInstance(diagramId, id, { instanceData: newInstanceData });
+      } catch {
+        // Silent fail
+      }
+    },
+
+    moveConnectionLabel: (instanceId: string, connId: string, offsetX: number, offsetY: number) => {
+      set((state) => {
+        const instance = state.instances.find((i) => i.id === instanceId);
+        if (!instance) return;
+        const data = { ...(instance.instanceData as Record<string, unknown>) };
+        const labels = (data.connectionLabels as Record<string, { name: string; visible: boolean; offsetX: number; offsetY: number }>) ?? {};
+        if (labels[connId]) {
+          labels[connId].offsetX = offsetX;
+          labels[connId].offsetY = offsetY;
+          data.connectionLabels = labels;
+          instance.instanceData = data;
+        }
+      });
+    },
+
+    updateConnectionLabel: async (instanceId: string, connId: string, labelData: { name?: string; visible?: boolean; offsetX?: number; offsetY?: number }) => {
+      const diagramId = get().diagramId;
+      if (!diagramId) return;
+
+      get().pushUndo();
+
+      let newInstanceData: Record<string, unknown> = {};
+      set((state) => {
+        const instance = state.instances.find((i) => i.id === instanceId);
+        if (!instance) return;
+        const data = { ...(instance.instanceData as Record<string, unknown>) };
+        const labels = (data.connectionLabels as Record<string, { name: string; visible: boolean; offsetX: number; offsetY: number }>) ?? {};
+        if (!labels[connId]) {
+          labels[connId] = { name: '', visible: true, offsetX: 0, offsetY: 0 };
+        }
+        if (labelData.name !== undefined) labels[connId].name = labelData.name;
+        if (labelData.visible !== undefined) labels[connId].visible = labelData.visible;
+        if (labelData.offsetX !== undefined) labels[connId].offsetX = labelData.offsetX;
+        if (labelData.offsetY !== undefined) labels[connId].offsetY = labelData.offsetY;
+        data.connectionLabels = labels;
+        instance.instanceData = data;
+        newInstanceData = data;
+      });
+
+      try {
+        await updateDiagramInstance(diagramId, instanceId, { instanceData: newInstanceData });
+      } catch {
+        // Silent fail
+      }
+    },
+
+    moveInstanceLabel: (id: string, offsetX: number, offsetY: number) => {
+      set((state) => {
+        const instance = state.instances.find((i) => i.id === id);
+        if (!instance) return;
+        const data = { ...(instance.instanceData as Record<string, unknown>) };
+        data.labelOffsetX = offsetX;
+        data.labelOffsetY = offsetY;
+        instance.instanceData = data;
+      });
+    },
+
+    persistInstanceLabelMove: async (id: string) => {
+      const diagramId = get().diagramId;
+      if (!diagramId) return;
+      const instance = get().instances.find((i) => i.id === id);
+      if (!instance) return;
+      try {
+        await updateDiagramInstance(diagramId, id, { instanceData: instance.instanceData as Record<string, unknown> });
+      } catch {
+        // Silent fail
+      }
+    },
+
+    saveDraft: async () => {
+      const diagramId = get().diagramId;
+      if (!diagramId) return;
+
+      const { instances, edges } = get();
+      const snapshot = {
+        schemaVersion: 1,
+        instances: instances.map((inst) => ({
+          id: inst.id,
+          componentId: inst.componentId,
+          label: inst.label,
+          x: inst.positionX,
+          y: inst.positionY,
+          instanceData: inst.instanceData,
+        })),
+        connections: edges.map((edge) => ({
+          id: edge.id,
+          fromInstanceId: edge.sourceInstanceId,
+          toInstanceId: edge.targetInstanceId,
+          fromPinId: edge.sourcePinId,
+          toPinId: edge.targetPinId,
+        })),
+        viewport: { zoom: get().zoom, panX: get().panX, panY: get().panY },
+      };
+
+      try {
+        const updated = await saveDiagram(diagramId, snapshot);
+        set((state) => {
+          state.diagramInfo = updated;
+        });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : '保存草稿失败';
+        set((state) => {
+          state.error = message;
+        });
+        throw e;
+      }
+    },
+
+    withdrawReview: async () => {
+      const diagramId = get().diagramId;
+      if (!diagramId) return;
+
+      try {
+        await withdrawDiagramReview(diagramId);
+        set((state) => {
+          if (state.diagramInfo) {
+            state.diagramInfo.status = 'DRAFT';
+          }
+        });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : '撤回审核失败';
+        set((state) => {
+          state.error = message;
+        });
+        throw e;
       }
     },
   })),

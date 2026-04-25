@@ -17,12 +17,14 @@ enum DiagramStatus {
   PENDING_REVIEW
   PUBLISHED
   REJECTED
+  PENDING_DELETE
 }
 
 enum ReviewStatus {
   PENDING
   APPROVED
   REJECTED
+  WITHDRAWN
 }
 
 model User {
@@ -164,11 +166,11 @@ model DistrictData {
 model LineSegmentData {
   id            String   @id @default(cuid())
   diagramEdgeId String   @unique
-  startPole     String?
-  endPole       String?
   length        Float?
   wireModel     String?
-  impedance     Float?
+  wireOwnership String?
+  wireType      String?
+  isMainDisplay Boolean  @default(true)
   updatedBy     String
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
