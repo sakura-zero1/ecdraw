@@ -2,7 +2,7 @@ import { useRef, useCallback, useEffect, useState } from 'react';
 import { useCanvasStore } from '../../stores/useCanvasStore';
 import { useComponentStore } from '../../stores/useComponentStore';
 import { useConnectionStore } from '../../stores/useConnectionStore';
-import type { ShapeElement } from '../../types';
+import type { ShapeElement, Pin } from '../../types';
 import { computeLinePath } from '../../utils/geometry';
 import { getShapeBounds, getGroupBounds, getGroupResizeHandles, scaleShapeInGroup, moveShapeBy } from '../../utils/alignment';
 import type { Bounds } from '../../utils/alignment';
@@ -400,25 +400,40 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
       if (hasMod && lower === 'd' && compId) {
         e.preventDefault();
         const comp = store.getComponent(compId);
-        if (comp && selectedShapeIds.length > 0) {
+        if (comp && (selectedShapeIds.length > 0 || useCanvasStore.getState().selectedPinIds.length > 0)) {
           const nextIds: string[] = [];
           for (const sid of selectedShapeIds) { const newId = store.cloneShapeElement(compId, sid); if (newId) nextIds.push(newId); }
-          if (nextIds.length > 1) {
+          const nextPinIds: string[] = [];
+          const selectedPinIds = useCanvasStore.getState().selectedPinIds;
+          for (const pid of selectedPinIds) {
+            const pin = comp.pins.find((p) => p.id === pid);
+            if (!pin) continue;
+            const newPinId = store.addPin(compId, pin.label, pin.pinType);
+            store.updatePin(compId, newPinId, { position: { x: pin.position.x + 20, y: pin.position.y + 20 }, visible: pin.visible });
+            nextPinIds.push(newPinId);
+          }
+          const allNextIds = [...nextIds, ...nextPinIds];
+          if (allNextIds.length > 1) {
             const newGroupId = crypto.randomUUID();
             for (const nid of nextIds) store.updateShapeElement(compId, nid, { groupId: newGroupId });
+            for (const npid of nextPinIds) store.updatePin(compId, npid, { groupId: newGroupId });
           }
           useCanvasStore.getState().selectShape(null);
+          selectPin(null);
           for (const nid of nextIds) useCanvasStore.getState().selectShape(nid, true);
+          for (const npid of nextPinIds) selectPin(npid, true);
         }
         return;
       }
       if (hasMod && lower === 'c') {
-        if (selectedShapeIds.length > 0 && compId) {
+        const selectedPinIds = useCanvasStore.getState().selectedPinIds;
+        if ((selectedShapeIds.length > 0 || selectedPinIds.length > 0) && compId) {
           e.preventDefault();
           const comp = store.getComponent(compId);
           if (comp) {
             const els = selectedShapeIds.map((sid) => comp.shapeElements.find((s) => s.id === sid)).filter(Boolean) as ShapeElement[];
-            useCanvasStore.getState().setClipboard(els);
+            const pins = selectedPinIds.map((pid) => comp.pins.find((p) => p.id === pid)).filter(Boolean) as Pin[];
+            useCanvasStore.getState().setClipboard({ shapes: els, pins });
           }
         }
         return;
@@ -426,15 +441,30 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
       if (hasMod && lower === 'v') {
         e.preventDefault();
         const clip = useCanvasStore.getState().clipboard;
-        if (clip.length > 0 && compId) {
-          const newGroupId = clip.length > 1 && clip.every((el) => el.groupId && el.groupId === clip[0].groupId) ? crypto.randomUUID() : undefined;
+        const clipShapes = clip.shapes ?? [];
+        const clipPins = clip.pins ?? [];
+        if ((clipShapes.length > 0 || clipPins.length > 0) && compId) {
+          const newGroupId = clipShapes.length > 1 && clipShapes.every((el) => el.groupId && el.groupId === clipShapes[0].groupId) ? crypto.randomUUID() : undefined;
           const nextIds: string[] = [];
-          for (const el of clip) {
+          for (const el of clipShapes) {
             const newId = store.cloneFromClipboard(compId, el, newGroupId);
             if (newId) nextIds.push(newId);
           }
+          const nextPinIds: string[] = [];
+          const newPinGroupId = clipPins.length > 1 ? crypto.randomUUID() : undefined;
+          for (const pin of clipPins) {
+            const newPinId = store.addPin(compId, pin.label, pin.pinType);
+            store.updatePin(compId, newPinId, {
+              position: { x: pin.position.x + 20, y: pin.position.y + 20 },
+              visible: pin.visible,
+              groupId: newPinGroupId,
+            });
+            nextPinIds.push(newPinId);
+          }
           useCanvasStore.getState().selectShape(null);
+          selectPin(null);
           for (const nid of nextIds) useCanvasStore.getState().selectShape(nid, true);
+          for (const npid of nextPinIds) selectPin(npid, true);
         }
         return;
       }
@@ -444,20 +474,26 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
       if (hasMod && lower === '0') { e.preventDefault(); useCanvasStore.getState().resetView(); return; }
       if (hasMod && lower === 'x') {
         e.preventDefault();
-        if (selectedShapeIds.length > 0 && compId) {
+        const selectedPinIds = useCanvasStore.getState().selectedPinIds;
+        if ((selectedShapeIds.length > 0 || selectedPinIds.length > 0) && compId) {
           const comp = store.getComponent(compId);
           if (comp) {
             const els = selectedShapeIds.map((sid) => comp.shapeElements.find((s) => s.id === sid)).filter(Boolean) as ShapeElement[];
-            useCanvasStore.getState().setClipboard(els);
+            const pins = selectedPinIds.map((pid) => comp.pins.find((p) => p.id === pid)).filter(Boolean) as Pin[];
+            useCanvasStore.getState().setClipboard({ shapes: els, pins });
           }
           for (const sid of selectedShapeIds) store.removeShapeElement(compId, sid);
+          for (const pid of selectedPinIds) store.removePin(compId, pid);
           selectShape(null);
+          selectPin(null);
         }
         return;
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         if (selectedShapeIds.length > 0 && compId) { for (const sid of selectedShapeIds) store.removeShapeElement(compId, sid); selectShape(null); }
+        const { selectedPinIds } = useCanvasStore.getState();
+        if (selectedPinIds.length > 0 && compId) { for (const pid of selectedPinIds) store.removePin(compId, pid); selectPin(null); }
       }
     };
     window.addEventListener('keydown', handler, true);
@@ -942,6 +978,9 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
         for (const el of activeComp.shapeElements) {
           const b = getShapeBounds(el);
           if (b.cx >= left && b.cx <= right && b.cy >= top && b.cy <= bottom) selectShape(el.id, true);
+        }
+        for (const pin of activeComp.pins) {
+          if (pin.position.x >= left && pin.position.x <= right && pin.position.y >= top && pin.position.y <= bottom) selectPin(pin.id, true);
         }
       }
       setRubberBand(null);

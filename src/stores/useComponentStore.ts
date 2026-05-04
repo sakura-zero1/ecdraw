@@ -4,6 +4,7 @@ import { immer } from 'zustand/middleware/immer';
 import { v4 as uuid } from 'uuid';
 import type { ElectricalComponent, Pin, PinType, ComponentCategory, ShapeElement } from '../types';
 import { useConnectionStore } from './useConnectionStore';
+import { useCanvasStore } from './useCanvasStore';
 import { getGroupBounds, scaleShapeInGroup } from '../utils/alignment';
 import type { Bounds } from '../utils/alignment';
 
@@ -410,7 +411,9 @@ export const useComponentStore = create<ComponentStore>()(
 
     groupShapeElements: (componentId, elementIds) => {
       const ids = Array.from(new Set(elementIds));
-      if (ids.length < 2) return null;
+      // Allow grouping when shapes >= 2, or when only pins are selected
+      const selectedPinIds = useCanvasStore.getState().selectedPinIds;
+      if (ids.length < 2 && selectedPinIds.length === 0) return null;
       const groupId = uuid();
       get().pushUndo();
       set((state) => {
@@ -418,6 +421,9 @@ export const useComponentStore = create<ComponentStore>()(
         if (!comp) return;
         comp.shapeElements.forEach((el) => {
           if (ids.includes(el.id)) el.groupId = groupId;
+        });
+        comp.pins.forEach((pin) => {
+          if (selectedPinIds.includes(pin.id)) pin.groupId = groupId;
         });
         comp.updatedAt = new Date().toISOString();
       });
@@ -431,8 +437,20 @@ export const useComponentStore = create<ComponentStore>()(
       set((state) => {
         const comp = state.components.find((c) => c.id === componentId);
         if (!comp) return;
+        // Collect groupIds from shapes being ungrouped
+        const targetGroupIds = new Set<string>();
         comp.shapeElements.forEach((el) => {
-          if (ids.includes(el.id)) el.groupId = undefined;
+          if (ids.includes(el.id) && el.groupId) {
+            targetGroupIds.add(el.groupId);
+            el.groupId = undefined;
+          }
+        });
+        // Clear groupId on pins that belong to those groups or are in selectedPinIds
+        const selectedPinIds = useCanvasStore.getState().selectedPinIds;
+        comp.pins.forEach((pin) => {
+          if ((pin.groupId && targetGroupIds.has(pin.groupId)) || selectedPinIds.includes(pin.id)) {
+            pin.groupId = undefined;
+          }
         });
         comp.updatedAt = new Date().toISOString();
       });
