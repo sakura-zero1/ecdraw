@@ -374,6 +374,31 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
     return () => { window.removeEventListener('keydown', onDown); window.removeEventListener('keyup', onUp); window.removeEventListener('blur', onBlur); };
   }, []);
 
+  // ─── Center viewport on component shapes when switching components ───
+
+  useEffect(() => {
+    if (!activeComp || activeComp.shapeElements.length === 0) {
+      setViewport({ offsetX: 0, offsetY: 0, zoom: 1 });
+      return;
+    }
+    const bounds = getGroupBounds(activeComp.shapeElements);
+    if (!bounds) {
+      setViewport({ offsetX: 0, offsetY: 0, zoom: 1 });
+      return;
+    }
+    const pad = 60;
+    const fitZoomW = (canvasWidth - 2 * pad) / (bounds.width || 1);
+    const fitZoomH = (canvasHeight - 2 * pad) / (bounds.height || 1);
+    const fitZoom = Math.round(Math.min(fitZoomW, fitZoomH, 1.5) * 100) / 100;
+    const centerX = Math.round(bounds.cx * fitZoom);
+    const centerY = Math.round(bounds.cy * fitZoom);
+    setViewport({
+      offsetX: Math.round(canvasWidth / 2 - centerX),
+      offsetY: Math.round(canvasHeight / 2 - centerY),
+      zoom: fitZoom,
+    });
+  }, [activeComponentId]);
+
   // ─── Keyboard shortcuts ───
 
   useEffect(() => {
