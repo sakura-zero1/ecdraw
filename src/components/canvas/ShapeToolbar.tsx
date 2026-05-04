@@ -1,7 +1,7 @@
 ﻿import { useCanvasStore } from '../../stores/useCanvasStore';
 import { useComponentStore } from '../../stores/useComponentStore';
 import type { ToolMode } from '../../types';
-import { rotateShapes, flipShapes } from '../../utils/alignment';
+import { rotateShapes, flipShapes, rotatePinPosition, flipPinPosition } from '../../utils/alignment';
 import './ShapeToolbar.css';
 
 const TOOLS: { mode: ToolMode; icon: string; label: string }[] = [
@@ -20,6 +20,7 @@ export default function ShapeToolbar() {
     removeMany,
     getComponent,
     updateShapeElement,
+    updatePin,
     groupShapeElements,
     ungroupShapeElements,
   } = useComponentStore();
@@ -74,6 +75,11 @@ export default function ShapeToolbar() {
     for (const [id, upd] of updates) {
       updateShapeElement(activeComponentId, id, upd);
     }
+    const pins = component?.pins.filter(p => groupIds.includes(p.groupId ?? '')) ?? [];
+    for (const pin of pins) {
+      const newPos = rotatePinPosition(pin.position.x, pin.position.y, selectedShapes, true);
+      if (newPos) updatePin(activeComponentId, pin.id, { position: newPos });
+    }
   };
 
   const handleRotateCCW = () => {
@@ -81,6 +87,11 @@ export default function ShapeToolbar() {
     const updates = rotateShapes(selectedShapes, false);
     for (const [id, upd] of updates) {
       updateShapeElement(activeComponentId, id, upd);
+    }
+    const pins = component?.pins.filter(p => groupIds.includes(p.groupId ?? '')) ?? [];
+    for (const pin of pins) {
+      const newPos = rotatePinPosition(pin.position.x, pin.position.y, selectedShapes, false);
+      if (newPos) updatePin(activeComponentId, pin.id, { position: newPos });
     }
   };
 
@@ -90,6 +101,11 @@ export default function ShapeToolbar() {
     for (const [id, upd] of updates) {
       updateShapeElement(activeComponentId, id, upd);
     }
+    const pins = component?.pins.filter(p => groupIds.includes(p.groupId ?? '')) ?? [];
+    for (const pin of pins) {
+      const newPos = flipPinPosition(pin.position.x, pin.position.y, selectedShapes, true);
+      if (newPos) updatePin(activeComponentId, pin.id, { position: newPos });
+    }
   };
 
   const handleFlipV = () => {
@@ -97,6 +113,11 @@ export default function ShapeToolbar() {
     const updates = flipShapes(selectedShapes, false);
     for (const [id, upd] of updates) {
       updateShapeElement(activeComponentId, id, upd);
+    }
+    const pins = component?.pins.filter(p => groupIds.includes(p.groupId ?? '')) ?? [];
+    for (const pin of pins) {
+      const newPos = flipPinPosition(pin.position.x, pin.position.y, selectedShapes, false);
+      if (newPos) updatePin(activeComponentId, pin.id, { position: newPos });
     }
   };
 

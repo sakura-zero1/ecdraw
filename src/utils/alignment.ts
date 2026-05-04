@@ -267,6 +267,16 @@ export function rotateShapes(shapes: ShapeElement[], clockwise: boolean): Map<st
   return result;
 }
 
+export function rotatePinPosition(px: number, py: number, shapes: ShapeElement[], clockwise: boolean): { x: number; y: number } | null {
+  const bounds = getGroupBounds(shapes);
+  if (!bounds) return null;
+  // Shape functions swap width/height which visually flips the rotation direction in screen coords (Y-down),
+  // so pins must rotate in the opposite mathematical direction to match the visual result.
+  const fn = clockwise ? rotatePoint90CCW : rotatePoint90CW;
+  const [nx, ny] = fn(px, py, bounds.cx, bounds.cy);
+  return { x: nx, y: ny };
+}
+
 function flipShapeH(shape: ShapeElement, cx: number, _cy: number): Partial<ShapeElement> {
   switch (shape.type) {
     case 'rect': {
@@ -307,6 +317,16 @@ export function flipShapes(shapes: ShapeElement[], horizontal: boolean): Map<str
   const center = horizontal ? bounds.cx : bounds.cy;
   for (const s of shapes) result.set(s.id, fn(s, bounds.cx, bounds.cy));
   return result;
+}
+
+export function flipPinPosition(px: number, py: number, shapes: ShapeElement[], horizontal: boolean): { x: number; y: number } | null {
+  const bounds = getGroupBounds(shapes);
+  if (!bounds) return null;
+  if (horizontal) {
+    return { x: Math.round(2 * bounds.cx - px), y: py };
+  } else {
+    return { x: px, y: Math.round(2 * bounds.cy - py) };
+  }
 }
 
 export function computeAlignment(elements: ShapeElement[], mode: AlignMode): Map<string, Partial<ShapeElement>> {
