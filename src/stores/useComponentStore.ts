@@ -8,6 +8,10 @@ import { useCanvasStore } from './useCanvasStore';
 import { getGroupBounds, scaleShapeInGroup } from '../utils/alignment';
 import type { Bounds } from '../utils/alignment';
 
+/** Anchors for import scaling: first-import content bounds per target component.
+ *  Stored outside Zustand state because Immer freezes objects. */
+const importAnchorMap = new Map<string, { cw: number; ch: number }>();
+
 interface ComponentStore {
   components: ElectricalComponent[];
   activeComponentId: string | null;
@@ -201,9 +205,7 @@ export const useComponentStore = create<ComponentStore>()(
         if (comp) {
           comp.shapeElements.push({ ...element, id });
           comp.updatedAt = new Date().toISOString();
-          // Reset import anchor so subsequent imports use fresh content bounds
-          delete (comp as Record<string, unknown>)._importAnchorCw;
-          delete (comp as Record<string, unknown>)._importAnchorCh;
+          importAnchorMap.delete(componentId);
         }
       });
       return id;
@@ -226,8 +228,7 @@ export const useComponentStore = create<ComponentStore>()(
         if (comp) {
           comp.shapeElements = comp.shapeElements.filter((e) => e.id !== elementId);
           comp.updatedAt = new Date().toISOString();
-          delete (comp as Record<string, unknown>)._importAnchorCw;
-          delete (comp as Record<string, unknown>)._importAnchorCh;
+          importAnchorMap.delete(componentId);
         }
       });
     },
@@ -247,9 +248,7 @@ export const useComponentStore = create<ComponentStore>()(
           comp.pins = comp.pins.filter((p) => !ids.has(p.id));
         }
         comp.updatedAt = new Date().toISOString();
-        // Reset import anchor so subsequent imports use fresh content bounds
-        delete (comp as Record<string, unknown>)._importAnchorCw;
-        delete (comp as Record<string, unknown>)._importAnchorCh;
+        importAnchorMap.delete(componentId);
       });
       for (const pid of pinIds) {
         useConnectionStore.getState().removePinConnections(componentId, pid);
@@ -375,23 +374,19 @@ export const useComponentStore = create<ComponentStore>()(
       const targetComp = get().components.find(c => c.id === targetId);
       const targetDw = targetComp?.displayWidth ?? 140;
       const targetDh = targetComp?.displayHeight ?? 90;
-      const anchor = (targetComp as Record<string, unknown> | undefined) ?? {};
-      let anchorCw = anchor._importAnchorCw as number | undefined;
-      let anchorCh = anchor._importAnchorCh as number | undefined;
-      if (anchorCw === undefined || anchorCh === undefined) {
+      let anchor = importAnchorMap.get(targetId);
+      if (!anchor) {
         const targetContentBounds = targetComp ? getGroupBounds(targetComp.shapeElements) : null;
-        anchorCw = targetContentBounds?.width || targetComp?.width || cw;
-        anchorCh = targetContentBounds?.height || targetComp?.height || ch;
-        if (targetComp) {
-          (targetComp as Record<string, unknown>)._importAnchorCw = anchorCw;
-          (targetComp as Record<string, unknown>)._importAnchorCh = anchorCh;
-        }
+        const anchorCw = targetContentBounds?.width || targetComp?.width || cw;
+        const anchorCh = targetContentBounds?.height || targetComp?.height || ch;
+        anchor = { cw: anchorCw, ch: anchorCh };
+        importAnchorMap.set(targetId, anchor);
       }
 
       // Per-dimension scale: source content → source display → target display → anchor content
       // Then pick the more constraining dimension to preserve aspect ratio.
-      const scaleW = (dw / cw) * (anchorCw / targetDw);
-      const scaleH = (dh / ch) * (anchorCh / targetDh);
+      const scaleW = (dw / cw) * (anchor.cw / targetDw);
+      const scaleH = (dh / ch) * (anchor.ch / targetDh);
       const uniformScale = Math.min(scaleW, scaleH);
 
       const targetBounds: Bounds = {
