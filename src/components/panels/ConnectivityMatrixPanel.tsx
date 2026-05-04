@@ -254,6 +254,7 @@ function ShapeLinkSection({
               onMouseEnter={() => setHoveredShapes([shape.id])}
               onMouseLeave={clearHoveredShapes}
               onClick={() => {
+                clearHoveredShapes();
                 flashShapes([shape.id], 1600);
               }}
             >
@@ -327,6 +328,7 @@ function ShapeLinkSection({
                     clearHoveredShapes();
                   }}
                   onClick={() => {
+                    clearHoveredShapes();
                     flashShapes([s.id], 1600);
                     linkShape(s.id);
                     setIsOpen(false);

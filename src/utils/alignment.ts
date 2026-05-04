@@ -94,47 +94,100 @@ export function scaleShapeInGroup(
   const scaleX = newBounds.width / origW;
   const scaleY = newBounds.height / origH;
 
+  let result: Partial<ShapeElement>;
+
   switch (shape.type) {
     case 'rect': {
       const relX = (shape.x ?? 0) - origBounds.left;
       const relY = (shape.y ?? 0) - origBounds.top;
-      return {
+      result = {
         x: Math.round(newBounds.left + relX * scaleX),
         y: Math.round(newBounds.top + relY * scaleY),
         width: Math.round(Math.max(2, (shape.width ?? 0) * scaleX)),
         height: Math.round(Math.max(2, (shape.height ?? 0) * scaleY)),
       };
+      break;
     }
     case 'circle': {
       const relX = (shape.cx ?? 0) - origBounds.left;
       const relY = (shape.cy ?? 0) - origBounds.top;
-      return {
+      result = {
         cx: Math.round(newBounds.left + relX * scaleX),
         cy: Math.round(newBounds.top + relY * scaleY),
         r: Math.round(Math.max(2, (shape.r ?? 0) * (scaleX + scaleY) / 2)),
       };
+      break;
     }
     case 'ellipse': {
       const relX = (shape.cx ?? 0) - origBounds.left;
       const relY = (shape.cy ?? 0) - origBounds.top;
-      return {
+      result = {
         cx: Math.round(newBounds.left + relX * scaleX),
         cy: Math.round(newBounds.top + relY * scaleY),
         rx: Math.round(Math.max(2, (shape.rx ?? 0) * scaleX)),
         ry: Math.round(Math.max(2, (shape.ry ?? 0) * scaleY)),
       };
+      break;
     }
     case 'line': {
-      return {
+      result = {
         x1: Math.round(newBounds.left + ((shape.x1 ?? 0) - origBounds.left) * scaleX),
         y1: Math.round(newBounds.top + ((shape.y1 ?? 0) - origBounds.top) * scaleY),
         x2: Math.round(newBounds.left + ((shape.x2 ?? 0) - origBounds.left) * scaleX),
         y2: Math.round(newBounds.top + ((shape.y2 ?? 0) - origBounds.top) * scaleY),
       };
+      break;
     }
     default:
-      return {};
+      result = {};
   }
+
+  // Scale override position keys so stateClosed/stateOpen follow the group resize
+  for (const ovKey of ['stateClosed', 'stateOpen'] as const) {
+    const ov = shape[ovKey];
+    if (!ov || typeof ov !== 'object') continue;
+    const ovUpdates = scaleOverride(ov as Record<string, unknown>, shape.type, origBounds, newBounds, scaleX, scaleY);
+    if (ovUpdates) (result as Record<string, unknown>)[ovKey] = { ...ov, ...ovUpdates };
+  }
+
+  return result;
+}
+
+function scaleOverride(
+  ov: Record<string, unknown>,
+  type: ShapeElement['type'],
+  origBounds: Bounds,
+  newBounds: Bounds,
+  scaleX: number,
+  scaleY: number,
+): Record<string, number> | null {
+  const updates: Record<string, number> = {};
+  switch (type) {
+    case 'rect':
+      if (typeof ov.x === 'number') updates.x = Math.round(newBounds.left + (ov.x - origBounds.left) * scaleX);
+      if (typeof ov.y === 'number') updates.y = Math.round(newBounds.top + (ov.y - origBounds.top) * scaleY);
+      if (typeof ov.width === 'number') updates.width = Math.round(Math.max(2, ov.width * scaleX));
+      if (typeof ov.height === 'number') updates.height = Math.round(Math.max(2, ov.height * scaleY));
+      break;
+    case 'circle':
+      if (typeof ov.cx === 'number') updates.cx = Math.round(newBounds.left + (ov.cx - origBounds.left) * scaleX);
+      if (typeof ov.cy === 'number') updates.cy = Math.round(newBounds.top + (ov.cy - origBounds.top) * scaleY);
+      if (typeof ov.r === 'number') updates.r = Math.round(Math.max(2, ov.r * (scaleX + scaleY) / 2));
+      break;
+    case 'ellipse':
+      if (typeof ov.cx === 'number') updates.cx = Math.round(newBounds.left + (ov.cx - origBounds.left) * scaleX);
+      if (typeof ov.cy === 'number') updates.cy = Math.round(newBounds.top + (ov.cy - origBounds.top) * scaleY);
+      if (typeof ov.rx === 'number') updates.rx = Math.round(Math.max(2, ov.rx * scaleX));
+      if (typeof ov.ry === 'number') updates.ry = Math.round(Math.max(2, ov.ry * scaleY));
+      break;
+    case 'line':
+      if (typeof ov.x1 === 'number') updates.x1 = Math.round(newBounds.left + (ov.x1 - origBounds.left) * scaleX);
+      if (typeof ov.y1 === 'number') updates.y1 = Math.round(newBounds.top + (ov.y1 - origBounds.top) * scaleY);
+      if (typeof ov.x2 === 'number') updates.x2 = Math.round(newBounds.left + (ov.x2 - origBounds.left) * scaleX);
+      if (typeof ov.y2 === 'number') updates.y2 = Math.round(newBounds.top + (ov.y2 - origBounds.top) * scaleY);
+      break;
+  }
+  return Object.keys(updates).length > 0 ? updates : null;
 }
 
 function rotatePoint90CW(px: number, py: number, cx: number, cy: number): [number, number] {

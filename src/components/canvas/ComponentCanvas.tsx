@@ -45,12 +45,32 @@ function applyShapeMove(
   compId: string, shapeId: string, orig: Record<string, number>,
   dx: number, dy: number,
   update: (cid: string, sid: string, u: Partial<ShapeElement>) => void,
+  shape?: ShapeElement,
 ) {
-  const updates: Record<string, number> = {};
+  const updates: Record<string, number | object> = {};
   for (const [k, v] of Object.entries(orig)) {
-    updates[k] = Math.round(v + (k.includes('x') || k === 'cx' ? dx : k.includes('y') || k === 'cy' ? dy : 0));
+    const isX = k.includes('x') || k === 'cx';
+    const isY = k.includes('y') || k === 'cy';
+    updates[k] = Math.round(v + (isX ? dx : isY ? dy : 0));
   }
-  update(compId, shapeId, updates);
+  // Also move override position keys so stateClosed/stateOpen follow the shape
+  for (const ovKey of ['stateClosed', 'stateOpen'] as const) {
+    const ov = shape?.[ovKey];
+    if (!ov || typeof ov !== 'object') continue;
+    const ovUpdates: Record<string, number> = {};
+    for (const k of Object.keys(orig)) {
+      if (k in (ov as Record<string, unknown>)) {
+        const v = (ov as Record<string, unknown>)[k] as number;
+        const isX = k.includes('x') || k === 'cx';
+        const isY = k.includes('y') || k === 'cy';
+        ovUpdates[k] = Math.round(v + (isX ? dx : isY ? dy : 0));
+      }
+    }
+    if (Object.keys(ovUpdates).length > 0) {
+      updates[ovKey] = { ...ov, ...ovUpdates };
+    }
+  }
+  update(compId, shapeId, updates as Partial<ShapeElement>);
 }
 
 function computeResizedShape(
@@ -833,7 +853,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
             cx: (movedLeft + movedRight) / 2, cy: (movedTop + movedBottom) / 2 },
           activeComp.shapeElements, movingIds, viewport.zoom,
         ));
-        for (const sid of shapeIds) { const orig = shapeOrigMap[sid]; if (orig) applyShapeMove(activeComp.id, sid, orig, snappedDx, snappedDy, updateShapeElement); }
+        for (const sid of shapeIds) { const orig = shapeOrigMap[sid]; const s = activeComp.shapeElements.find((e) => e.id === sid); if (orig) applyShapeMove(activeComp.id, sid, orig, snappedDx, snappedDy, updateShapeElement, s); }
         // Move pins in the same group
         if (dragState.pinOrigMap) {
           for (const [pinId, origPos] of Object.entries(dragState.pinOrigMap)) {
