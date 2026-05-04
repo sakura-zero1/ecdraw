@@ -45,7 +45,7 @@ function applyShapeMove(
   compId: string, shapeId: string, orig: Record<string, number>,
   dx: number, dy: number,
   update: (cid: string, sid: string, u: Partial<ShapeElement>) => void,
-  shape?: ShapeElement,
+  origOverrides?: Record<string, Record<string, unknown>>,
 ) {
   const updates: Record<string, number | object> = {};
   for (const [k, v] of Object.entries(orig)) {
@@ -53,24 +53,33 @@ function applyShapeMove(
     const isY = k.includes('y') || k === 'cy';
     updates[k] = Math.round(v + (isX ? dx : isY ? dy : 0));
   }
-  // Also move override position keys so stateClosed/stateOpen follow the shape
-  for (const ovKey of ['stateClosed', 'stateOpen'] as const) {
-    const ov = shape?.[ovKey];
-    if (!ov || typeof ov !== 'object') continue;
-    const ovUpdates: Record<string, number> = {};
-    for (const k of Object.keys(orig)) {
-      if (k in (ov as Record<string, unknown>)) {
-        const v = (ov as Record<string, unknown>)[k] as number;
+  // Also move override position keys so stateClosed/stateOpen follow the shape.
+  // Use ORIGINAL override values captured at drag start to avoid drift.
+  if (origOverrides) {
+    for (const [ovKey, ovOrig] of Object.entries(origOverrides)) {
+      const ovUpdates: Record<string, number> = {};
+      for (const [k, v] of Object.entries(ovOrig)) {
+        if (typeof v !== 'number') continue;
         const isX = k.includes('x') || k === 'cx';
         const isY = k.includes('y') || k === 'cy';
-        ovUpdates[k] = Math.round(v + (isX ? dx : isY ? dy : 0));
+        if (isX || isY) ovUpdates[k] = Math.round(v + (isX ? dx : isY ? dy : 0));
       }
-    }
-    if (Object.keys(ovUpdates).length > 0) {
-      updates[ovKey] = { ...ov, ...ovUpdates };
+      if (Object.keys(ovUpdates).length > 0) {
+        updates[ovKey] = { ...ovOrig, ...ovUpdates };
+      }
     }
   }
   update(compId, shapeId, updates as Partial<ShapeElement>);
+}
+
+/** Snapshot full override objects for shapes that have stateClosed/stateOpen */
+function getShapeOverrideOrigins(shape: ShapeElement): Record<string, Record<string, unknown>> | undefined {
+  const result: Record<string, Record<string, unknown>> = {};
+  for (const ovKey of ['stateClosed', 'stateOpen'] as const) {
+    const ov = shape[ovKey];
+    if (ov && typeof ov === 'object') result[ovKey] = { ...ov as Record<string, unknown> };
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function computeResizedShape(
@@ -324,8 +333,10 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
     startCanvasX: number; startCanvasY: number; origData: Record<string, number>;
     startOffsetX?: number; startOffsetY?: number;
     shapeIds?: string[]; shapeOrigMap?: Record<string, Record<string, number>>;
+    shapeOvOrigMap?: Record<string, Record<string, Record<string, unknown>>>;
     pinOrigMap?: Record<string, { x: number; y: number }>;
     groupId?: string; origGroupBounds?: Bounds; shapeOrigData?: Record<string, Record<string, number>>;
+    shapeOvOrigData?: Record<string, Record<string, Record<string, unknown>>>;
   } | null>(null);
   const [rubberBand, setRubberBand] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
   const [altHeld, setAltHeld] = useState(false);
@@ -640,14 +651,15 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
                 e.preventDefault();
                 pushUndo();
                 const shapeOrigData: Record<string, Record<string, number>> = {};
-                for (const s of groupShapes) shapeOrigData[s.id] = getShapeResizeData(s);
+                const shapeOvOrigData: Record<string, Record<string, Record<string, unknown>>> = {};
+                for (const s of groupShapes) { shapeOrigData[s.id] = getShapeResizeData(s); const sOv = getShapeOverrideOrigins(s); if (sOv) shapeOvOrigData[s.id] = sOv; }
                 const pinOrigMap: Record<string, { x: number; y: number }> = {};
                 for (const pin of activeComp.pins) { if (pin.groupId === commonGroupId) pinOrigMap[pin.id] = { ...pin.position }; }
                 setDragState({
                   type: 'group-handle', id: '', handle: h.key,
                   startCanvasX: pos.x, startCanvasY: pos.y,
                   origData: {},
-                  groupId: commonGroupId, origGroupBounds: groupBounds, shapeOrigData, pinOrigMap,
+                  groupId: commonGroupId, origGroupBounds: groupBounds, shapeOrigData, shapeOvOrigData, pinOrigMap,
                 });
                 return;
               }
@@ -702,20 +714,24 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
           if (el.groupId && groupEditingId === el.groupId) {
             // In group editing mode — move just this line
             selectShape(el.id);
-            setDragState({ type: 'shape', id: el.id, startCanvasX: pos.x, startCanvasY: pos.y, origData: getShapePosition(el) });
+            const sOvLine = getShapeOverrideOrigins(el);
+            setDragState({ type: 'shape', id: el.id, startCanvasX: pos.x, startCanvasY: pos.y, origData: getShapePosition(el), shapeOvOrigMap: sOvLine ? { [el.id]: sOvLine } : undefined });
           } else if (el.groupId) {
             const groupIds = activeComp.shapeElements.filter((s) => s.groupId === el.groupId).map((s) => s.id);
             selectShape(null);
             for (const gid of groupIds) selectShape(gid, true);
             for (const pin of activeComp.pins) { if (pin.groupId === el.groupId) selectPin(pin.id, true); }
             const shapeOrigMap: Record<string, Record<string, number>> = {};
-            for (const sid of groupIds) { const s = activeComp.shapeElements.find((s2) => s2.id === sid); if (s) shapeOrigMap[sid] = getShapePosition(s); }
+            const shapeOvOrigMap: Record<string, Record<string, Record<string, unknown>>> = {};
+            for (const sid of groupIds) { const s = activeComp.shapeElements.find((s2) => s2.id === sid); if (s) { shapeOrigMap[sid] = getShapePosition(s); const sOv = getShapeOverrideOrigins(s); if (sOv) shapeOvOrigMap[sid] = sOv; } }
             const pinOrigMap: Record<string, { x: number; y: number }> = {};
             for (const pin of activeComp.pins) { if (pin.groupId === el.groupId) pinOrigMap[pin.id] = { ...pin.position }; }
-            setDragState({ type: 'shape', id: el.id, startCanvasX: pos.x, startCanvasY: pos.y, origData: getShapePosition(el), shapeIds: groupIds, shapeOrigMap, pinOrigMap });
+            setDragState({ type: 'shape', id: el.id, startCanvasX: pos.x, startCanvasY: pos.y, origData: getShapePosition(el), shapeIds: groupIds, shapeOrigMap, shapeOvOrigMap, pinOrigMap });
           } else {
+            // Ungrouped line
             selectShape(el.id);
-            setDragState({ type: 'shape', id: el.id, startCanvasX: pos.x, startCanvasY: pos.y, origData: getShapePosition(el) });
+            const sOvLineUngrouped = getShapeOverrideOrigins(el);
+            setDragState({ type: 'shape', id: el.id, startCanvasX: pos.x, startCanvasY: pos.y, origData: getShapePosition(el), shapeOvOrigMap: sOvLineUngrouped ? { [el.id]: sOvLineUngrouped } : undefined });
           }
         }
         return;
@@ -747,7 +763,8 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
         if (el.groupId && groupEditingId === el.groupId) {
           // In group editing mode — select and drag individual shape
           selectShape(el.id);
-          setDragState({ type: 'shape', id: el.id, startCanvasX: pos.x, startCanvasY: pos.y, origData: getShapePosition(el) });
+          const sOvGroupEdit = getShapeOverrideOrigins(el);
+          setDragState({ type: 'shape', id: el.id, startCanvasX: pos.x, startCanvasY: pos.y, origData: getShapePosition(el), shapeOvOrigMap: sOvGroupEdit ? { [el.id]: sOvGroupEdit } : undefined });
         } else if (el.groupId) {
           // Not in group editing — select whole group
           const groupIds = activeComp.shapeElements.filter((s) => s.groupId === el.groupId).map((s) => s.id);
@@ -755,15 +772,17 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
           for (const gid of groupIds) selectShape(gid, true);
           for (const pin of activeComp.pins) { if (pin.groupId === el.groupId) selectPin(pin.id, true); }
           const shapeOrigMap: Record<string, Record<string, number>> = {};
-          for (const sid of groupIds) { const s = activeComp.shapeElements.find((s2) => s2.id === sid); if (s) shapeOrigMap[sid] = getShapePosition(s); }
+          const shapeOvOrigMap: Record<string, Record<string, Record<string, unknown>>> = {};
+          for (const sid of groupIds) { const s = activeComp.shapeElements.find((s2) => s2.id === sid); if (s) { shapeOrigMap[sid] = getShapePosition(s); const sOv = getShapeOverrideOrigins(s); if (sOv) shapeOvOrigMap[sid] = sOv; } }
           const pinOrigMap: Record<string, { x: number; y: number }> = {};
           for (const pin of activeComp.pins) { if (pin.groupId === el.groupId) pinOrigMap[pin.id] = { ...pin.position }; }
-          setDragState({ type: 'shape', id: el.id, startCanvasX: pos.x, startCanvasY: pos.y, origData: getShapePosition(el), shapeIds: groupIds, shapeOrigMap, pinOrigMap });
+          setDragState({ type: 'shape', id: el.id, startCanvasX: pos.x, startCanvasY: pos.y, origData: getShapePosition(el), shapeIds: groupIds, shapeOrigMap, shapeOvOrigMap, pinOrigMap });
           if (groupEditingId) useCanvasStore.getState().exitGroupEditing();
         } else {
           // Ungrouped shape
           selectShape(el.id);
-          setDragState({ type: 'shape', id: el.id, startCanvasX: pos.x, startCanvasY: pos.y, origData: getShapePosition(el) });
+          const sOvUngrouped = getShapeOverrideOrigins(el);
+          setDragState({ type: 'shape', id: el.id, startCanvasX: pos.x, startCanvasY: pos.y, origData: getShapePosition(el), shapeOvOrigMap: sOvUngrouped ? { [el.id]: sOvUngrouped } : undefined });
           if (groupEditingId) useCanvasStore.getState().exitGroupEditing();
         }
       }
@@ -853,7 +872,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
             cx: (movedLeft + movedRight) / 2, cy: (movedTop + movedBottom) / 2 },
           activeComp.shapeElements, movingIds, viewport.zoom,
         ));
-        for (const sid of shapeIds) { const orig = shapeOrigMap[sid]; const s = activeComp.shapeElements.find((e) => e.id === sid); if (orig) applyShapeMove(activeComp.id, sid, orig, snappedDx, snappedDy, updateShapeElement, s); }
+        for (const sid of shapeIds) { const orig = shapeOrigMap[sid]; if (orig) applyShapeMove(activeComp.id, sid, orig, snappedDx, snappedDy, updateShapeElement, dragState.shapeOvOrigMap?.[sid]); }
         // Move pins in the same group
         if (dragState.pinOrigMap) {
           for (const [pinId, origPos] of Object.entries(dragState.pinOrigMap)) {

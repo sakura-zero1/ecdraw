@@ -88,6 +88,7 @@ export function scaleShapeInGroup(
   shape: ShapeElement,
   origBounds: Bounds,
   newBounds: Bounds,
+  origOverrides?: Record<string, Record<string, unknown>>,
 ): Partial<ShapeElement> {
   const origW = origBounds.width || 1;
   const origH = origBounds.height || 1;
@@ -142,12 +143,21 @@ export function scaleShapeInGroup(
       result = {};
   }
 
-  // Scale override position keys so stateClosed/stateOpen follow the group resize
-  for (const ovKey of ['stateClosed', 'stateOpen'] as const) {
-    const ov = shape[ovKey];
-    if (!ov || typeof ov !== 'object') continue;
-    const ovUpdates = scaleOverride(ov as Record<string, unknown>, shape.type, origBounds, newBounds, scaleX, scaleY);
-    if (ovUpdates) (result as Record<string, unknown>)[ovKey] = { ...ov, ...ovUpdates };
+  // Scale override position keys so stateClosed/stateOpen follow the group resize.
+  // Use original override values captured at drag start to avoid drift.
+  const overrides = origOverrides ?? (() => {
+    const r: Record<string, Record<string, unknown>> = {};
+    for (const ovKey of ['stateClosed', 'stateOpen'] as const) {
+      const ov = shape[ovKey];
+      if (ov && typeof ov === 'object') r[ovKey] = { ...ov as Record<string, unknown> };
+    }
+    return Object.keys(r).length > 0 ? r : undefined;
+  })();
+  if (overrides) {
+    for (const [ovKey, ovOrig] of Object.entries(overrides)) {
+      const ovUpdates = scaleOverride(ovOrig, shape.type, origBounds, newBounds, scaleX, scaleY);
+      if (ovUpdates) (result as Record<string, unknown>)[ovKey] = { ...ovOrig, ...ovUpdates };
+    }
   }
 
   return result;
