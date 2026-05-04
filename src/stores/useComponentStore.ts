@@ -354,36 +354,28 @@ export const useComponentStore = create<ComponentStore>()(
       const dh = sourceComp.displayHeight ?? 90;
       const cw = contentBounds.width || 1;
       const ch = contentBounds.height || 1;
-      const s = Math.min(dw / cw, dh / ch);
 
-      // Adjust target size to match target component's content-to-display ratio,
-      // so imported shapes are sized proportionally to the target's own shapes.
+      // Target content-to-display reference
       const targetComp = get().components.find(c => c.id === targetId);
       const targetContentBounds = targetComp ? getGroupBounds(targetComp.shapeElements) : null;
       const targetDw = targetComp?.displayWidth ?? 140;
       const targetDh = targetComp?.displayHeight ?? 90;
-      let ratio = 1;
-      if (targetContentBounds && targetContentBounds.width > 0 && targetContentBounds.height > 0) {
-        ratio = Math.min(
-          targetContentBounds.width / targetDw,
-          targetContentBounds.height / targetDh,
-        );
-      } else if (targetComp) {
-        // Fallback: use canvas-to-display ratio
-        ratio = Math.min(
-          targetComp.width / targetDw,
-          targetComp.height / targetDh,
-        );
-      }
-      const adjustedS = s * ratio;
+      const targetCw = targetContentBounds?.width || targetComp?.width || cw;
+      const targetCh = targetContentBounds?.height || targetComp?.height || ch;
+
+      // Per-dimension scale: source content → source display → target display → target content
+      // Then pick the more constraining dimension to preserve aspect ratio.
+      const scaleW = (dw / cw) * (targetCw / targetDw);
+      const scaleH = (dh / ch) * (targetCh / targetDh);
+      const uniformScale = Math.min(scaleW, scaleH);
 
       const targetBounds: Bounds = {
-        left: centerX - (cw * adjustedS) / 2,
-        top: centerY - (ch * adjustedS) / 2,
-        right: centerX + (cw * adjustedS) / 2,
-        bottom: centerY + (ch * adjustedS) / 2,
-        width: cw * adjustedS,
-        height: ch * adjustedS,
+        left: centerX - (cw * uniformScale) / 2,
+        top: centerY - (ch * uniformScale) / 2,
+        right: centerX + (cw * uniformScale) / 2,
+        bottom: centerY + (ch * uniformScale) / 2,
+        width: cw * uniformScale,
+        height: ch * uniformScale,
         cx: centerX,
         cy: centerY,
       };
@@ -405,8 +397,8 @@ export const useComponentStore = create<ComponentStore>()(
           id: uuid(),
           groupId,
           position: {
-            x: Math.round(targetBounds.left + relX * adjustedS),
-            y: Math.round(targetBounds.top + relY * adjustedS),
+            x: Math.round(targetBounds.left + relX * uniformScale),
+            y: Math.round(targetBounds.top + relY * uniformScale),
           },
         };
       });
