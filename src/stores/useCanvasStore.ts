@@ -1,6 +1,6 @@
 ﻿import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import type { ToolMode, Viewport, ShapeElement } from '../types';
+import type { ToolMode, Viewport, ShapeElement, Pin } from '../types';
 
 interface CanvasStore {
   viewport: Viewport;
@@ -15,7 +15,7 @@ interface CanvasStore {
   groupEditingGroupId: string | null;
 
   // Clipboard
-  clipboard: ShapeElement[];
+  clipboard: { shapes: ShapeElement[]; pins: Pin[] };
 
   // Drawing defaults
   defaultFill: string;
@@ -31,7 +31,7 @@ interface CanvasStore {
   selectConnection: (id: string | null) => void;
   selectShape: (id: string | null, multi?: boolean) => void;
   clearSelection: () => void;
-  setClipboard: (els: ShapeElement[]) => void;
+  setClipboard: (clip: { shapes: ShapeElement[]; pins: Pin[] }) => void;
   setDefaultFill: (color: string) => void;
   setDefaultStroke: (color: string) => void;
   setDefaultStrokeWidth: (w: number) => void;
@@ -61,7 +61,7 @@ export const useCanvasStore = create<CanvasStore>()(
     flashNonce: 0,
     hoveredShapeIds: [],
     groupEditingGroupId: null,
-    clipboard: [],
+    clipboard: { shapes: [], pins: [] },
     defaultFill: 'transparent',
     defaultStroke: '#000000',
     defaultStrokeWidth: 5,
@@ -157,9 +157,9 @@ export const useCanvasStore = create<CanvasStore>()(
       });
     },
 
-    setClipboard: (els) => {
+    setClipboard: (clip) => {
       set((state) => {
-        state.clipboard = els;
+        state.clipboard = clip;
       });
     },
 
