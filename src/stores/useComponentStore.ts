@@ -356,13 +356,34 @@ export const useComponentStore = create<ComponentStore>()(
       const ch = contentBounds.height || 1;
       const s = Math.min(dw / cw, dh / ch);
 
+      // Adjust target size to match target component's content-to-display ratio,
+      // so imported shapes are sized proportionally to the target's own shapes.
+      const targetComp = get().components.find(c => c.id === targetId);
+      const targetContentBounds = targetComp ? getGroupBounds(targetComp.shapeElements) : null;
+      const targetDw = targetComp?.displayWidth ?? 140;
+      const targetDh = targetComp?.displayHeight ?? 90;
+      let ratio = 1;
+      if (targetContentBounds && targetContentBounds.width > 0 && targetContentBounds.height > 0) {
+        ratio = Math.min(
+          targetContentBounds.width / targetDw,
+          targetContentBounds.height / targetDh,
+        );
+      } else if (targetComp) {
+        // Fallback: use canvas-to-display ratio
+        ratio = Math.min(
+          targetComp.width / targetDw,
+          targetComp.height / targetDh,
+        );
+      }
+      const adjustedS = s * ratio;
+
       const targetBounds: Bounds = {
-        left: centerX - (cw * s) / 2,
-        top: centerY - (ch * s) / 2,
-        right: centerX + (cw * s) / 2,
-        bottom: centerY + (ch * s) / 2,
-        width: cw * s,
-        height: ch * s,
+        left: centerX - (cw * adjustedS) / 2,
+        top: centerY - (ch * adjustedS) / 2,
+        right: centerX + (cw * adjustedS) / 2,
+        bottom: centerY + (ch * adjustedS) / 2,
+        width: cw * adjustedS,
+        height: ch * adjustedS,
         cx: centerX,
         cy: centerY,
       };
@@ -384,8 +405,8 @@ export const useComponentStore = create<ComponentStore>()(
           id: uuid(),
           groupId,
           position: {
-            x: Math.round(targetBounds.left + relX * s),
-            y: Math.round(targetBounds.top + relY * s),
+            x: Math.round(targetBounds.left + relX * adjustedS),
+            y: Math.round(targetBounds.top + relY * adjustedS),
           },
         };
       });
