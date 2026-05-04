@@ -30,6 +30,7 @@ interface CanvasStore {
   selectPin: (id: string | null, multi?: boolean) => void;
   selectConnection: (id: string | null) => void;
   selectShape: (id: string | null, multi?: boolean) => void;
+  selectMany: (shapeIds: string[], pinIds: string[]) => void;
   clearSelection: () => void;
   setClipboard: (clip: { shapes: ShapeElement[]; pins: Pin[] }) => void;
   setDefaultFill: (color: string) => void;
@@ -102,7 +103,7 @@ export const useCanvasStore = create<CanvasStore>()(
 
     selectPin: (id, multi = false) => {
       set((state) => {
-        state.selectedShapeIds = [];
+        if (!multi) state.selectedShapeIds = [];
         if (id === null) {
           state.selectedPinIds = [];
           state.selectedPinId = null;
@@ -131,8 +132,7 @@ export const useCanvasStore = create<CanvasStore>()(
 
     selectShape: (id, multi = false) => {
       set((state) => {
-        state.selectedPinIds = [];
-        state.selectedPinId = null;
+        if (!multi) { state.selectedPinIds = []; state.selectedPinId = null; }
         if (id === null) {
           state.selectedShapeIds = [];
         } else if (multi) {
@@ -145,6 +145,15 @@ export const useCanvasStore = create<CanvasStore>()(
         } else {
           state.selectedShapeIds = [id];
         }
+      });
+    },
+
+    selectMany: (shapeIds, pinIds) => {
+      set((state) => {
+        state.selectedShapeIds = [...shapeIds];
+        state.selectedPinIds = [...pinIds];
+        state.selectedPinId = pinIds[0] ?? null;
+        state.groupEditingGroupId = null;
       });
     },
 

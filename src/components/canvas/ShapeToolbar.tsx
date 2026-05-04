@@ -14,10 +14,10 @@ const TOOLS: { mode: ToolMode; icon: string; label: string }[] = [
 
 export default function ShapeToolbar() {
   const { activeTool, setActiveTool, defaultFill, defaultStroke, defaultStrokeWidth,
-    setDefaultFill, setDefaultStroke, setDefaultStrokeWidth, selectedShapeIds } = useCanvasStore();
+    setDefaultFill, setDefaultStroke, setDefaultStrokeWidth, selectedShapeIds, selectedPinIds } = useCanvasStore();
   const {
     activeComponentId,
-    removeShapeElement,
+    removeMany,
     getComponent,
     updateShapeElement,
     groupShapeElements,
@@ -46,11 +46,9 @@ export default function ShapeToolbar() {
   };
 
   const handleDelete = () => {
-    if (activeComponentId && selectedShapeIds.length > 0) {
-      for (const sid of [...selectedShapeIds]) {
-        removeShapeElement(activeComponentId, sid);
-      }
-      useCanvasStore.getState().selectShape(null);
+    if (activeComponentId && (selectedShapeIds.length > 0 || selectedPinIds.length > 0)) {
+      removeMany(activeComponentId, selectedShapeIds, selectedPinIds);
+      useCanvasStore.getState().clearSelection();
     }
   };
 
@@ -210,7 +208,7 @@ export default function ShapeToolbar() {
 
       <div className="tool-divider" />
       <div className="tool-group">
-        <button className="tool-btn btn-danger" onClick={handleDelete} disabled={selectedShapeIds.length === 0} title="删除选中图形">
+        <button className="tool-btn btn-danger" onClick={handleDelete} disabled={selectedShapeIds.length === 0 && selectedPinIds.length === 0} title="删除选中图形/引脚">
           <span className="tool-icon">✕</span>
           <span className="tool-label">删除</span>
         </button>

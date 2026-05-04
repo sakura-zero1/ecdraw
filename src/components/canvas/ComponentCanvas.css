@@ -24,7 +24,7 @@
 /* Alignment toolbar */
 .alignment-toolbar {
   position: absolute;
-  top: 56px;
+  top: 86px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;

@@ -31,6 +31,7 @@ interface ComponentStore {
   addShapeElement: (componentId: string, element: Omit<ShapeElement, 'id'>) => string;
   updateShapeElement: (componentId: string, elementId: string, updates: Partial<ShapeElement>) => void;
   removeShapeElement: (componentId: string, elementId: string) => void;
+  removeMany: (componentId: string, shapeIds: string[], pinIds: string[]) => void;
   cloneShapeElement: (componentId: string, elementId: string) => string | null;
   cloneFromClipboard: (componentId: string, element: ShapeElement, groupIdOverride?: string) => string | null;
   groupShapeElements: (componentId: string, elementIds: string[]) => string | null;
@@ -218,6 +219,27 @@ export const useComponentStore = create<ComponentStore>()(
         const comp = state.components.find((c) => c.id === componentId);
         if (comp) { comp.shapeElements = comp.shapeElements.filter((e) => e.id !== elementId); comp.updatedAt = new Date().toISOString(); }
       });
+    },
+
+    removeMany: (componentId, shapeIds, pinIds) => {
+      if (shapeIds.length === 0 && pinIds.length === 0) return;
+      get().pushUndo();
+      set((state) => {
+        const comp = state.components.find((c) => c.id === componentId);
+        if (!comp) return;
+        if (shapeIds.length > 0) {
+          const ids = new Set(shapeIds);
+          comp.shapeElements = comp.shapeElements.filter((e) => !ids.has(e.id));
+        }
+        if (pinIds.length > 0) {
+          const ids = new Set(pinIds);
+          comp.pins = comp.pins.filter((p) => !ids.has(p.id));
+        }
+        comp.updatedAt = new Date().toISOString();
+      });
+      for (const pid of pinIds) {
+        useConnectionStore.getState().removePinConnections(componentId, pid);
+      }
     },
 
     cloneShapeElement: (componentId, elementId) => {

@@ -468,7 +468,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
         }
         return;
       }
-      if (hasMod && lower === 'z') { e.preventDefault(); store.undo(); selectShape(null); return; }
+      if (hasMod && lower === 'z') { e.preventDefault(); store.undo(); useCanvasStore.getState().clearSelection(); return; }
       if (hasMod && (lower === '=' || lower === '+')) { e.preventDefault(); useCanvasStore.getState().zoomIn(); return; }
       if (hasMod && lower === '-') { e.preventDefault(); useCanvasStore.getState().zoomOut(); return; }
       if (hasMod && lower === '0') { e.preventDefault(); useCanvasStore.getState().resetView(); return; }
@@ -482,23 +482,23 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
             const pins = selectedPinIds.map((pid) => comp.pins.find((p) => p.id === pid)).filter(Boolean) as Pin[];
             useCanvasStore.getState().setClipboard({ shapes: els, pins });
           }
-          for (const sid of selectedShapeIds) store.removeShapeElement(compId, sid);
-          for (const pid of selectedPinIds) store.removePin(compId, pid);
-          selectShape(null);
-          selectPin(null);
+          store.removeMany(compId, selectedShapeIds, selectedPinIds);
+          useCanvasStore.getState().clearSelection();
         }
         return;
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        if (selectedShapeIds.length > 0 && compId) { for (const sid of selectedShapeIds) store.removeShapeElement(compId, sid); selectShape(null); }
-        const { selectedPinIds } = useCanvasStore.getState();
-        if (selectedPinIds.length > 0 && compId) { for (const pid of selectedPinIds) store.removePin(compId, pid); selectPin(null); }
+        const selectedPinIds = useCanvasStore.getState().selectedPinIds;
+        if ((selectedShapeIds.length > 0 || selectedPinIds.length > 0) && compId) {
+          store.removeMany(compId, selectedShapeIds, selectedPinIds);
+          useCanvasStore.getState().clearSelection();
+        }
       }
     };
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [selectShape, setActiveTool]);
+  }, [setActiveTool]);
 
   // ─── Hit testing ───
 
@@ -687,6 +687,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
             const groupIds = activeComp.shapeElements.filter((s) => s.groupId === el.groupId).map((s) => s.id);
             selectShape(null);
             for (const gid of groupIds) selectShape(gid, true);
+            for (const pin of activeComp.pins) { if (pin.groupId === el.groupId) selectPin(pin.id, true); }
             const shapeOrigMap: Record<string, Record<string, number>> = {};
             for (const sid of groupIds) { const s = activeComp.shapeElements.find((s2) => s2.id === sid); if (s) shapeOrigMap[sid] = getShapePosition(s); }
             const pinOrigMap: Record<string, { x: number; y: number }> = {};
@@ -732,6 +733,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
           const groupIds = activeComp.shapeElements.filter((s) => s.groupId === el.groupId).map((s) => s.id);
           selectShape(null);
           for (const gid of groupIds) selectShape(gid, true);
+          for (const pin of activeComp.pins) { if (pin.groupId === el.groupId) selectPin(pin.id, true); }
           const shapeOrigMap: Record<string, Record<string, number>> = {};
           for (const sid of groupIds) { const s = activeComp.shapeElements.find((s2) => s2.id === sid); if (s) shapeOrigMap[sid] = getShapePosition(s); }
           const pinOrigMap: Record<string, { x: number; y: number }> = {};
@@ -973,15 +975,19 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
       const top = Math.min(rubberBand.startY, rubberBand.endY);
       const right = Math.max(rubberBand.startX, rubberBand.endX);
       const bottom = Math.max(rubberBand.startY, rubberBand.endY);
-      selectShape(null); selectPin(null);
       if (right - left > 3 || bottom - top > 3) {
+        const shapeIds: string[] = [];
         for (const el of activeComp.shapeElements) {
           const b = getShapeBounds(el);
-          if (b.cx >= left && b.cx <= right && b.cy >= top && b.cy <= bottom) selectShape(el.id, true);
+          if (b.cx >= left && b.cx <= right && b.cy >= top && b.cy <= bottom) shapeIds.push(el.id);
         }
+        const pinIds: string[] = [];
         for (const pin of activeComp.pins) {
-          if (pin.position.x >= left && pin.position.x <= right && pin.position.y >= top && pin.position.y <= bottom) selectPin(pin.id, true);
+          if (pin.position.x >= left && pin.position.x <= right && pin.position.y >= top && pin.position.y <= bottom) pinIds.push(pin.id);
         }
+        useCanvasStore.getState().selectMany(shapeIds, pinIds);
+      } else {
+        useCanvasStore.getState().clearSelection();
       }
       setRubberBand(null);
       return;
@@ -995,7 +1001,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
     setSnapPreview(null);
     setAlignmentGuides([]);
     setDrawing(null);
-  }, [rubberBand, dragState, drawing, activeComp, addShapeElement, selectShape, selectPin]);
+  }, [rubberBand, dragState, drawing, activeComp, addShapeElement]);
 
   // ─── Drawing (Canvas render loop) ───
 
