@@ -212,7 +212,6 @@ function ShapeLinkSection({
 }) {
   const shapeLabelMap = buildShapeLabelMap(shapes);
   const flashShapes = useCanvasStore((s) => s.flashShapes);
-  const selectShape = useCanvasStore((s) => s.selectShape);
   const setHoveredShapes = useCanvasStore((s) => s.setHoveredShapes);
   const clearHoveredShapes = useCanvasStore((s) => s.clearHoveredShapes);
   const linked = shapes.filter((s) => s.linkedConnectionId === connId);
@@ -255,7 +254,6 @@ function ShapeLinkSection({
               onMouseEnter={() => setHoveredShapes([shape.id])}
               onMouseLeave={clearHoveredShapes}
               onClick={() => {
-                selectShape(shape.id);
                 flashShapes([shape.id], 1600);
               }}
             >
@@ -329,7 +327,6 @@ function ShapeLinkSection({
                     clearHoveredShapes();
                   }}
                   onClick={() => {
-                    selectShape(s.id);
                     flashShapes([s.id], 1600);
                     linkShape(s.id);
                     setIsOpen(false);

@@ -293,7 +293,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
-  const { activeTool, setActiveTool, selectShape, selectPin, viewport, setViewport } = useCanvasStore();
+  const { activeTool, setActiveTool, selectShape, selectPin, viewport, setViewport, flashedShapeIds, flashNonce } = useCanvasStore();
   const { components, activeComponentId, addShapeElement, updateShapeElement, updatePin, pushUndo, importSubComponentScaled } = useComponentStore();
   const matrices = useConnectionStore((s) => s.matrices);
 
