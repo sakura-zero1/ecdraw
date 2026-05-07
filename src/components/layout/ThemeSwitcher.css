@@ -1,0 +1,129 @@
+.theme-switcher {
+  position: relative;
+}
+
+.theme-switcher-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--gray-500);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.theme-switcher-btn:hover {
+  background: var(--gray-50);
+  color: var(--gray-700);
+  border-color: var(--gray-300);
+}
+
+.theme-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 10px;
+  z-index: 300;
+  animation: theme-dropdown-in 0.15s ease;
+}
+
+@keyframes theme-dropdown-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.theme-dropdown-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 10px;
+}
+
+.theme-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--gray-400);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 8px 0 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--gray-100);
+}
+
+.theme-section-label:first-of-type {
+  border-top: none;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.theme-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.theme-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--gray-700);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  text-align: left;
+  font-family: inherit;
+}
+
+.theme-option:hover {
+  background: var(--gray-50);
+  border-color: var(--gray-200);
+}
+
+.theme-option.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.theme-option > svg {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.theme-option-swatch {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.theme-swatch-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--gray-200);
+}
+
+.theme-option-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -1,0 +1,144 @@
+﻿.shape-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface-overlay);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 10;
+  box-shadow: 0 10px 20px -16px var(--shadow);
+}
+
+.tool-group {
+  display: flex;
+  gap: 3px;
+}
+
+.tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 5px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--gray-700);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s ease;
+  min-width: 44px;
+}
+
+.tool-btn:hover {
+  background: var(--gray-50);
+  border-color: var(--gray-300);
+}
+
+.tool-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.tool-btn.btn-danger:hover {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border-color: #fdba74;
+}
+
+.tool-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.tool-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.tool-label {
+  font-size: 10px;
+  margin-top: 1px;
+}
+
+.tool-divider {
+  width: 1px;
+  height: 30px;
+  background: var(--gray-200);
+  margin: 0 3px;
+}
+
+.colors {
+  gap: 8px;
+  align-items: center;
+}
+
+.color-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+}
+
+.color-label {
+  font-size: 10px;
+  color: var(--gray-500);
+}
+
+.color-field input[type='color'] {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  padding: 0;
+  cursor: pointer;
+  background: none;
+}
+
+.color-field input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.color-field input[type='color']::-webkit-color-swatch {
+  border: none;
+  border-radius: 2px;
+}
+
+.color-field input[type='number'] {
+  padding: 3px 4px;
+  font-size: 11px;
+  text-align: center;
+}
+
+.color-transparent {
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--gray-500);
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.color-transparent:hover {
+  background: var(--gray-50);
+}
+
+.color-field input[type='color'].is-transparent {
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+}
