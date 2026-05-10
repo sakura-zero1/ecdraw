@@ -1,74 +1,14 @@
-use crate::error::AppError;
-use crate::middleware;
-use crate::models::{Component, Diagram, DiagramEdge, DiagramInstance, DiagramVersion, DistrictData, GisData, LineSegmentData};
-use crate::AppState;
+use ecdraw_core::error::AppError;
+use ecdraw_core::middleware;
+use ecdraw_core::models::{Component, Diagram, DiagramEdge, DiagramInstance, DiagramVersion, DistrictData, GisData, LineSegmentData};
+use ecdraw_core::AppState;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::State;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AuthInput {
-    pub token: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateDiagramInput {
-    pub token: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub snapshot: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UpdateDiagramInput {
-    pub token: String,
-    pub id: String,
-    pub name: Option<String>,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SaveDiagramInput {
-    pub token: String,
-    pub id: String,
-    pub snapshot: serde_json::Value,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateInstanceInput {
-    pub token: String,
-    pub diagram_id: String,
-    pub component_id: String,
-    pub label: Option<String>,
-    pub position_x: Option<f64>,
-    pub position_y: Option<f64>,
-    pub instance_data: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UpdateInstanceInput {
-    pub token: String,
-    pub diagram_id: String,
-    pub instance_id: String,
-    pub label: Option<String>,
-    pub position_x: Option<f64>,
-    pub position_y: Option<f64>,
-    pub component_id: Option<String>,
-    pub instance_data: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateEdgeInput {
-    pub token: String,
-    pub diagram_id: String,
-    pub source_instance_id: String,
-    pub target_instance_id: String,
-    pub source_pin_id: String,
-    pub target_pin_id: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TopologyResponse {
     pub diagram: Diagram,
     pub instances: Vec<InstanceWithExtras>,
@@ -76,6 +16,7 @@ pub struct TopologyResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InstanceWithExtras {
     #[serde(flatten)]
     pub instance: DiagramInstance,
@@ -85,6 +26,7 @@ pub struct InstanceWithExtras {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ComponentMeta {
     pub id: Uuid,
     pub name: String,
@@ -92,19 +34,11 @@ pub struct ComponentMeta {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EdgeWithExtras {
     #[serde(flatten)]
     pub edge: DiagramEdge,
     pub line_segment_data: Option<LineSegmentData>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PaginatedResponse<T> {
-    pub items: Vec<T>,
-    pub page: i64,
-    pub page_size: i64,
-    pub total: i64,
-    pub total_pages: i64,
 }
 
 fn default_snapshot() -> serde_json::Value {
@@ -147,9 +81,9 @@ fn can_write_diagram(roles: &[String], owner_id: &Uuid, user_id: &Uuid) -> bool 
 #[tauri::command]
 pub async fn list_diagrams(
     state: State<'_, AppState>,
-    input: AuthInput,
+    token: String,
 ) -> Result<Vec<Diagram>, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     let user_id: Uuid = claims.sub.parse().unwrap();
 
     let diagrams = if claims.roles.contains(&"ADMIN".to_string()) {
@@ -194,27 +128,30 @@ pub async fn get_diagram(
 #[tauri::command]
 pub async fn create_diagram(
     state: State<'_, AppState>,
-    input: CreateDiagramInput,
+    token: String,
+    name: String,
+    description: Option<String>,
+    snapshot: Option<serde_json::Value>,
 ) -> Result<Diagram, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
     let user_id: Uuid = claims.sub.parse().unwrap();
 
-    if input.name.is_empty() {
+    if name.is_empty() {
         return Err(AppError::BadRequest("图纸名称不能为空".into()));
     }
 
-    let snapshot = input.snapshot.map(|s| normalize_diagram_snapshot(&s)).unwrap_or_else(default_snapshot);
+    let snapshot = snapshot.map(|s| normalize_diagram_snapshot(&s)).unwrap_or_else(default_snapshot);
 
     let mut tx = state.pool.begin().await?;
     let diagram = sqlx::query_as::<_, Diagram>(
         "INSERT INTO diagrams (name, description, owner_id, status) VALUES ($1, $2, $3, 'DRAFT') RETURNING *"
     )
-    .bind(&input.name).bind(&input.description).bind(user_id)
+    .bind(&name).bind(&description).bind(user_id)
     .fetch_one(&mut *tx).await?;
 
     sqlx::query(
-        "INSERT INTO diagram_versions (diagram_id, version_no, snapshot, created_by) VALUES ($1, 1, $2, $3)"
+        "INSERT INTO diagram_versions (diagram_id, version_no, snapshot, created_by, status) VALUES ($1, 1, $2, $3, 'DRAFT')"
     )
     .bind(diagram.id).bind(&snapshot).bind(user_id)
     .execute(&mut *tx).await?;
@@ -227,12 +164,15 @@ pub async fn create_diagram(
 #[tauri::command]
 pub async fn update_diagram(
     state: State<'_, AppState>,
-    input: UpdateDiagramInput,
+    token: String,
+    id: String,
+    name: Option<String>,
+    description: Option<String>,
 ) -> Result<Diagram, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
     let user_id: Uuid = claims.sub.parse().unwrap();
-    let did: Uuid = input.id.parse().map_err(|_| AppError::BadRequest("无效的图纸ID".into()))?;
+    let did: Uuid = id.parse().map_err(|_| AppError::BadRequest("无效的图纸ID".into()))?;
 
     let d = sqlx::query_as::<_, Diagram>("SELECT * FROM diagrams WHERE id = $1")
         .bind(did).fetch_optional(&state.pool).await?
@@ -245,12 +185,12 @@ pub async fn update_diagram(
         return Err(AppError::BadRequest("只能修改草稿或已驳回状态的图纸".into()));
     }
 
-    if input.name.is_none() && input.description.is_none() {
+    if name.is_none() && description.is_none() {
         return Err(AppError::BadRequest("无更新内容".into()));
     }
 
-    let name = input.name.unwrap_or(d.name);
-    let description = input.description.or(d.description);
+    let name = name.unwrap_or(d.name);
+    let description = description.or(d.description);
 
     let updated = sqlx::query_as::<_, Diagram>(
         "UPDATE diagrams SET name = $1, description = $2, updated_at = NOW() WHERE id = $3 RETURNING *"
@@ -284,7 +224,6 @@ pub async fn delete_diagram(
         return Err(AppError::BadRequest("只能删除草稿或已驳回状态的图纸".into()));
     }
 
-    // Cascade delete handled by schema
     sqlx::query("DELETE FROM diagrams WHERE id = $1").bind(did)
         .execute(&state.pool).await?;
 
@@ -295,10 +234,10 @@ pub async fn delete_diagram(
 #[tauri::command]
 pub async fn duplicate_diagram(
     state: State<'_, AppState>,
-    input: AuthInput,
+    token: String,
     id: String,
 ) -> Result<Diagram, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
     let user_id: Uuid = claims.sub.parse().unwrap();
     let did: Uuid = id.parse().map_err(|_| AppError::BadRequest("无效的图纸ID".into()))?;
@@ -307,7 +246,6 @@ pub async fn duplicate_diagram(
         .bind(did).fetch_optional(&state.pool).await?
         .ok_or_else(|| AppError::NotFound("图纸不存在".into()))?;
 
-    // Generate unique name
     let mut new_name = format!("{}副本", source.name);
     let mut suffix = 2;
     loop {
@@ -326,7 +264,6 @@ pub async fn duplicate_diagram(
     .bind(&new_name).bind(&source.description).bind(user_id)
     .fetch_one(&mut *tx).await?;
 
-    // Copy latest version snapshot
     let latest_ver = sqlx::query_as::<_, DiagramVersion>(
         "SELECT * FROM diagram_versions WHERE diagram_id = $1 ORDER BY version_no DESC LIMIT 1"
     )
@@ -334,13 +271,12 @@ pub async fn duplicate_diagram(
 
     if let Some(v) = latest_ver {
         sqlx::query(
-            "INSERT INTO diagram_versions (diagram_id, version_no, snapshot, created_by) VALUES ($1, 1, $2, $3)"
+            "INSERT INTO diagram_versions (diagram_id, version_no, snapshot, created_by, status) VALUES ($1, 1, $2, $3, 'DRAFT')"
         )
         .bind(dup.id).bind(&v.snapshot).bind(user_id)
         .execute(&mut *tx).await?;
     }
 
-    // Deep copy instances + edges
     let instances = sqlx::query_as::<_, DiagramInstance>(
         "SELECT * FROM diagram_instances WHERE diagram_id = $1"
     ).bind(did).fetch_all(&mut *tx).await?;
@@ -408,7 +344,6 @@ pub async fn get_diagram_editor(
         "SELECT * FROM diagram_versions WHERE diagram_id = $1 ORDER BY version_no DESC LIMIT 1"
     ).bind(did).fetch_optional(&state.pool).await?;
 
-    // Auto-migrate legacy snapshot data if no real instances exist
     let (final_instances, final_edges) = if instances.is_empty() {
         if let Some(ref ver) = latest_ver {
             if let Some(snap_instances) = ver.snapshot.get("instances").and_then(|v| v.as_array()) {
@@ -448,7 +383,6 @@ pub async fn get_diagram_editor(
                         }
                     }
                     tx.commit().await?;
-                    // Re-fetch after migration
                     return Box::pin(get_diagram_editor(state, token, id)).await;
                 }
             }
@@ -538,12 +472,14 @@ pub async fn get_diagram_topology(
 #[tauri::command]
 pub async fn save_diagram(
     state: State<'_, AppState>,
-    input: SaveDiagramInput,
+    token: String,
+    id: String,
+    snapshot: serde_json::Value,
 ) -> Result<Diagram, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
     let user_id: Uuid = claims.sub.parse().unwrap();
-    let did: Uuid = input.id.parse().map_err(|_| AppError::BadRequest("无效的图纸ID".into()))?;
+    let did: Uuid = id.parse().map_err(|_| AppError::BadRequest("无效的图纸ID".into()))?;
 
     let d = sqlx::query_as::<_, Diagram>("SELECT * FROM diagrams WHERE id = $1")
         .bind(did).fetch_optional(&state.pool).await?
@@ -556,11 +492,11 @@ pub async fn save_diagram(
         return Err(AppError::BadRequest("已发布的图纸不可保存".into()));
     }
 
-    if !input.snapshot.is_object() || input.snapshot.is_array() {
+    if !snapshot.is_object() || snapshot.is_array() {
         return Err(AppError::BadRequest("快照数据格式无效".into()));
     }
 
-    let snapshot = normalize_diagram_snapshot(&input.snapshot);
+    let snapshot = normalize_diagram_snapshot(&snapshot);
 
     let mut tx = state.pool.begin().await?;
     let latest_no = sqlx::query_scalar::<_, i32>(
@@ -568,12 +504,11 @@ pub async fn save_diagram(
     ).bind(did).fetch_one(&mut *tx).await?;
 
     sqlx::query(
-        "INSERT INTO diagram_versions (diagram_id, version_no, snapshot, created_by) VALUES ($1, $2, $3, $4)"
+        "INSERT INTO diagram_versions (diagram_id, version_no, snapshot, created_by, status) VALUES ($1, $2, $3, $4, 'DRAFT')"
     )
     .bind(did).bind(latest_no + 1).bind(&snapshot).bind(user_id)
     .execute(&mut *tx).await?;
 
-    // Reset to DRAFT
     let updated = sqlx::query_as::<_, Diagram>(
         "UPDATE diagrams SET status = 'DRAFT', updated_at = NOW() WHERE id = $1 RETURNING *"
     )
@@ -623,6 +558,9 @@ pub async fn submit_diagram_review(
     .bind(did).bind(latest_ver.id).bind(user_id)
     .execute(&mut *tx).await?;
 
+    sqlx::query("UPDATE diagram_versions SET status = 'REVIEWING' WHERE id = $1")
+        .bind(latest_ver.id).execute(&mut *tx).await?;
+
     tx.commit().await?;
     Ok(())
 }
@@ -658,6 +596,9 @@ pub async fn withdraw_diagram_review(
         "UPDATE review_requests SET status = 'WITHDRAWN' WHERE diagram_id = $1 AND status = 'PENDING'"
     )
     .bind(did).execute(&mut *tx).await?;
+
+    sqlx::query("UPDATE diagram_versions SET status = 'DRAFT' WHERE diagram_id = $1 AND status = 'REVIEWING'")
+        .bind(did).execute(&mut *tx).await?;
 
     tx.commit().await?;
     Ok(())
@@ -706,13 +647,19 @@ pub async fn request_delete_diagram(
 #[tauri::command]
 pub async fn create_diagram_instance(
     state: State<'_, AppState>,
-    input: CreateInstanceInput,
+    token: String,
+    diagram_id: String,
+    component_id: String,
+    label: Option<String>,
+    position_x: Option<f64>,
+    position_y: Option<f64>,
+    instance_data: Option<serde_json::Value>,
 ) -> Result<DiagramInstance, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
     let user_id: Uuid = claims.sub.parse().unwrap();
-    let did: Uuid = input.diagram_id.parse().map_err(|_| AppError::BadRequest("无效的图纸ID".into()))?;
-    let cid: Uuid = input.component_id.parse().map_err(|_| AppError::BadRequest("无效的元件ID".into()))?;
+    let did: Uuid = diagram_id.parse().map_err(|_| AppError::BadRequest("无效的图纸ID".into()))?;
+    let cid: Uuid = component_id.parse().map_err(|_| AppError::BadRequest("无效的元件ID".into()))?;
 
     let d = sqlx::query_as::<_, Diagram>("SELECT * FROM diagrams WHERE id = $1")
         .bind(did).fetch_optional(&state.pool).await?
@@ -725,18 +672,17 @@ pub async fn create_diagram_instance(
         return Err(AppError::BadRequest("已发布的图纸不可编辑".into()));
     }
 
-    // Verify component exists
     let comp = sqlx::query_as::<_, Component>("SELECT * FROM components WHERE id = $1")
         .bind(cid).fetch_optional(&state.pool).await?
         .ok_or_else(|| AppError::NotFound("元件不存在".into()))?;
 
-    let label = input.label.unwrap_or_else(|| comp.name.clone());
+    let label = label.unwrap_or_else(|| comp.name.clone());
     let instance = sqlx::query_as::<_, DiagramInstance>(
         "INSERT INTO diagram_instances (diagram_id, component_id, label, position_x, position_y, instance_data) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *"
     )
     .bind(did).bind(cid).bind(&label)
-    .bind(input.position_x.unwrap_or(0.0)).bind(input.position_y.unwrap_or(0.0))
-    .bind(input.instance_data.unwrap_or(json!({})))
+    .bind(position_x.unwrap_or(0.0)).bind(position_y.unwrap_or(0.0))
+    .bind(instance_data.unwrap_or(json!({})))
     .fetch_one(&state.pool).await?;
 
     Ok(instance)
@@ -746,13 +692,20 @@ pub async fn create_diagram_instance(
 #[tauri::command]
 pub async fn update_diagram_instance(
     state: State<'_, AppState>,
-    input: UpdateInstanceInput,
+    token: String,
+    diagram_id: String,
+    instance_id: String,
+    label: Option<String>,
+    position_x: Option<f64>,
+    position_y: Option<f64>,
+    component_id: Option<String>,
+    instance_data: Option<serde_json::Value>,
 ) -> Result<DiagramInstance, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
     let user_id: Uuid = claims.sub.parse().unwrap();
-    let did: Uuid = input.diagram_id.parse().map_err(|_| AppError::BadRequest("无效的图纸ID".into()))?;
-    let iid: Uuid = input.instance_id.parse().map_err(|_| AppError::BadRequest("无效的实例ID".into()))?;
+    let did: Uuid = diagram_id.parse().map_err(|_| AppError::BadRequest("无效的图纸ID".into()))?;
+    let iid: Uuid = instance_id.parse().map_err(|_| AppError::BadRequest("无效的实例ID".into()))?;
 
     let d = sqlx::query_as::<_, Diagram>("SELECT * FROM diagrams WHERE id = $1")
         .bind(did).fetch_optional(&state.pool).await?
@@ -771,12 +724,12 @@ pub async fn update_diagram_instance(
     .bind(iid).bind(did).fetch_optional(&state.pool).await?
         .ok_or_else(|| AppError::NotFound("实例不存在".into()))?;
 
-    let label = input.label.unwrap_or(inst.label);
-    let px = input.position_x.unwrap_or(inst.position_x);
-    let py = input.position_y.unwrap_or(inst.position_y);
-    let cid_str = input.component_id.unwrap_or_else(|| inst.component_id.to_string());
+    let label = label.unwrap_or(inst.label);
+    let px = position_x.unwrap_or(inst.position_x);
+    let py = position_y.unwrap_or(inst.position_y);
+    let cid_str = component_id.unwrap_or_else(|| inst.component_id.to_string());
     let cid: Uuid = cid_str.parse().map_err(|_| AppError::BadRequest("无效的元件ID".into()))?;
-    let idata = input.instance_data.unwrap_or(inst.instance_data);
+    let idata = instance_data.unwrap_or(inst.instance_data);
 
     if px.is_nan() || py.is_nan() {
         return Err(AppError::BadRequest("坐标值无效".into()));
@@ -816,7 +769,6 @@ pub async fn delete_diagram_instance(
         return Err(AppError::BadRequest("已发布的图纸不可编辑".into()));
     }
 
-    // Cascade delete handles edges, district_data, gis_data, line_segment_data
     sqlx::query("DELETE FROM diagram_instances WHERE id = $1 AND diagram_id = $2")
         .bind(iid).bind(did).execute(&state.pool).await?;
 
@@ -829,14 +781,19 @@ pub async fn delete_diagram_instance(
 #[tauri::command]
 pub async fn create_diagram_edge(
     state: State<'_, AppState>,
-    input: CreateEdgeInput,
+    token: String,
+    diagram_id: String,
+    source_instance_id: String,
+    target_instance_id: String,
+    source_pin_id: String,
+    target_pin_id: String,
 ) -> Result<DiagramEdge, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
     let user_id: Uuid = claims.sub.parse().unwrap();
-    let did: Uuid = input.diagram_id.parse().map_err(|_| AppError::BadRequest("无效的图纸ID".into()))?;
-    let sid: Uuid = input.source_instance_id.parse().map_err(|_| AppError::BadRequest("无效的源实例ID".into()))?;
-    let tid: Uuid = input.target_instance_id.parse().map_err(|_| AppError::BadRequest("无效的目标实例ID".into()))?;
+    let did: Uuid = diagram_id.parse().map_err(|_| AppError::BadRequest("无效的图纸ID".into()))?;
+    let sid: Uuid = source_instance_id.parse().map_err(|_| AppError::BadRequest("无效的源实例ID".into()))?;
+    let tid: Uuid = target_instance_id.parse().map_err(|_| AppError::BadRequest("无效的目标实例ID".into()))?;
 
     let d = sqlx::query_as::<_, Diagram>("SELECT * FROM diagrams WHERE id = $1")
         .bind(did).fetch_optional(&state.pool).await?
@@ -849,7 +806,6 @@ pub async fn create_diagram_edge(
         return Err(AppError::BadRequest("已发布的图纸不可编辑".into()));
     }
 
-    // Verify both instances exist and belong to the diagram
     let _s_inst = sqlx::query_as::<_, DiagramInstance>(
         "SELECT * FROM diagram_instances WHERE id = $1 AND diagram_id = $2"
     ).bind(sid).bind(did).fetch_optional(&state.pool).await?
@@ -863,7 +819,7 @@ pub async fn create_diagram_edge(
         "INSERT INTO diagram_edges (diagram_id, source_instance_id, target_instance_id, source_pin_id, target_pin_id) VALUES ($1, $2, $3, $4, $5) RETURNING *"
     )
     .bind(did).bind(sid).bind(tid)
-    .bind(&input.source_pin_id).bind(&input.target_pin_id)
+    .bind(&source_pin_id).bind(&target_pin_id)
     .fetch_one(&state.pool).await?;
 
     Ok(edge)
@@ -894,9 +850,166 @@ pub async fn delete_diagram_edge(
         return Err(AppError::BadRequest("已发布的图纸不可编辑".into()));
     }
 
-    // Cascade delete handles line_segment_data
     sqlx::query("DELETE FROM diagram_edges WHERE id = $1 AND diagram_id = $2")
         .bind(eid).bind(did).execute(&state.pool).await?;
 
     Ok(())
+}
+
+// ========== Version Timeline ==========
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VersionSummary {
+    pub id: Uuid,
+    pub version_no: i32,
+    pub status: String,
+    pub created_by: Uuid,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub published_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[tauri::command]
+pub async fn list_diagram_versions(
+    state: State<'_, AppState>,
+    token: String,
+    id: String,
+) -> Result<Vec<VersionSummary>, AppError> {
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
+    let did: Uuid = id.parse().map_err(|_| AppError::BadRequest("无效的图纸ID".into()))?;
+    let user_id: Uuid = claims.sub.parse().unwrap();
+
+    let d = sqlx::query_as::<_, Diagram>("SELECT * FROM diagrams WHERE id = $1")
+        .bind(did).fetch_optional(&state.pool).await?
+        .ok_or_else(|| AppError::NotFound("图纸不存在".into()))?;
+
+    if !can_read_diagram(&claims.roles, &d.owner_id, &d.status, &user_id) {
+        return Err(AppError::Forbidden("无权访问此图纸".into()));
+    }
+
+    let can_see_all = claims.roles.contains(&"ADMIN".to_string())
+        || claims.roles.contains(&"DIAGRAM_EDITOR".to_string())
+        || claims.roles.contains(&"REVIEWER".to_string());
+
+    let rows = if can_see_all {
+        sqlx::query_as::<_, (Uuid, i32, String, Uuid, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>)>(
+            "SELECT id, version_no, status, created_by, created_at, published_at FROM diagram_versions WHERE diagram_id = $1 ORDER BY version_no DESC"
+        )
+        .bind(did).fetch_all(&state.pool).await?
+    } else {
+        sqlx::query_as::<_, (Uuid, i32, String, Uuid, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>)>(
+            "SELECT id, version_no, status, created_by, created_at, published_at FROM diagram_versions WHERE diagram_id = $1 AND status = 'ONLINE' ORDER BY version_no DESC"
+        )
+        .bind(did).fetch_all(&state.pool).await?
+    };
+
+    Ok(rows.into_iter().map(|(id, version_no, status, created_by, created_at, published_at)| {
+        VersionSummary { id, version_no, status, created_by, created_at, published_at }
+    }).collect())
+}
+
+#[tauri::command]
+pub async fn get_diagram_version_topology(
+    state: State<'_, AppState>,
+    token: String,
+    id: String,
+    version_id: String,
+) -> Result<TopologyResponse, AppError> {
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
+    let did: Uuid = id.parse().map_err(|_| AppError::BadRequest("无效的图纸ID".into()))?;
+    let vid: Uuid = version_id.parse().map_err(|_| AppError::BadRequest("无效的版本ID".into()))?;
+    let user_id: Uuid = claims.sub.parse().unwrap();
+
+    let d = sqlx::query_as::<_, Diagram>("SELECT * FROM diagrams WHERE id = $1")
+        .bind(did).fetch_optional(&state.pool).await?
+        .ok_or_else(|| AppError::NotFound("图纸不存在".into()))?;
+
+    if !can_read_diagram(&claims.roles, &d.owner_id, &d.status, &user_id) {
+        return Err(AppError::Forbidden("无权访问此图纸".into()));
+    }
+
+    let ver = sqlx::query_as::<_, DiagramVersion>(
+        "SELECT * FROM diagram_versions WHERE id = $1 AND diagram_id = $2"
+    )
+    .bind(vid).bind(did).fetch_optional(&state.pool).await?
+        .ok_or_else(|| AppError::NotFound("版本不存在".into()))?;
+
+    let can_see_all = claims.roles.contains(&"ADMIN".to_string())
+        || claims.roles.contains(&"DIAGRAM_EDITOR".to_string())
+        || claims.roles.contains(&"REVIEWER".to_string());
+
+    if !can_see_all && ver.status != "ONLINE" {
+        return Err(AppError::Forbidden("无权查看此版本".into()));
+    }
+
+    let snap_instances = ver.snapshot.get("instances")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let snap_connections = ver.snapshot.get("connections")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut instances_with_extras = Vec::new();
+    for si in &snap_instances {
+        let old_id = si.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        let comp_id_str = si.get("componentId").and_then(|v| v.as_str()).unwrap_or("");
+        let comp_id: Uuid = comp_id_str.parse().unwrap_or(Uuid::nil());
+        let label = si.get("label").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let x = si.get("positionX").or_else(|| si.get("x")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let y = si.get("positionY").or_else(|| si.get("y")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let idata = si.get("instanceData").cloned().unwrap_or(json!({}));
+        let iid: Uuid = old_id.parse().unwrap_or(Uuid::new_v4());
+
+        let comp = sqlx::query_as::<_, Component>("SELECT * FROM components WHERE id = $1")
+            .bind(comp_id).fetch_optional(&state.pool).await.ok().flatten();
+
+        instances_with_extras.push(InstanceWithExtras {
+            instance: DiagramInstance {
+                id: iid,
+                diagram_id: did,
+                component_id: comp_id,
+                label,
+                position_x: x,
+                position_y: y,
+                instance_data: idata,
+                created_at: ver.created_at,
+                updated_at: ver.created_at,
+            },
+            component: comp.map(|c| ComponentMeta { id: c.id, name: c.name, category: c.category }),
+            district_data: None,
+            gis_data: None,
+        });
+    }
+
+    let mut edges_with_extras = Vec::new();
+    for sc in &snap_connections {
+        let from_str = sc.get("fromInstanceId").or_else(|| sc.get("sourceInstanceId")).and_then(|v| v.as_str()).unwrap_or("");
+        let to_str = sc.get("toInstanceId").or_else(|| sc.get("targetInstanceId")).and_then(|v| v.as_str()).unwrap_or("");
+        let spid = sc.get("sourcePinId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let tpid = sc.get("targetPinId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let s_from: Uuid = from_str.parse().unwrap_or(Uuid::nil());
+        let s_to: Uuid = to_str.parse().unwrap_or(Uuid::nil());
+
+        edges_with_extras.push(EdgeWithExtras {
+            edge: DiagramEdge {
+                id: Uuid::new_v4(),
+                diagram_id: did,
+                source_instance_id: s_from,
+                target_instance_id: s_to,
+                source_pin_id: spid,
+                target_pin_id: tpid,
+                created_at: ver.created_at,
+                updated_at: ver.created_at,
+            },
+            line_segment_data: None,
+        });
+    }
+
+    Ok(TopologyResponse {
+        diagram: d,
+        instances: instances_with_extras,
+        edges: edges_with_extras,
+    })
 }

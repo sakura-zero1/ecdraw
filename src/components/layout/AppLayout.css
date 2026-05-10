@@ -2,15 +2,7 @@
   display: grid;
   grid-template-columns: var(--sidebar-w) 1fr var(--panel-w);
   height: 100%;
-}
-
-.main-content {
-  display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr var(--panel-w);
-  flex: 1;
   overflow: hidden;
-  gap: 0;
-  padding: 6px;
 }
 
 .sidebar {
@@ -179,6 +171,10 @@
 .component-item[draggable="true"]:active {
   opacity: 0.6;
   cursor: grabbing;
+}
+
+.component-item.dragging {
+  opacity: 0.4;
 }
 
 .comp-thumb-wrap {
@@ -713,7 +709,7 @@ textarea {
   max-height: 86vh;
 }
 
-.published-layout {
+.published-dialog .published-layout {
   display: grid;
   grid-template-columns: 280px 1fr;
   gap: 12px;
@@ -1084,20 +1080,20 @@ textarea {
   flex-wrap: wrap;
 }
 
-@media (max-width: 1040px) {
-  .main-content {
+@media (max-width: 1060px) {
+  .app-layout {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(180px, 24vh) 1fr minmax(260px, 34vh);
   }
 
-  .sidebar,
-  .panel,
-  .canvas-area {
+  .app-layout .sidebar,
+  .app-layout .panel,
+  .app-layout .canvas-area {
     width: 100%;
     min-width: 0;
   }
 
-  .published-layout {
+  .published-dialog .published-layout {
     grid-template-columns: 1fr;
     min-height: 0;
   }
@@ -1105,4 +1101,27 @@ textarea {
   .audit-filters {
     grid-template-columns: 1fr;
   }
+}
+
+/* Custom drag ghost */
+.drag-ghost {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  opacity: 0.9;
+}
+
+.drag-ghost canvas {
+  display: block;
+}
+
+/* External drag over canvas */
+.component-canvas-container.ext-drag-over .component-canvas {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-soft) !important;
 }

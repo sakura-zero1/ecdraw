@@ -1,4 +1,4 @@
-import { tauriRequest, ensureTauriAuth } from './tauriClient';
+import { request, ensureAuth } from './unifiedClient';
 
 export interface AuditItem {
   id: string;
@@ -11,7 +11,6 @@ export interface AuditItem {
   user: {
     id: string;
     username: string;
-    role: string;
   };
 }
 
@@ -24,7 +23,7 @@ interface AuditResponse {
 }
 
 async function requireAuth() {
-  const ok = await ensureTauriAuth();
+  const ok = await ensureAuth();
   if (!ok) throw new Error('未登录，无法访问 API');
 }
 
@@ -36,7 +35,7 @@ export async function fetchAuditLogs(params: {
   pageSize?: number;
 }) {
   await requireAuth();
-  return tauriRequest<AuditResponse>('list_audits', {
+  return request<AuditResponse>('list_audits', {
     action: params.action,
     target_type: params.targetType,
     target_id: params.targetId,

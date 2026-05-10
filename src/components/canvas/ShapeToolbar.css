@@ -3,13 +3,17 @@
   top: 12px;
   left: 50%;
   transform: translateX(-50%);
+  max-width: calc(100% - 16px);
   background: var(--surface-overlay);
   border: 1px solid var(--gray-200);
   border-radius: var(--radius-lg);
   padding: 6px 10px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 6px;
+  row-gap: 4px;
   z-index: 10;
   box-shadow: 0 10px 20px -16px var(--shadow);
 }

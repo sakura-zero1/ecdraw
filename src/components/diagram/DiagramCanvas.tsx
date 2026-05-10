@@ -346,7 +346,7 @@ function getPinNodePos(
 // ---------- Ref handle ----------
 
 export interface DiagramCanvasHandle {
-  screenToWorld: (screenX: number, screenY: number) => { x: number; y: number };
+  screenToWorld: (screenX: number, screenY: number) => { x: number; y: number } | null;
   getContainerRect: () => DOMRect | undefined;
 }
 
@@ -473,7 +473,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
   useImperativeHandle(ref, () => ({
     screenToWorld: (screenX: number, screenY: number) => {
       const canvas = canvasRef.current;
-      if (!canvas) return { x: 0, y: 0 };
+      if (!canvas) return null;
       const rect = canvas.getBoundingClientRect();
       return {
         x: (screenX - rect.left - panX) / zoom,

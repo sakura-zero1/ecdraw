@@ -2,7 +2,24 @@ import { useRef, useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/useAuth';
 import ThemeSwitcher from './ThemeSwitcher';
-import type { UserRole } from '../../services/tauriClient';
+import WindowControls from './WindowControls';
+import type { UserRole } from '../../services/unifiedClient';
+
+const isTauri = () => !!(window as any).__TAURI_INTERNALS__;
+
+function tauriWindow() {
+  if (!isTauri()) return null;
+  return import('@tauri-apps/api/window').then(({ getCurrentWindow }) => getCurrentWindow());
+}
+
+function startDrag(e: React.MouseEvent) {
+  if ((e.target as HTMLElement).closest('button, a, input, select, [role="button"]')) return;
+  tauriWindow().then((w) => w?.startDragging());
+}
+
+function toggleMaximize() {
+  tauriWindow().then((w) => w?.toggleMaximize());
+}
 
 interface MenuItem {
   path: string;
@@ -49,7 +66,7 @@ export default function AppShell() {
 
   return (
     <div className="shell">
-      <header className="shell-topbar">
+      <header className="shell-topbar" onMouseDown={startDrag} onDoubleClick={toggleMaximize}>
         <div className="shell-topbar-left">
           <span className="shell-brand">EC<span className="shell-brand-accent">Draw</span></span>
           <nav className="shell-nav">
@@ -94,6 +111,7 @@ export default function AppShell() {
           <button className="shell-logout-btn" onClick={() => { logout(); navigate('/login'); }}>
             退出
           </button>
+          <WindowControls />
         </div>
       </header>
       <main className="shell-content">

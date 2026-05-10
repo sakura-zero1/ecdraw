@@ -1,4 +1,4 @@
-import { tauriRequest, ensureTauriAuth } from './tauriClient';
+import { request, ensureAuth } from './unifiedClient';
 
 export type DiagramStatus = 'DRAFT' | 'PENDING_REVIEW' | 'PUBLISHED' | 'REJECTED' | 'PENDING_DELETE';
 
@@ -73,64 +73,102 @@ interface DiagramEditorResponse {
 }
 
 async function requireAuth() {
-  const ok = await ensureTauriAuth();
+  const ok = await ensureAuth();
   if (!ok) throw new Error('未登录，无法访问 API');
 }
 
 export async function fetchPublishedDiagrams() {
   await requireAuth();
-  const response = await tauriRequest<DiagramListItem[]>('list_diagrams');
+  const response = await request<DiagramListItem[]>('list_diagrams');
   return response.filter((item) => item.status === 'PUBLISHED');
 }
 
 export async function fetchDiagrams() {
   await requireAuth();
-  return tauriRequest<DiagramListItem[]>('list_diagrams');
+  return request<DiagramListItem[]>('list_diagrams');
 }
 
 export async function createDiagramByApi(name: string, description = '') {
   await requireAuth();
-  return tauriRequest<DiagramListItem>('create_diagram', { name, description });
+  return request<DiagramListItem>('create_diagram', { name, description });
 }
 
 export async function submitDiagramReview(diagramId: string) {
   await requireAuth();
-  return tauriRequest('submit_diagram_review', { id: diagramId });
+  return request('submit_diagram_review', { id: diagramId });
 }
 
 export async function saveDiagram(diagramId: string, snapshot: Record<string, unknown>) {
   await requireAuth();
-  return tauriRequest<DiagramListItem>('save_diagram', { id: diagramId, snapshot });
+  return request<DiagramListItem>('save_diagram', { id: diagramId, snapshot });
 }
 
 export async function withdrawDiagramReview(diagramId: string) {
   await requireAuth();
-  return tauriRequest('withdraw_diagram_review', { id: diagramId });
+  return request('withdraw_diagram_review', { id: diagramId });
 }
 
 export async function updateDiagram(diagramId: string, data: { name?: string; description?: string }) {
   await requireAuth();
-  return tauriRequest<DiagramListItem>('update_diagram', { id: diagramId, ...data });
+  return request<DiagramListItem>('update_diagram', { id: diagramId, ...data });
 }
 
 export async function duplicateDiagram(diagramId: string) {
   await requireAuth();
-  return tauriRequest<DiagramListItem>('duplicate_diagram', { id: diagramId });
+  return request<DiagramListItem>('duplicate_diagram', { id: diagramId });
 }
 
 export async function requestDeleteDiagram(diagramId: string) {
   await requireAuth();
-  return tauriRequest('request_delete_diagram', { id: diagramId });
+  return request('request_delete_diagram', { id: diagramId });
 }
 
 export async function deleteDiagram(diagramId: string) {
   await requireAuth();
-  return tauriRequest<void>('delete_diagram', { id: diagramId });
+  return request<void>('delete_diagram', { id: diagramId });
 }
 
 export async function fetchDiagramReadonlySnapshot(diagramId: string) {
   await requireAuth();
-  return tauriRequest<DiagramEditorResponse>('get_diagram_editor', { id: diagramId });
+  // Rust API returns { diagram, instances, edges, latestVersion }
+  const raw = await request<{
+    diagram: DiagramListItem;
+    instances: DiagramInstance[];
+    edges: DiagramEdge[];
+    latestVersion: { id: string; versionNo: number; snapshot: DiagramSnapshot } | null;
+  }>('get_diagram_editor', { id: diagramId });
+
+  // Convert to the DiagramEditorResponse format expected by district/line/gis pages
+  const latestSnapshot = raw.latestVersion?.snapshot ?? {} as DiagramSnapshot;
+  const result: DiagramEditorResponse = {
+    diagram: raw.diagram,
+    versionNo: raw.latestVersion?.versionNo ?? 0,
+    snapshot: {
+      schemaVersion: latestSnapshot.schemaVersion ?? 1,
+      instances: (raw.instances ?? []).map((inst) => ({
+        id: inst.id,
+        componentId: inst.componentId,
+        label: inst.label ?? '',
+        x: inst.positionX ?? 0,
+        y: inst.positionY ?? 0,
+        instanceData: inst.instanceData as Record<string, unknown> ?? {},
+        rotation: 0,
+      })),
+      connections: (raw.edges ?? []).map((edge) => ({
+        id: edge.id,
+        fromInstanceId: edge.sourceInstanceId,
+        fromPinId: edge.sourcePinId ?? '',
+        toInstanceId: edge.targetInstanceId,
+        toPinId: edge.targetPinId ?? '',
+        state: 'closed' as const,
+        visible: true,
+        label: '',
+      })),
+      selection: { instanceIds: [], connectionIds: [] },
+      viewport: { zoom: 1, panX: 0, panY: 0 },
+    },
+  };
+  return result;
 }
 
 // ===================== Instance CRUD =====================
@@ -140,7 +178,7 @@ export async function createDiagramInstance(
   data: { componentId: string; label?: string; positionX?: number; positionY?: number; instanceData?: Record<string, unknown> },
 ) {
   await requireAuth();
-  return tauriRequest<DiagramInstance>('create_diagram_instance', {
+  return request<DiagramInstance>('create_diagram_instance', {
     diagram_id: diagramId,
     component_id: data.componentId,
     label: data.label,
@@ -156,7 +194,7 @@ export async function updateDiagramInstance(
   data: { label?: string; positionX?: number; positionY?: number; instanceData?: Record<string, unknown> },
 ) {
   await requireAuth();
-  return tauriRequest<DiagramInstance>('update_diagram_instance', {
+  return request<DiagramInstance>('update_diagram_instance', {
     diagram_id: diagramId,
     instance_id: instanceId,
     label: data.label,
@@ -168,7 +206,7 @@ export async function updateDiagramInstance(
 
 export async function deleteDiagramInstance(diagramId: string, instanceId: string) {
   await requireAuth();
-  return tauriRequest<void>('delete_diagram_instance', { diagram_id: diagramId, instance_id: instanceId });
+  return request<void>('delete_diagram_instance', { diagram_id: diagramId, instance_id: instanceId });
 }
 
 // ===================== Edge CRUD =====================
@@ -178,7 +216,7 @@ export async function createDiagramEdge(
   data: { sourceInstanceId: string; targetInstanceId: string; sourcePinId: string; targetPinId: string },
 ) {
   await requireAuth();
-  return tauriRequest<DiagramEdge>('create_diagram_edge', {
+  return request<DiagramEdge>('create_diagram_edge', {
     diagram_id: diagramId,
     source_instance_id: data.sourceInstanceId,
     target_instance_id: data.targetInstanceId,
@@ -189,7 +227,7 @@ export async function createDiagramEdge(
 
 export async function deleteDiagramEdge(diagramId: string, edgeId: string) {
   await requireAuth();
-  return tauriRequest<void>('delete_diagram_edge', { diagram_id: diagramId, edge_id: edgeId });
+  return request<void>('delete_diagram_edge', { diagram_id: diagramId, edge_id: edgeId });
 }
 
 // ===================== Diagram editor data =====================
@@ -202,29 +240,35 @@ export interface DiagramEditorData {
 
 export async function fetchDiagramForEditor(diagramId: string): Promise<DiagramEditorData> {
   await requireAuth();
-  const response = await tauriRequest<DiagramEditorResponse>('get_diagram_editor', { id: diagramId });
+  // Rust API returns { diagram, instances, edges, latestVersion } at top level
+  const response = await request<{
+    diagram: DiagramListItem;
+    instances: DiagramInstance[];
+    edges: DiagramEdge[];
+    latestVersion: { id: string; versionNo: number; snapshot: DiagramSnapshot } | null;
+  }>('get_diagram_editor', { id: diagramId });
 
-  const instances: DiagramInstance[] = response.snapshot.instances.map((inst, idx) => ({
-    id: inst.id ?? `snap-${idx}`,
+  const instances: DiagramInstance[] = (response.instances ?? []).map((inst) => ({
+    id: inst.id,
     diagramId,
-    componentId: inst.componentId ?? '',
+    componentId: inst.componentId,
     label: inst.label ?? '',
-    positionX: Number(inst.x) || 0,
-    positionY: Number(inst.y) || 0,
-    instanceData: (inst as unknown as Record<string, unknown>).instanceData as Record<string, unknown> ?? {},
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    positionX: inst.positionX ?? 0,
+    positionY: inst.positionY ?? 0,
+    instanceData: inst.instanceData ?? {},
+    createdAt: inst.createdAt ?? new Date().toISOString(),
+    updatedAt: inst.updatedAt ?? new Date().toISOString(),
   }));
 
-  const edges: DiagramEdge[] = response.snapshot.connections.map((conn, idx) => ({
-    id: conn.id ?? `snap-conn-${idx}`,
+  const edges: DiagramEdge[] = (response.edges ?? []).map((edge) => ({
+    id: edge.id,
     diagramId,
-    sourceInstanceId: conn.fromInstanceId ?? '',
-    targetInstanceId: conn.toInstanceId ?? '',
-    sourcePinId: conn.fromPinId ?? '',
-    targetPinId: conn.toPinId ?? '',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    sourceInstanceId: edge.sourceInstanceId,
+    targetInstanceId: edge.targetInstanceId,
+    sourcePinId: edge.sourcePinId ?? '',
+    targetPinId: edge.targetPinId ?? '',
+    createdAt: edge.createdAt ?? new Date().toISOString(),
+    updatedAt: edge.updatedAt ?? new Date().toISOString(),
   }));
 
   return { diagram: response.diagram, instances, edges };
@@ -259,5 +303,34 @@ export interface TopologyResponse {
 
 export async function fetchDiagramTopology(diagramId: string): Promise<TopologyResponse> {
   await requireAuth();
-  return tauriRequest<TopologyResponse>('get_diagram_topology', { id: diagramId });
+  return request<TopologyResponse>('get_diagram_topology', { id: diagramId });
+}
+
+// ========== Version Timeline ==========
+
+export type VersionStatus = 'DRAFT' | 'REVIEWING' | 'ONLINE' | 'REJECTED' | 'DECOMMISSIONED';
+
+export interface VersionSummary {
+  id: string;
+  versionNo: number;
+  status: VersionStatus;
+  createdBy: string;
+  createdAt: string;
+  publishedAt: string | null;
+}
+
+export async function fetchDiagramVersions(diagramId: string): Promise<VersionSummary[]> {
+  await requireAuth();
+  return request<VersionSummary[]>('list_diagram_versions', { id: diagramId });
+}
+
+export async function fetchDiagramVersionTopology(
+  diagramId: string,
+  versionId: string,
+): Promise<TopologyResponse> {
+  await requireAuth();
+  return request<TopologyResponse>('get_diagram_version_topology', {
+    id: diagramId,
+    versionId,
+  });
 }

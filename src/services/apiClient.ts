@@ -27,8 +27,8 @@ export function hasAnyRole(user: AuthUser, ...roles: UserRole[]): boolean {
 }
 
 interface LoginResponse {
-  accessToken: string;
-  refreshToken: string;
+  access_token: string;
+  refresh_token: string;
   user: AuthUser;
 }
 
@@ -41,8 +41,8 @@ function getStoredRefreshToken() {
 }
 
 function saveTokens(tokens: LoginResponse) {
-  localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
-  localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
+  localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
+  localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
 }
 
 function clearTokens() {
@@ -64,10 +64,10 @@ function readUserFromAccessToken(): AuthUser | null {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
     const payloadText = decodeBase64Url(parts[1]);
-    const payload = JSON.parse(payloadText) as { id?: string; username?: string; roles?: UserRole[]; exp?: number };
-    if (!payload.id || !payload.username || !payload.roles || !payload.exp) return null;
+    const payload = JSON.parse(payloadText) as { sub?: string; username?: string; roles?: UserRole[]; exp?: number };
+    if (!payload.sub || !payload.username || !payload.roles || !payload.exp) return null;
     if (payload.exp * 1000 <= Date.now()) return null;
-    return { id: payload.id, username: payload.username, roles: payload.roles };
+    return { id: payload.sub, username: payload.username, roles: payload.roles };
   } catch {
     return null;
   }
@@ -80,7 +80,7 @@ async function tryRefreshToken() {
   const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken }),
+    body: JSON.stringify({ refresh_token: refreshToken }),
   });
   if (!response.ok) {
     clearTokens();

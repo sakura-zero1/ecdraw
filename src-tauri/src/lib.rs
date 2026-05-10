@@ -1,17 +1,14 @@
-mod auth;
 mod commands;
-mod db;
-mod error;
-mod middleware;
-mod models;
 
 use std::env;
 use tauri::Manager;
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::tray::TrayIconBuilder;
+use ecdraw_core::AppState;
 
-pub struct AppState {
-    pub pool: sqlx::PgPool,
-    pub jwt_access_secret: String,
-    pub jwt_refresh_secret: String,
+#[tauri::command]
+fn exit_app(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -32,7 +29,7 @@ pub fn run() {
                 .unwrap_or_else(|_| "postgresql://postgres:postgres@localhost:5432/ecdraw2".to_string());
 
             let pool = tauri::async_runtime::block_on(async {
-                db::init_pool(&database_url).await.expect("Failed to initialize database")
+                ecdraw_core::db::init_pool(&database_url).await.expect("Failed to initialize database")
             });
 
             let jwt_access_secret = env::var("JWT_ACCESS_SECRET")
@@ -59,7 +56,7 @@ pub fn run() {
                 .fetch_one(&pool_for_seed)
                 .await;
                 if let Ok(0) = existing {
-                    use crate::auth;
+                    use ecdraw_core::auth;
                     if let Ok(hash) = auth::hash_password(&password) {
                         let roles = serde_json::to_string(&["ADMIN", "COMPONENT_EDITOR", "DIAGRAM_EDITOR", "REVIEWER", "VIEWER"]).unwrap();
                         let _ = sqlx::query(
@@ -69,10 +66,52 @@ pub fn run() {
                         .execute(&pool_for_seed).await;
                         log::info!("管理员用户 '{}' 已自动创建", username);
                     }
+                } else {
+                    use ecdraw_core::auth;
+                    if let Ok(hash) = auth::hash_password(&password) {
+                        let _ = sqlx::query(
+                            "UPDATE users SET password_hash = $1 WHERE username = $2"
+                        )
+                        .bind(&hash).bind(&username)
+                        .execute(&pool_for_seed).await;
+                        log::info!("管理员用户 '{}' 密码已同步", username);
+                    }
                 }
             });
 
+            // Create system tray icon
+            let show_item = MenuItemBuilder::with_id("show", "显示窗口").build(app)?;
+            let quit_item = MenuItemBuilder::with_id("quit", "退出程序").build(app)?;
+            let menu = MenuBuilder::new(app)
+                .items(&[&show_item, &quit_item])
+                .build()?;
+
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .on_menu_event(|app, event| {
+                    match event.id().as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .build(app)?;
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             // Auth
@@ -110,6 +149,8 @@ pub fn run() {
             commands::diagrams::delete_diagram_instance,
             commands::diagrams::create_diagram_edge,
             commands::diagrams::delete_diagram_edge,
+            commands::diagrams::list_diagram_versions,
+            commands::diagrams::get_diagram_version_topology,
             // Districts
             commands::districts::list_districts_by_diagram,
             commands::districts::upsert_district,
@@ -140,6 +181,8 @@ pub fn run() {
             commands::categories::delete_category,
             // Seed
             commands::seed::seed_admin,
+            // App exit
+            exit_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

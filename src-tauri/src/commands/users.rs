@@ -1,19 +1,15 @@
-use crate::auth;
-use crate::error::AppError;
-use crate::middleware;
-use crate::models::User;
-use crate::AppState;
+use ecdraw_core::auth;
+use ecdraw_core::error::AppError;
+use ecdraw_core::middleware;
+use ecdraw_core::models::User;
+use ecdraw_core::AppState;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::State;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AuthInput {
-    pub token: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserResponse {
     pub id: Uuid,
     pub username: String,
@@ -21,24 +17,6 @@ pub struct UserResponse {
     pub status: String,
     pub created_at: String,
     pub updated_at: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateUserInput {
-    pub token: String,
-    pub username: String,
-    pub password: String,
-    pub roles: Option<Vec<String>>,
-    pub status: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UpdateUserInput {
-    pub token: String,
-    pub id: String,
-    pub roles: Option<Vec<String>>,
-    pub status: Option<String>,
-    pub password: Option<String>,
 }
 
 const VALID_ROLES: &[&str] = &[
@@ -74,9 +52,9 @@ async fn write_audit(pool: &sqlx::PgPool, user_id: &Uuid, action: &str, target_t
 #[tauri::command]
 pub async fn list_users(
     state: State<'_, AppState>,
-    input: AuthInput,
+    token: String,
 ) -> Result<Vec<UserResponse>, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN"])?;
 
     let users = sqlx::query_as::<_, User>(
@@ -92,54 +70,57 @@ pub async fn list_users(
 #[tauri::command]
 pub async fn create_user(
     state: State<'_, AppState>,
-    input: CreateUserInput,
+    token: String,
+    username: String,
+    password: String,
+    roles: Option<Vec<String>>,
+    status: Option<String>,
 ) -> Result<UserResponse, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN"])?;
 
-    if input.username.is_empty() || input.password.is_empty() {
+    if username.is_empty() || password.is_empty() {
         return Err(AppError::BadRequest("用户名和密码不能为空".into()));
     }
-    if input.password.len() < 8 {
+    if password.len() < 8 {
         return Err(AppError::BadRequest("密码至少需要8位字符".into()));
     }
 
-    let roles = input.roles.unwrap_or_else(|| vec!["VIEWER".into()]);
+    let roles = roles.unwrap_or_else(|| vec!["VIEWER".into()]);
     for r in &roles {
         if !VALID_ROLES.contains(&r.as_str()) {
             return Err(AppError::BadRequest(format!("无效角色: {}", r)));
         }
     }
-    let status = input.status.unwrap_or_else(|| "ACTIVE".into());
+    let status = status.unwrap_or_else(|| "ACTIVE".into());
     if status != "ACTIVE" && status != "DISABLED" {
         return Err(AppError::BadRequest("状态值无效".into()));
     }
 
-    // Check uniqueness
     let existing = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE username = $1")
-        .bind(&input.username)
+        .bind(&username)
         .fetch_one(&state.pool)
         .await?;
     if existing > 0 {
         return Err(AppError::Conflict("用户名已存在".into()));
     }
 
-    let password_hash = auth::hash_password(&input.password)?;
+    let password_hash = auth::hash_password(&password)?;
     let roles_str = serde_json::to_string(&roles).unwrap();
 
     let user = sqlx::query_as::<_, User>(
         "INSERT INTO users (username, password_hash, roles, status) VALUES ($1, $2, $3, $4) RETURNING *"
     )
-    .bind(&input.username)
+    .bind(&username)
     .bind(&password_hash)
     .bind(&roles_str)
     .bind(&status)
     .fetch_one(&state.pool)
     .await?;
 
-    let user_id = claims.sub.parse::<Uuid>().unwrap();
-    write_audit(&state.pool, &user_id, "USER_CREATE", "User", &user.id, Some(json!({
-        "username": &input.username,
+    let caller_id = claims.sub.parse::<Uuid>().unwrap();
+    write_audit(&state.pool, &caller_id, "USER_CREATE", "User", &user.id, Some(json!({
+        "username": &username,
         "roles": &roles,
         "status": &status,
     }))).await;
@@ -151,12 +132,16 @@ pub async fn create_user(
 #[tauri::command]
 pub async fn update_user(
     state: State<'_, AppState>,
-    input: UpdateUserInput,
+    token: String,
+    id: String,
+    roles: Option<Vec<String>>,
+    status: Option<String>,
+    password: Option<String>,
 ) -> Result<UserResponse, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN"])?;
 
-    let user_id: Uuid = input.id.parse().map_err(|_| AppError::BadRequest("无效的用户ID".into()))?;
+    let user_id: Uuid = id.parse().map_err(|_| AppError::BadRequest("无效的用户ID".into()))?;
 
     let mut user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = $1")
         .bind(user_id)
@@ -164,7 +149,7 @@ pub async fn update_user(
         .await?
         .ok_or_else(|| AppError::NotFound("用户不存在".into()))?;
 
-    if let Some(roles) = &input.roles {
+    if let Some(roles) = &roles {
         for r in roles {
             if !VALID_ROLES.contains(&r.as_str()) {
                 return Err(AppError::BadRequest(format!("无效角色: {}", r)));
@@ -172,13 +157,13 @@ pub async fn update_user(
         }
         user.roles = serde_json::to_string(roles).unwrap();
     }
-    if let Some(status) = &input.status {
+    if let Some(status) = &status {
         if status != "ACTIVE" && status != "DISABLED" {
             return Err(AppError::BadRequest("状态值无效".into()));
         }
         user.status = status.clone();
     }
-    if let Some(password) = &input.password {
+    if let Some(password) = &password {
         if password.len() < 8 {
             return Err(AppError::BadRequest("密码至少需要8位字符".into()));
         }

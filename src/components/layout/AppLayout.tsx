@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useComponentStore } from '../../stores/useComponentStore';
 import { useConnectionStore } from '../../stores/useConnectionStore';
+import { useDragStore } from '../../stores/useDragStore';
 import { CATEGORY_LABELS, CATEGORIES } from '../../constants/categories';
 import type { ComponentCategory, ConnectivityMatrix, ElectricalComponent, CategoryInfo } from '../../types';
 import {
@@ -357,6 +358,19 @@ export default function AppLayout() {
     }
   };
 
+  // Global mouse-based drag for component import (replaces HTML5 DnD for WebView2 compat)
+  const drag = useDragStore();
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => drag.moveGhost(e.clientX, e.clientY);
+    const onUp = () => drag.endDrag();
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [drag]);
+
   return (
     <div className="app-layout">
       {toast && <div className="ce-toast">{toast}</div>}
@@ -444,12 +458,13 @@ export default function AppLayout() {
                     {items.map((comp) => (
                       <div
                         key={comp.id}
-                        className={`component-item ${comp.id === activeComponentId ? 'active' : ''}`}
-                        onClick={() => setActiveComponent(comp.id)}
-                        draggable={comp.id !== activeComponentId}
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('text/plain', comp.id);
-                          e.dataTransfer.effectAllowed = 'copy';
+                        className={`component-item ${comp.id === activeComponentId ? 'active' : ''} ${drag.active && drag.draggingId === comp.id ? 'dragging' : ''}`}
+                        onClick={() => { if (!drag.active) setActiveComponent(comp.id); }}
+                        onMouseDown={(e) => {
+                          if (comp.id === activeComponentId) return;
+                          if ((e.target as HTMLElement).closest('button')) return;
+                          e.preventDefault();
+                          drag.startDrag(comp.id, e.clientX, e.clientY);
                         }}
                       >
                         <div className="comp-thumb-wrap">
@@ -636,6 +651,18 @@ export default function AppLayout() {
           </div>
         </div>
       )}
+      {drag.active && drag.draggingId && (() => {
+        const comp = components.find((c) => c.id === drag.draggingId);
+        if (!comp) return null;
+        return (
+          <div
+            className="drag-ghost"
+            style={{ left: drag.ghostX - 30, top: drag.ghostY - 20 }}
+          >
+            <ComponentThumbnail component={comp} matrix={matrices[comp.id]} />
+          </div>
+        );
+      })()}
     </div>
   );
 }

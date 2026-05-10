@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchDashboard, type DashboardData } from '../services/adminApi';
+import { parseError } from '../utils/parseError';
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: '草稿',
@@ -16,13 +17,7 @@ const STATUS_CLASS: Record<string, string> = {
 };
 
 function parseApiError(error: unknown) {
-  if (!(error instanceof Error)) return '请求失败';
-  try {
-    const payload = JSON.parse(error.message) as { message?: string };
-    return payload.message || error.message;
-  } catch {
-    return error.message || '请求失败';
-  }
+  return parseError(error);
 }
 
 export default function DashboardPage() {

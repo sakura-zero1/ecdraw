@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/ecdraw-core", "crates/ecdraw-server", "src-tauri"]
+resolver = "2"

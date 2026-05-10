@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ECDraw — 图纸查看 + 版本时间线</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --gray-900: #1a1a1a;
+  --gray-700: #444444;
+  --gray-600: #555555;
+  --gray-500: #888888;
+  --gray-400: #aaaaaa;
+  --gray-300: #cccccc;
+  --gray-200: #e5e5e5;
+  --gray-100: #f0f0f0;
+  --gray-50: #f5f5f5;
+  --gray-25: #fafbfc;
+  --accent: #e11d48;
+  --accent-hover: #be123c;
+  --accent-soft: rgba(225, 29, 72, 0.06);
+  --accent-text: rgba(225, 29, 72, 0.85);
+  --success: #16a34a;
+  --success-soft: #f0fdf4;
+  --warning: #d97706;
+  --warning-soft: #fffbeb;
+  --danger: #dc2626;
+  --danger-soft: #fef2f2;
+  --info: #0284c7;
+  --info-soft: #eff6ff;
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow: 0 2px 8px rgba(0,0,0,0.06);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.08);
+  --font-sans: 'DM Sans', 'PingFang SC', 'Noto Sans SC', sans-serif;
+  --topbar-h: 40px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--gray-900);
+  background: var(--gray-25);
+  overflow: hidden;
+  height: 100vh;
+}
+
+/* ===== Topbar ===== */
+.topbar {
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: #fff;
+  border-bottom: 1px solid var(--gray-200);
+  user-select: none;
+}
+.topbar-left { display: flex; align-items: center; gap: 20px; }
+.topbar-brand { font-size: 15px; font-weight: 800; letter-spacing: -0.3px; }
+.topbar-brand b { color: var(--accent); }
+.topbar-nav { display: flex; gap: 2px; }
+.topbar-nav button {
+  padding: 6px 12px; font-size: 12px; font-weight: 500;
+  color: var(--gray-500); border-radius: var(--radius);
+  cursor: pointer; background: none; border: none; font-family: var(--font-sans);
+  transition: background 0.12s, color 0.12s;
+}
+.topbar-nav button:hover { background: var(--gray-50); color: var(--gray-700); }
+.topbar-nav button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.topbar-right { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--gray-400); }
+
+/* ===== Main Layout: List | Timeline | Canvas ===== */
+.main-layout {
+  display: grid;
+  grid-template-columns: 200px 72px 1fr;
+  height: calc(100vh - var(--topbar-h));
+  gap: 0;
+}
+
+/* ===== Left: Diagram List ===== */
+.diagram-list-panel {
+  background: #fff;
+  border-right: 1px solid var(--gray-200);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.diagram-list-header {
+  padding: 10px 12px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  border-bottom: 1px solid var(--gray-100);
+}
+.diagram-list-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+}
+.diagram-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.12s;
+  margin-bottom: 2px;
+}
+.diagram-list-item:hover { background: var(--gray-50); }
+.diagram-list-item.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.diagram-list-item .name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-900);
+}
+.diagram-list-item.active .name { color: var(--accent); }
+.diagram-list-item .meta {
+  font-size: 11px;
+  color: var(--gray-400);
+  display: flex;
+  gap: 8px;
+}
+/* Decommissioned diagrams are dimmed */
+.diagram-list-item.decommissioned {
+  opacity: 0.45;
+}
+.diagram-list-item.decommissioned .name {
+  text-decoration: line-through;
+  text-decoration-color: var(--gray-300);
+}
+.diagram-list-item .status-dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+.status-dot.online { background: var(--success); }
+.status-dot.reviewing { background: var(--info); }
+.status-dot.draft { background: var(--gray-400); }
+.status-dot.decommissioned { background: var(--danger); }
+
+/* ===== Middle: Version Timeline ===== */
+.timeline-panel {
+  background: #fff;
+  border-right: 1px solid var(--gray-200);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.timeline-header {
+  display: none;
+}
+.timeline-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 0;
+}
+
+/* Timeline Node */
+.timeline-node {
+  position: relative;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.timeline-node:hover {
+  background: var(--gray-25);
+}
+
+/* Vertical line */
+.timeline-node::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--gray-200);
+  transform: translateX(-50%);
+}
+.timeline-node:first-child::before { top: 50%; }
+.timeline-node:last-child::before { bottom: 50%; }
+
+/* Dot on the line */
+.timeline-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--gray-300);
+  background: #fff;
+  z-index: 2;
+  transition: all 0.15s;
+}
+.timeline-node:hover .timeline-dot {
+  transform: translate(-50%, -50%) scale(1.3);
+  box-shadow: 0 0 0 3px rgba(0,0,0,0.04);
+}
+
+/* Dot colors by status */
+.timeline-dot.online {
+  border-color: var(--success);
+  background: var(--success-soft);
+}
+.timeline-dot.draft {
+  border-color: var(--gray-400);
+  background: #fff;
+}
+.timeline-dot.reviewing {
+  border-color: var(--info);
+  background: var(--info-soft);
+}
+.timeline-dot.revising {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+}
+.timeline-dot.decommissioned {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* Current published version */
+.timeline-dot.current {
+  border-color: var(--success);
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(22,163,74,0.15);
+}
+.timeline-dot.current::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--success);
+  opacity: 0;
+  animation: pulse-ring 2s ease-out infinite;
+}
+@keyframes pulse-ring {
+  0% { opacity: 0.5; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.8); }
+}
+
+/* Selected node */
+.timeline-node.selected {
+  background: var(--accent-soft);
+}
+.timeline-node.selected .timeline-dot {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(225,29,72,0.12);
+}
+.timeline-node.selected .timeline-dot::after {
+  display: none;
+}
+
+/* Node label — version number only */
+.timeline-node-content {
+  display: none;
+}
+.timeline-node-label {
+  position: absolute;
+  left: calc(50% + 12px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--gray-500);
+  white-space: nowrap;
+  pointer-events: none;
+  transition: color 0.1s;
+}
+.timeline-node.selected .timeline-node-label {
+  color: var(--accent);
+  font-weight: 700;
+}
+.timeline-node:hover .timeline-node-label {
+  color: var(--gray-700);
+}
+
+/* Current version marker */
+.current-marker {
+  position: absolute;
+  right: calc(50% + 12px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+/* Hover tooltip */
+.timeline-tooltip {
+  display: none;
+  position: fixed;
+  z-index: 1000;
+  background: var(--gray-900);
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+  min-width: 180px;
+  max-width: 260px;
+}
+.timeline-tooltip.show { display: block; }
+.timeline-tooltip .tt-title { font-weight: 700; margin-bottom: 4px; }
+.timeline-tooltip .tt-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-bottom: 4px;
+}
+.tt-badge.tt-online { background: rgba(22,163,74,0.2); color: #4ade80; }
+.tt-badge.tt-draft { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
+.tt-badge.tt-reviewing { background: rgba(2,132,199,0.2); color: #38bdf8; }
+.tt-badge.tt-revising { background: rgba(217,119,6,0.2); color: #fbbf24; }
+.tt-badge.tt-decommissioned { background: rgba(220,38,38,0.2); color: #f87171; }
+.timeline-tooltip .tt-desc { color: rgba(255,255,255,0.8); font-size: 11px; margin-bottom: 6px; }
+.timeline-tooltip .tt-meta { color: rgba(255,255,255,0.5); font-size: 11px; }
+.timeline-tooltip .tt-diff { margin-top: 4px; font-size: 11px; }
+.tt-diff-add { color: #4ade80; }
+.tt-diff-rm { color: #f87171; }
+
+/* ===== Right: Canvas Preview ===== */
+.canvas-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--gray-25);
+}
+
+/* Canvas toolbar */
+.canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #fff;
+  border-bottom: 1px solid var(--gray-200);
+  flex-shrink: 0;
+}
+.canvas-toolbar .toolbar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-900);
+  margin-right: 8px;
+}
+.toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--gray-200);
+}
+.toolbar-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-700);
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: all 0.12s;
+}
+.toolbar-btn:hover { background: var(--gray-50); border-color: var(--gray-300); }
+.toolbar-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.toolbar-zoom {
+  font-size: 12px;
+  color: var(--gray-500);
+  font-weight: 600;
+  min-width: 36px;
+  text-align: center;
+}
+
+/* Canvas area */
+.canvas-area {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(var(--gray-100) 1px, transparent 1px),
+    linear-gradient(90deg, var(--gray-100) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Simulated diagram SVG */
+.diagram-svg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Wire lines */
+.wire {
+  stroke: var(--gray-400);
+  stroke-width: 2;
+  fill: none;
+}
+.wire.live { stroke: var(--success); stroke-width: 2.5; }
+.wire.open { stroke: var(--danger); stroke-width: 2; stroke-dasharray: 6 4; }
+
+/* Nodes */
+.d-node {
+  cursor: pointer;
+}
+.d-node rect {
+  rx: 4;
+  stroke-width: 1.5;
+}
+.d-node text {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.d-node.source rect { fill: var(--success-soft); stroke: var(--success); }
+.d-node.source text { fill: var(--success); }
+.d-node.transformer rect { fill: var(--info-soft); stroke: var(--info); }
+.d-node.transformer text { fill: var(--info); }
+.d-node.switch rect { fill: var(--warning-soft); stroke: var(--warning); }
+.d-node.switch text { fill: var(--warning); }
+.d-node.load rect { fill: var(--gray-50); stroke: var(--gray-300); }
+.d-node.load text { fill: var(--gray-700); }
+.d-node.endpoint rect { fill: var(--danger-soft); stroke: var(--danger); }
+.d-node.endpoint text { fill: var(--danger); }
+
+/* Version watermark */
+.version-watermark {
+  position: absolute;
+  bottom: 12px;
+  right: 16px;
+  font-size: 11px;
+  color: var(--gray-400);
+  font-weight: 500;
+  background: rgba(255,255,255,0.85);
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--gray-200);
+}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--gray-400); }
+
+/* ===== Unused in compact mode ===== */
+.badge-online, .badge-draft, .badge-reviewing, .badge-revising, .badge-decommissioned,
+.diff-tag, .diff-tag.add, .diff-tag.remove,
+.timeline-node-badge, .timeline-node-desc, .timeline-node-meta { display: none; }
+</style>
+</head>
+<body>
+
+<!-- Topbar -->
+<div class="topbar">
+  <div class="topbar-left">
+    <span class="topbar-brand">EC<b>Draw</b></span>
+    <nav class="topbar-nav">
+      <button>元件编辑</button>
+      <button>图纸编辑</button>
+      <button>审核</button>
+      <button class="active">图纸查看</button>
+      <button>台区维护</button>
+      <button>线路维护</button>
+    </nav>
+  </div>
+  <div class="topbar-right">
+    <span>admin</span>
+    <span>|</span>
+    <span>退出</span>
+  </div>
+</div>
+
+<!-- Main 3-column Layout -->
+<div class="main-layout">
+
+  <!-- Left: Diagram List -->
+  <div class="diagram-list-panel">
+    <div class="diagram-list-header">图纸列表</div>
+    <div class="diagram-list-scroll">
+      <div class="diagram-list-item active" onclick="selectDiagram(0)">
+        <span class="name">10kV 城东线配网图</span>
+        <span class="meta"><span class="status-dot online"></span>运行中 · 8 版本</span>
+      </div>
+      <div class="diagram-list-item" onclick="selectDiagram(1)">
+        <span class="name">10kV 河西线配网图</span>
+        <span class="meta"><span class="status-dot online"></span>运行中 · 5 版本</span>
+      </div>
+      <div class="diagram-list-item" onclick="selectDiagram(2)">
+        <span class="name">10kV 新区支线</span>
+        <span class="meta"><span class="status-dot reviewing"></span>审核中 · 6 版本</span>
+      </div>
+      <div class="diagram-list-item" onclick="selectDiagram(3)">
+        <span class="name">10kV 工业园线</span>
+        <span class="meta"><span class="status-dot online"></span>运行中 · 6 版本</span>
+      </div>
+      <div class="diagram-list-item" onclick="selectDiagram(4)">
+        <span class="name">10kV 南郊联络线</span>
+        <span class="meta"><span class="status-dot online"></span>在线 · 4 版本</span>
+      </div>
+      <div class="diagram-list-item decommissioned" onclick="selectDiagram(5)">
+        <span class="name">35kV 变电站出线</span>
+        <span class="meta"><span class="status-dot decommissioned"></span>已退运 · 12 版本</span>
+      </div>
+      <div class="diagram-list-item" onclick="selectDiagram(6)">
+        <span class="name">10kV 北环路网</span>
+        <span class="meta"><span class="status-dot online"></span>运行中 · 4 版本</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Middle: Version Timeline -->
+  <div class="timeline-panel">
+    <div class="timeline-header">
+      <h3>版本历史</h3>
+      <span class="count">8 个版本</span>
+    </div>
+    <div class="timeline-scroll" id="timelineScroll">
+      <!-- Timeline nodes will be rendered by JS -->
+    </div>
+  </div>
+
+  <!-- Right: Canvas Preview -->
+  <div class="canvas-panel">
+    <div class="canvas-toolbar">
+      <span class="toolbar-title" id="toolbarTitle">10kV 城东线配网图</span>
+      <span class="toolbar-sep"></span>
+      <button class="toolbar-btn" onclick="zoomCanvas(-0.1)">−</button>
+      <span class="toolbar-zoom" id="zoomLevel">100%</span>
+      <button class="toolbar-btn" onclick="zoomCanvas(0.1)">+</button>
+      <button class="toolbar-btn" onclick="resetZoom()">适应</button>
+      <span class="toolbar-sep"></span>
+      <span id="toolbarVersion" style="font-size:12px;color:var(--gray-500);">v6</span>
+    </div>
+    <div class="canvas-area" id="canvasArea">
+      <svg class="diagram-svg" id="diagramSvg" width="700" height="460" viewBox="0 0 700 460">
+        <!-- Wires -->
+        <line class="wire live" x1="80" y1="80" x2="200" y2="80"/>
+        <line class="wire live" x1="200" y1="80" x2="200" y2="180"/>
+        <line class="wire live" x1="200" y1="180" x2="340" y2="180"/>
+        <line class="wire live" x1="340" y1="180" x2="340" y2="80"/>
+        <line class="wire live" x1="340" y1="180" x2="340" y2="300"/>
+        <line class="wire live" x1="340" y1="300" x2="480" y2="300"/>
+        <line class="wire live" x1="340" y1="300" x2="340" y2="420"/>
+        <line class="wire live" x1="480" y1="300" x2="620" y2="300"/>
+        <line class="wire live" x1="480" y1="300" x2="480" y2="400"/>
+
+        <!-- Branch line (visible in v4+) -->
+        <g id="branchLine" class="branch-group">
+          <line class="wire live" x1="340" y1="80" x2="520" y2="80"/>
+          <line class="wire live" x1="520" y1="80" x2="520" y2="150"/>
+        </g>
+
+        <!-- Switch #3 (visible in v7+) -->
+        <g id="switch3" style="display:none">
+          <line class="wire live" x1="480" y1="300" x2="620" y2="300"/>
+          <g class="d-node switch" transform="translate(550,286)">
+            <rect width="50" height="28" />
+            <text x="25" y="14">开关#3</text>
+          </g>
+        </g>
+
+        <!-- Source -->
+        <g class="d-node source" transform="translate(20,60)">
+          <rect width="60" height="40" />
+          <text x="30" y="20">电源点</text>
+        </g>
+        <text x="50" y="115" fill="var(--gray-400)" font-size="9" text-anchor="middle" font-family="var(--font-sans)">10kV</text>
+
+        <!-- Switch #1 -->
+        <g class="d-node switch" transform="translate(170,66)">
+          <rect width="60" height="28" />
+          <text x="30" y="14">开关#1</text>
+        </g>
+
+        <!-- Transformer 1 -->
+        <g class="d-node transformer" transform="translate(170,170)">
+          <rect width="60" height="36" />
+          <text x="30" y="18">315kVA</text>
+        </g>
+
+        <!-- Switch #2 -->
+        <g class="d-node switch" transform="translate(310,166)">
+          <rect width="60" height="28" />
+          <text x="30" y="14">开关#2</text>
+        </g>
+
+        <!-- Transformer 2 (315 → 400kVA in v5) -->
+        <g class="d-node transformer" id="transformer2" transform="translate(310,280)">
+          <rect width="60" height="36" />
+          <text x="30" y="18" id="t2Label">315kVA</text>
+        </g>
+
+        <!-- Endpoint -->
+        <g class="d-node endpoint" transform="translate(595,286)">
+          <rect width="50" height="28" />
+          <text x="25" y="14">末端</text>
+        </g>
+
+        <!-- Transformer 3 -->
+        <g class="d-node transformer" transform="translate(310,406)">
+          <rect width="60" height="36" />
+          <text x="30" y="18">200kVA</text>
+        </g>
+
+        <!-- Transformer 4 (branch, v4+) -->
+        <g class="d-node transformer" id="transformer4" transform="translate(490,130)">
+          <rect width="60" height="36" />
+          <text x="30" y="18">400kVA</text>
+        </g>
+
+        <!-- Loads / Districts -->
+        <g class="d-node load" transform="translate(80,130)">
+          <rect width="56" height="28" />
+          <text x="28" y="14">台区 A</text>
+        </g>
+        <g class="d-node load" transform="translate(80,210)">
+          <rect width="56" height="28" />
+          <text x="28" y="14">台区 B</text>
+        </g>
+        <g class="d-node load" transform="translate(450,340)">
+          <rect width="56" height="28" />
+          <text x="28" y="14">台区 C</text>
+        </g>
+        <g class="d-node load" transform="translate(450,410)">
+          <rect width="56" height="28" />
+          <text x="28" y="14">台区 D</text>
+        </g>
+
+        <!-- District E (branch, v4+) -->
+        <g class="d-node load" id="districtE" transform="translate(560,80)">
+          <rect width="56" height="28" />
+          <text x="28" y="14">台区 E</text>
+        </g>
+      </svg>
+      <div class="version-watermark" id="versionWatermark">v6 — 线路优化 · 2026-05-06</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Tooltip -->
+<div class="timeline-tooltip" id="tooltip"></div>
+
+<script>
+const VERSIONS = [
+  {
+    id: 'v6', title: 'v6 — 调整变压器', status: 'reviewing', badge: '审核中',
+    desc: '更换 315kVA 变压器为 400kVA',
+    editor: '刘工', time: '2026-05-09', reviewer: null,
+    diff: { instances: -1, connections: 1 },
+    canvas: { branch: true, t2: '400kVA', switch3: false, districtE: false }
+  },
+  {
+    id: 'v5', title: 'v5 — 编辑完善', status: 'draft', badge: '草稿',
+    desc: '补充线路标注和台区信息',
+    editor: '张小明', time: '2026-05-08', reviewer: null,
+    diff: null,
+    canvas: { branch: true, t2: '315kVA', switch3: false, districtE: false }
+  },
+  {
+    id: 'v4', title: 'v4 — 增加分合点', status: 'online', badge: '已发布', current: true,
+    desc: '城东支线末端新增柱上开关一组',
+    editor: '张小明', time: '2026-05-06', reviewer: '李主任',
+    diff: { instances: 3, connections: 2 },
+    canvas: { branch: true, t2: '315kVA', switch3: true, districtE: false }
+  },
+  {
+    id: 'v3', title: 'v3 — 线路优化', status: 'online', badge: '已发布',
+    desc: '优化主线路径走向，修正台区标注',
+    editor: '张小明', time: '2026-05-03', reviewer: '李主任',
+    diff: { instances: 2, connections: -1 },
+    canvas: { branch: true, t2: '315kVA', switch3: false, districtE: false }
+  },
+  {
+    id: 'v2', title: 'v2 — 增加支线', status: 'online', badge: '已发布',
+    desc: '新增城东支线 #3，接入 2 个台区',
+    editor: '张小明', time: '2026-04-28', reviewer: '王建国',
+    diff: { instances: 5, connections: 4 },
+    canvas: { branch: true, t2: '315kVA', switch3: false, districtE: true }
+  },
+  {
+    id: 'v1', title: 'v1 — 首次发布', status: 'online', badge: '已发布',
+    desc: '审核通过，正式上线发布',
+    editor: '张小明', time: '2026-04-20', reviewer: '李主任',
+    diff: { instances: 0, connections: 0 },
+    canvas: { branch: false, t2: '315kVA', switch3: false, districtE: false }
+  },
+];
+
+let selectedVersion = 'v6';
+let currentZoom = 1;
+
+function renderTimeline() {
+  const container = document.getElementById('timelineScroll');
+  container.innerHTML = VERSIONS.map(v => {
+    const isSelected = v.id === selectedVersion;
+    const dotClass = [
+      'timeline-dot',
+      v.status,
+      v.current ? 'current' : '',
+    ].filter(Boolean).join(' ');
+
+    return `
+      <div class="timeline-node ${isSelected ? 'selected' : ''}"
+           data-version="${v.id}"
+           onclick="selectVersion('${v.id}')"
+           onmouseenter="showTooltip(event, '${v.id}')"
+           onmousemove="moveTooltip(event)"
+           onmouseleave="hideTooltip()">
+        <div class="${dotClass}"></div>
+        <span class="timeline-node-label">${v.id}</span>
+        ${v.current ? '<span class="current-marker" title="当前发布版本"></span>' : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function selectVersion(id) {
+  selectedVersion = id;
+  renderTimeline();
+  updateCanvas(id);
+  updateToolbar(id);
+}
+
+function updateCanvas(id) {
+  const v = VERSIONS.find(v => v.id === id);
+  if (!v) return;
+
+  // Branch line visibility
+  const branchLine = document.getElementById('branchLine');
+  const transformer4 = document.getElementById('transformer4');
+  const districtE = document.getElementById('districtE');
+  if (branchLine) branchLine.style.display = v.canvas.branch ? '' : 'none';
+  if (transformer4) transformer4.style.display = v.canvas.branch ? '' : 'none';
+  if (districtE) districtE.style.display = v.canvas.districtE ? '' : 'none';
+
+  // Transformer 2 label
+  const t2Label = document.getElementById('t2Label');
+  if (t2Label) t2Label.textContent = v.canvas.t2;
+
+  // Switch #3
+  const switch3 = document.getElementById('switch3');
+  if (switch3) switch3.style.display = v.canvas.switch3 ? '' : 'none';
+
+  // Watermark
+  const wm = document.getElementById('versionWatermark');
+  if (wm) wm.textContent = `${v.id} — ${v.desc} · ${v.time}`;
+}
+
+function updateToolbar(id) {
+  const v = VERSIONS.find(v => v.id === id);
+  if (!v) return;
+  document.getElementById('toolbarVersion').textContent = `${v.id} · ${v.badge}`;
+}
+
+function showTooltip(e, id) {
+  const v = VERSIONS.find(v => v.id === id);
+  if (!v) return;
+  const tip = document.getElementById('tooltip');
+  let diffHtml = '';
+  if (v.diff && (v.diff.instances !== 0 || v.diff.connections !== 0)) {
+    const parts = [];
+    if (v.diff.instances !== 0) parts.push(`<span class="${v.diff.instances > 0 ? 'tt-diff-add' : 'tt-diff-rm'}">${v.diff.instances > 0 ? '+' : ''}${v.diff.instances} 实例</span>`);
+    if (v.diff.connections !== 0) parts.push(`<span class="${v.diff.connections > 0 ? 'tt-diff-add' : 'tt-diff-rm'}">${v.diff.connections > 0 ? '+' : ''}${v.diff.connections} 连接</span>`);
+    diffHtml = `<div class="tt-diff">${parts.join(' &nbsp; ')}</div>`;
+  }
+  tip.innerHTML = [
+    `<div class="tt-title">${v.title}</div>`,
+    `<span class="tt-badge tt-${v.status}">${v.badge}</span>`,
+    `<div class="tt-desc">${v.desc}</div>`,
+    `<div class="tt-meta">${v.editor} · ${v.time}</div>`,
+    v.reviewer ? `<div class="tt-meta">审核: ${v.reviewer}</div>` : '',
+    diffHtml,
+  ].join('');
+  tip.classList.add('show');
+  moveTooltip(e);
+}
+
+function moveTooltip(e) {
+  const tip = document.getElementById('tooltip');
+  tip.style.left = (e.clientX + 14) + 'px';
+  tip.style.top = (e.clientY - 10) + 'px';
+}
+
+function hideTooltip() {
+  document.getElementById('tooltip').classList.remove('show');
+}
+
+function selectDiagram(idx) {
+  document.querySelectorAll('.diagram-list-item').forEach((el, i) => {
+    el.classList.toggle('active', i === idx);
+  });
+}
+
+function zoomCanvas(delta) {
+  currentZoom = Math.max(0.5, Math.min(2, currentZoom + delta));
+  const svg = document.getElementById('diagramSvg');
+  svg.style.transform = `translate(-50%, -50%) scale(${currentZoom})`;
+  document.getElementById('zoomLevel').textContent = Math.round(currentZoom * 100) + '%';
+}
+
+function resetZoom() {
+  currentZoom = 1;
+  const svg = document.getElementById('diagramSvg');
+  svg.style.transform = 'translate(-50%, -50%)';
+  document.getElementById('zoomLevel').textContent = '100%';
+}
+
+// Init
+renderTimeline();
+updateCanvas('v6');
+</script>
+</body>
+</html>

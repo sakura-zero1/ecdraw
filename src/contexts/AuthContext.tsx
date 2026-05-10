@@ -1,7 +1,7 @@
 import { createContext, useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import { loginApi, logoutApi, restoreSessionUser } from '../services/tauriClient';
-import type { AuthUser } from '../services/tauriClient';
+import { login as loginApi, logout as logoutApi, restoreSession } from '../services/unifiedClient';
+import type { AuthUser } from '../services/unifiedClient';
 
 export interface AuthContextType {
   user: AuthUser | null;
@@ -19,7 +19,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    void restoreSessionUser().then((u) => {
+    void restoreSession().then((u) => {
       if (!cancelled) {
         setUser(u);
         setLoading(false);

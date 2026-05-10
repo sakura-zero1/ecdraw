@@ -15,10 +15,11 @@
         "title": "ECDraw",
         "width": 1280,
         "height": 800,
-        "minWidth": 1024,
+        "minWidth": 1060,
         "minHeight": 680,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "decorations": false
       }
     ],
     "security": {

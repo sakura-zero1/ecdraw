@@ -511,7 +511,7 @@ export const useComponentStore = create<ComponentStore>()(
       });
     },
   })), {
-    name: 'ecdraw-component-library-v1',
+    name: 'ecdraw-component-library-v2',
     partialize: (state) => ({
       components: state.components,
       activeComponentId: state.activeComponentId,

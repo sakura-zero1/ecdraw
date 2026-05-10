@@ -1,4 +1,4 @@
-import { tauriRequest, ensureTauriAuth } from './tauriClient';
+import { request, ensureAuth } from './unifiedClient';
 
 export interface LineSegmentEdge {
   id: string;
@@ -26,18 +26,18 @@ export interface LineSegmentData {
 }
 
 async function requireAuth(): Promise<void> {
-  const ok = await ensureTauriAuth();
+  const ok = await ensureAuth();
   if (!ok) throw new Error('未登录');
 }
 
 export async function fetchLinesByDiagram(diagramId: string): Promise<LineSegmentData[]> {
   await requireAuth();
-  return tauriRequest<LineSegmentData[]>('list_lines_by_diagram', { diagram_id: diagramId });
+  return request<LineSegmentData[]>('list_lines_by_diagram', { diagram_id: diagramId });
 }
 
 export async function upsertLineSegment(edgeId: string, data: Partial<Omit<LineSegmentData, 'id' | 'diagramEdgeId' | 'updatedBy' | 'createdAt' | 'updatedAt'>>): Promise<LineSegmentData> {
   await requireAuth();
-  return tauriRequest<LineSegmentData>('upsert_line', {
+  return request<LineSegmentData>('upsert_line', {
     edge_id: edgeId,
     length: data.length,
     wire_model: data.wireModel,
@@ -64,5 +64,5 @@ export async function batchUpsertLineSegments(items: Array<{
     wire_type: item.wireType,
     is_main_display: item.isMainDisplay,
   }));
-  return tauriRequest<{ count: number }>('batch_upsert_lines', { items: itemsForRust });
+  return request<{ count: number }>('batch_upsert_lines', { items: itemsForRust });
 }

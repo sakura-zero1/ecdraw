@@ -1,4 +1,4 @@
-import { tauriRequest, ensureTauriAuth, type UserRole } from './tauriClient';
+import { request, ensureAuth, type UserRole } from './unifiedClient';
 
 export interface UserItem {
   id: string;
@@ -10,13 +10,13 @@ export interface UserItem {
 }
 
 async function requireAuth() {
-  const ok = await ensureTauriAuth();
+  const ok = await ensureAuth();
   if (!ok) throw new Error('未登录，无法访问 API');
 }
 
 export async function fetchUsers() {
   await requireAuth();
-  return tauriRequest<UserItem[]>('list_users');
+  return request<UserItem[]>('list_users');
 }
 
 export async function createUser(payload: {
@@ -26,7 +26,7 @@ export async function createUser(payload: {
   status?: 'ACTIVE' | 'DISABLED';
 }) {
   await requireAuth();
-  return tauriRequest<UserItem>('create_user', payload);
+  return request<UserItem>('create_user', payload);
 }
 
 export async function updateUser(
@@ -34,5 +34,5 @@ export async function updateUser(
   payload: Partial<{ roles: UserRole[]; status: 'ACTIVE' | 'DISABLED'; password: string }>
 ) {
   await requireAuth();
-  return tauriRequest<UserItem>('update_user', { id, ...payload });
+  return request<UserItem>('update_user', { id, ...payload });
 }

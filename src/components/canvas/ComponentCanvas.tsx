@@ -2,6 +2,7 @@ import { useRef, useCallback, useEffect, useState } from 'react';
 import { useCanvasStore } from '../../stores/useCanvasStore';
 import { useComponentStore } from '../../stores/useComponentStore';
 import { useConnectionStore } from '../../stores/useConnectionStore';
+import { useDragStore } from '../../stores/useDragStore';
 import type { ShapeElement, Pin } from '../../types';
 import { computeLinePath } from '../../utils/geometry';
 import { getShapeBounds, getGroupBounds, getGroupResizeHandles, scaleShapeInGroup, moveShapeBy } from '../../utils/alignment';
@@ -1466,6 +1467,8 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
 
   // ─── Resize observer + non-passive wheel ───
 
+  const [, setResizeNonce] = useState(0);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -1475,6 +1478,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
       const rect = container.getBoundingClientRect();
       canvas.style.width = rect.width + 'px';
       canvas.style.height = rect.height + 'px';
+      setResizeNonce((n) => n + 1);
     });
     ro.observe(container);
     return () => ro.disconnect();
@@ -1506,9 +1510,40 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
   // ─── Render ───
 
   const cursor = dragState?.type === 'pan' ? 'grabbing' : isDrawTool ? 'crosshair' : activeTool === 'select' ? 'default' : 'grab';
+  const extDrag = useDragStore();
+
+  const handleExternalDrop = useCallback((e: React.MouseEvent) => {
+    if (!extDrag.active || !extDrag.draggingId) return;
+    const sourceId = extDrag.draggingId;
+    extDrag.endDrag();
+    if (!sourceId || !activeComponentId || sourceId === activeComponentId) return;
+    const sourceComp = useComponentStore.getState().components.find((c) => c.id === sourceId);
+    if (!sourceComp || sourceComp.shapeElements.length === 0) return;
+    const pos = getCanvasPos(e);
+    const newIds = importSubComponentScaled(activeComponentId, sourceComp, pos.x, pos.y);
+    useCanvasStore.getState().selectShape(null);
+    for (const id of newIds) selectShape(id, true);
+  }, [extDrag, activeComponentId, getCanvasPos, importSubComponentScaled, selectShape]);
 
   return (
-    <div ref={containerRef} className={`component-canvas-container${dragOver ? ' drag-over' : ''}`}>
+    <div
+      ref={containerRef}
+      className={`component-canvas-container${dragOver ? ' drag-over' : ''}${extDrag.active && extDrag.draggingId ? ' ext-drag-over' : ''}`}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDragOver(true); }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const sourceId = e.dataTransfer.getData('text/plain');
+        if (!sourceId || !activeComponentId || sourceId === activeComponentId) return;
+        const sourceComp = useComponentStore.getState().components.find((c) => c.id === sourceId);
+        if (!sourceComp || sourceComp.shapeElements.length === 0) return;
+        const pos = getCanvasPos(e);
+        const newIds = importSubComponentScaled(activeComponentId, sourceComp, pos.x, pos.y);
+        useCanvasStore.getState().selectShape(null);
+        for (const id of newIds) selectShape(id, true);
+      }}
+    >
       <ShapeToolbar />
       <AlignmentToolbar />
       <ShortcutHelp />
@@ -1520,22 +1555,8 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
         onDoubleClick={handleDoubleClick}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
+        onMouseUp={(e) => { handleMouseUp(e); handleExternalDrop(e); }}
         onMouseLeave={handleMouseUp}
-        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-          const sourceId = e.dataTransfer.getData('text/plain');
-          if (!sourceId || !activeComponentId || sourceId === activeComponentId) return;
-          const sourceComp = useComponentStore.getState().components.find((c) => c.id === sourceId);
-          if (!sourceComp || sourceComp.shapeElements.length === 0) return;
-          const pos = getCanvasPos(e);
-          const newIds = importSubComponentScaled(activeComponentId, sourceComp, pos.x, pos.y);
-          useCanvasStore.getState().selectShape(null);
-          for (const id of newIds) selectShape(id, true);
-        }}
       />
     </div>
   );

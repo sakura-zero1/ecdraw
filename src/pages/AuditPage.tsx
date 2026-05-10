@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { fetchAuditLogs, type AuditItem } from '../services/auditApi';
+import { parseError } from '../utils/parseError';
 
 const TARGET_TYPES = [
   'ALL',
@@ -54,13 +55,7 @@ const COMMON_ACTIONS = [
 ];
 
 function parseApiError(error: unknown) {
-  if (!(error instanceof Error)) return '请求失败';
-  try {
-    const payload = JSON.parse(error.message) as { message?: string };
-    return payload.message || error.message;
-  } catch {
-    return error.message || '请求失败';
-  }
+  return parseError(error);
 }
 
 export default function AuditPage() {

@@ -20,6 +20,7 @@ function CategoryIcon({ color }: { color: string }) {
 
 interface ComponentLibraryPanelProps {
   onSelectComponent?: (componentId: string) => void;
+  onComponentClick?: (componentId: string) => void;
   headerExtra?: React.ReactNode;
 }
 
@@ -157,10 +158,34 @@ export default function ComponentLibraryPanel(_props: ComponentLibraryPanelProps
     });
   };
 
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, componentId: string) => {
-    e.dataTransfer.setData('text/plain', componentId);
-    e.dataTransfer.effectAllowed = 'copy';
-  };
+  // Simulate drag via document-level mouse events (reliable across all webviews)
+  const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
+  const draggingIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!draggingIdRef.current) return;
+      setGhostPos({ x: e.clientX, y: e.clientY });
+    };
+    const onUp = () => {
+      draggingIdRef.current = null;
+      setGhostPos(null);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  const handleItemMouseDown = useCallback((e: React.MouseEvent, componentId: string) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    e.preventDefault();
+    (window as any).__ecdraw_drag = { componentId, origin: 'library' };
+    draggingIdRef.current = componentId;
+    setGhostPos({ x: e.clientX, y: e.clientY });
+  }, []);
 
   return (
     <div className="de-lib-panel">
@@ -214,9 +239,8 @@ export default function ComponentLibraryPanel(_props: ComponentLibraryPanelProps
                     <div
                       key={comp.id}
                       className="de-lib-item"
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, comp.id)}
                       title={comp.description || comp.name}
+                      onMouseDown={(e) => handleItemMouseDown(e, comp.id)}
                       onMouseEnter={(e) => handleItemMouseEnter(e, comp)}
                       onMouseLeave={handleItemMouseLeave}
                     >
@@ -247,6 +271,18 @@ export default function ComponentLibraryPanel(_props: ComponentLibraryPanelProps
         </div>,
         document.body,
       )}
+      {ghostPos && draggingIdRef.current && (() => {
+        const comp = components.find((c) => c.id === draggingIdRef.current);
+        if (!comp) return null;
+        return (
+          <div
+            className="drag-ghost"
+            style={{ position: 'fixed', left: ghostPos.x - 30, top: ghostPos.y - 20, zIndex: 10000, pointerEvents: 'none' }}
+          >
+            <ComponentThumbnail component={comp} />
+          </div>
+        );
+      })()}
     </div>
   );
 }

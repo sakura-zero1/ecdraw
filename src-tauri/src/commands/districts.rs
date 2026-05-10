@@ -1,33 +1,13 @@
-use crate::error::AppError;
-use crate::middleware;
-use crate::models::DistrictData;
-use crate::AppState;
+use ecdraw_core::error::AppError;
+use ecdraw_core::middleware;
+use ecdraw_core::models::DistrictData;
+use ecdraw_core::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AuthInput {
-    pub token: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UpsertDistrictInput {
-    pub token: String,
-    pub instance_id: String,
-    pub transformer_capacity: Option<f64>,
-    pub supply_range: Option<String>,
-    pub supply_area: Option<String>,
-    pub household_count: Option<i32>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BatchDistrictInput {
-    pub token: String,
-    pub items: Vec<BatchDistrictItem>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BatchDistrictItem {
     pub diagram_instance_id: String,
     pub transformer_capacity: Option<f64>,
@@ -37,6 +17,7 @@ pub struct BatchDistrictItem {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DistrictWithInstance {
     pub id: Uuid,
     pub diagram_instance_id: Uuid,
@@ -94,12 +75,17 @@ pub async fn list_districts_by_diagram(
 #[tauri::command]
 pub async fn upsert_district(
     state: State<'_, AppState>,
-    input: UpsertDistrictInput,
+    token: String,
+    instance_id: String,
+    transformer_capacity: Option<f64>,
+    supply_range: Option<String>,
+    supply_area: Option<String>,
+    household_count: Option<i32>,
 ) -> Result<DistrictData, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR", "DISTRICT_EDITOR"])?;
     let user_id: Uuid = claims.sub.parse().unwrap();
-    let iid: Uuid = input.instance_id.parse().map_err(|_| AppError::BadRequest("无效的实例ID".into()))?;
+    let iid: Uuid = instance_id.parse().map_err(|_| AppError::BadRequest("无效的实例ID".into()))?;
 
     let _inst = sqlx::query_scalar::<_, Uuid>(
         "SELECT id FROM diagram_instances WHERE id = $1"
@@ -115,8 +101,8 @@ pub async fn upsert_district(
            RETURNING *"#
     )
     .bind(iid)
-    .bind(input.transformer_capacity).bind(&input.supply_range)
-    .bind(&input.supply_area).bind(input.household_count)
+    .bind(transformer_capacity).bind(&supply_range)
+    .bind(&supply_area).bind(household_count)
     .bind(user_id)
     .fetch_one(&state.pool)
     .await?;
@@ -128,18 +114,19 @@ pub async fn upsert_district(
 #[tauri::command]
 pub async fn batch_upsert_districts(
     state: State<'_, AppState>,
-    input: BatchDistrictInput,
+    token: String,
+    items: Vec<BatchDistrictItem>,
 ) -> Result<i32, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR", "DISTRICT_EDITOR"])?;
     let user_id: Uuid = claims.sub.parse().unwrap();
 
-    if input.items.len() > 500 {
+    if items.len() > 500 {
         return Err(AppError::BadRequest("单次最多导入500条".into()));
     }
 
     let mut count = 0;
-    for item in &input.items {
+    for item in &items {
         let iid: Uuid = item.diagram_instance_id.parse().map_err(|_| AppError::BadRequest("无效的实例ID".into()))?;
         let r = sqlx::query(
             r#"INSERT INTO district_data (diagram_instance_id, transformer_capacity, supply_range, supply_area, household_count, updated_by)

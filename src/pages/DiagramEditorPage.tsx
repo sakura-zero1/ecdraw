@@ -23,15 +23,10 @@ import { fetchLinesByDiagram, upsertLineSegment, type LineSegmentData } from '..
 import { fetchGisByDiagram, upsertGis, type GisData } from '../services/gisApi';
 import CollapsibleSection from '../components/panels/CollapsibleSection';
 import './DiagramEditorPage.css';
+import { parseError } from '../utils/parseError';
 
 function parseApiError(error: unknown) {
-  if (!(error instanceof Error)) return '请求失败';
-  try {
-    const payload = JSON.parse(error.message) as { message?: string };
-    return payload.message || error.message;
-  } catch {
-    return error.message || '请求失败';
-  }
+  return parseError(error);
 }
 
 // ---------- District Data Panel ----------
@@ -1095,6 +1090,7 @@ export default function DiagramEditorPage() {
   const [items, setItems] = useState<DiagramListItem[]>([]);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState('');
+  const [canvasError, setCanvasError] = useState('');
   const [newDiagramName, setNewDiagramName] = useState('');
 
   // Naming highlight state (flashing red border on unnamed instances)
@@ -1104,6 +1100,7 @@ export default function DiagramEditorPage() {
   }, []);
 
   const canvasRef = useRef<DiagramCanvasHandle>(null);
+  const dropAreaRef = useRef<HTMLDivElement>(null);
 
   // Clipboard for copy/paste instances
   const clipboardRef = useRef<{
@@ -1150,10 +1147,14 @@ export default function DiagramEditorPage() {
 
   const handleCreate = async () => {
     const trimmed = newDiagramName.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      setListError('请输入图纸名称');
+      return;
+    }
     try {
       await createDiagramByApi(trimmed);
       setNewDiagramName('');
+      setListError('');
       await loadList();
     } catch (e) {
       setListError(parseApiError(e));
@@ -1207,37 +1208,65 @@ export default function DiagramEditorPage() {
     [addEdge],
   );
 
-  // ---------- Drag-and-drop handlers ----------
-
-  const handleCanvasDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-  }, []);
-
-  const handleCanvasDrop = useCallback(
-    async (e: React.DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      const componentId = e.dataTransfer.getData('text/plain');
-      if (!componentId) return;
-
-      // Ensure the component data (shapeElements, pins, etc.) is in the map
-      await ensureComponentInMap(componentId);
-
-      // Convert screen coords to world coords via the canvas ref
-      const worldPos = canvasRef.current?.screenToWorld(e.clientX, e.clientY);
-      if (!worldPos) return;
-
-      // Center the instance on the drop point
-      const compMeta = componentMap[componentId];
-      const nodeWidth = compMeta?.displayWidth ?? 140;
-      const nodeHeight = compMeta?.displayHeight ?? 56;
-      const dropX = worldPos.x - nodeWidth / 2;
-      const dropY = worldPos.y - nodeHeight / 2;
-
-      await addInstance(componentId, dropX, dropY);
+  // ---------- Simulated drag-and-drop via document mouse events ----------
+  const doDrop = useCallback(
+    async (clientX: number, clientY: number) => {
+      const drag = (window as any).__ecdraw_drag as { componentId: string; origin: string } | undefined;
+      if (!drag || drag.origin !== 'library') return;
+      (window as any).__ecdraw_drag = undefined;
+      console.log('[doDrop] start, componentId:', drag.componentId, 'pos:', clientX, clientY);
+      try {
+        await ensureComponentInMap(drag.componentId);
+        console.log('[doDrop] ensureComponentInMap done');
+      } catch (e) {
+        console.error('[doDrop] ensureComponentInMap failed:', e);
+        setCanvasError('拖入元件失败(ensureComponentInMap): ' + parseApiError(e));
+        return;
+      }
+      const worldPos = canvasRef.current?.screenToWorld(clientX, clientY);
+      if (!worldPos) {
+        console.error('[doDrop] screenToWorld returned null');
+        setCanvasError('拖入元件失败: 画布坐标转换异常');
+        return;
+      }
+      console.log('[doDrop] worldPos:', worldPos);
+      const compMeta = useDiagramStore.getState().componentMap[drag.componentId];
+      console.log('[doDrop] compMeta:', compMeta ? { w: compMeta.displayWidth, h: compMeta.displayHeight } : 'NOT FOUND');
+      const w = compMeta?.displayWidth ?? 140;
+      const h = compMeta?.displayHeight ?? 90;
+      try {
+        await addInstance(drag.componentId, worldPos.x - w / 2, worldPos.y - h / 2);
+        // addInstance catches errors internally and stores in state.error
+        const storeErr = useDiagramStore.getState().error;
+        if (storeErr) {
+          console.error('[doDrop] addInstance stored error:', storeErr);
+          setCanvasError('拖入元件失败: ' + storeErr);
+          useDiagramStore.setState({ error: '' });
+        } else {
+          console.log('[doDrop] addInstance done');
+          setCanvasError('');
+        }
+      } catch (e) {
+        console.error('[doDrop] addInstance threw:', e);
+        setCanvasError('拖入元件失败: ' + parseApiError(e));
+      }
     },
-    [addInstance, componentMap, ensureComponentInMap],
+    [addInstance, ensureComponentInMap],
   );
+
+  // Listen for mouseup on the whole document. If dragging from the library,
+  // place the component at the mouse position.
+  useEffect(() => {
+    const onMouseUp = (e: MouseEvent) => {
+      const drag = (window as any).__ecdraw_drag as { componentId: string; origin: string } | undefined;
+      if (!drag) return;
+      console.log('[mouseup] drag origin:', drag.origin, 'componentId:', drag.componentId);
+      if (drag.origin !== 'library') return;
+      void doDrop(e.clientX, e.clientY);
+    };
+    document.addEventListener('mouseup', onMouseUp);
+    return () => document.removeEventListener('mouseup', onMouseUp);
+  }, [doDrop]);
 
   const handleSubmitReview = async (id: string) => {
     // Check for unnamed instances before submitting
@@ -1367,7 +1396,7 @@ export default function DiagramEditorPage() {
   if (diagramId) {
     const layoutClass = `de-editor-layout${leftCollapsed ? ' left-collapsed' : ''}${rightCollapsed ? ' right-collapsed' : ''}`;
     return (
-      <div className={layoutClass}>
+      <div className={layoutClass} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); void doDrop(e.clientX, e.clientY); }}>
         {/* Left panel: Component Library */}
         <div className={`de-left-panel${leftCollapsed ? ' collapsed' : ''}`}>
           {leftCollapsed ? (
@@ -1383,10 +1412,18 @@ export default function DiagramEditorPage() {
 
         {/* Center: Canvas (drop target) */}
         <div
+          ref={dropAreaRef}
           className="de-main-area"
-          onDragOver={handleCanvasDragOver}
-          onDrop={handleCanvasDrop}
+          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); void doDrop(e.clientX, e.clientY); }}
         >
+          {/* Canvas error banner */}
+          {canvasError && (
+            <div className="form-error" style={{ position: 'absolute', top: 4, left: '50%', transform: 'translateX(-50%)', zIndex: 20, maxWidth: 400 }}>
+              {canvasError}
+              <button style={{ marginLeft: 8, border: 'none', background: 'none', cursor: 'pointer', color: '#ef4444' }} onClick={() => setCanvasError('')}>✕</button>
+            </div>
+          )}
           {/* Floating toolbar overlay */}
           <div className="de-floating-toolbar">
             <button className="btn btn-sm" onClick={handleBackToList}>

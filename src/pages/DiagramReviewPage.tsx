@@ -9,15 +9,10 @@ import {
 } from '../services/reviewApi';
 import ViewerCanvas from '../components/diagram/ViewerCanvas';
 import { fetchDiagramTopology, type TopologyResponse } from '../services/diagramApi';
+import { parseError } from '../utils/parseError';
 
 function parseApiError(error: unknown) {
-  if (!(error instanceof Error)) return '请求失败';
-  try {
-    const payload = JSON.parse(error.message) as { message?: string };
-    return payload.message || error.message;
-  } catch {
-    return error.message || '请求失败';
-  }
+  return parseError(error);
 }
 
 export default function DiagramReviewPage() {

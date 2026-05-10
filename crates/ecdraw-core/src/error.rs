@@ -1,4 +1,5 @@
 use serde::Serialize;
+use serde_json::json;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -48,5 +49,32 @@ impl Serialize for AppError {
         };
         state.serialize_field("kind", kind)?;
         state.end()
+    }
+}
+
+// Implement IntoResponse for axum HTTP server
+#[cfg(feature = "axum")]
+impl axum::response::IntoResponse for AppError {
+    fn into_response(self) -> axum::response::Response {
+        use axum::http::StatusCode;
+        use axum::Json;
+
+        let (status, kind) = match &self {
+            AppError::Auth(_) => (StatusCode::UNAUTHORIZED, "AUTH"),
+            AppError::NotFound(_) => (StatusCode::NOT_FOUND, "NOT_FOUND"),
+            AppError::Forbidden(_) => (StatusCode::FORBIDDEN, "FORBIDDEN"),
+            AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, "BAD_REQUEST"),
+            AppError::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT"),
+            AppError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "DATABASE"),
+            AppError::Jwt(_) => (StatusCode::UNAUTHORIZED, "JWT"),
+            AppError::Bcrypt(_) => (StatusCode::INTERNAL_SERVER_ERROR, "BCRYPT"),
+        };
+
+        let body = json!({
+            "message": self.to_string(),
+            "kind": kind,
+        });
+
+        (status, Json(body)).into_response()
     }
 }

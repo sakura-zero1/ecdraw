@@ -1,6 +1,6 @@
 import type { ComponentCategory, ElectricalComponent, ConnectivityMatrix, CategoryInfo } from '../types';
 import { CATEGORIES } from '../constants/categories';
-import { tauriRequest, ensureTauriAuth } from './tauriClient';
+import { request, ensureAuth } from './unifiedClient';
 
 interface ApiComponentVersion {
   id: string;
@@ -82,13 +82,13 @@ function buildSnapshot(component: ElectricalComponent, matrix: ConnectivityMatri
 }
 
 async function requireAuth() {
-  const ok = await ensureTauriAuth();
+  const ok = await ensureAuth();
   if (!ok) throw new Error('未登录，无法访问 API');
 }
 
 export async function fetchComponentLibrary() {
   await requireAuth();
-  const response = await tauriRequest<ApiComponentWithVersion[]>('list_components');
+  const response = await request<ApiComponentWithVersion[]>('list_components');
   const components = response.map(toComponent);
   const matrices = response.map((row) => toMatrix(row.id, row.latestVersion?.snapshot));
   return { components, matrices };
@@ -96,7 +96,7 @@ export async function fetchComponentLibrary() {
 
 export async function createComponentByApi(name: string, category: ComponentCategory) {
   await requireAuth();
-  const created = await tauriRequest<ApiComponent>('create_component', {
+  const created = await request<ApiComponent>('create_component', {
     name, category, description: '',
   });
   return toComponent({ ...created, latestVersion: { id: '', versionNo: 1, snapshot: {} } });
@@ -104,8 +104,8 @@ export async function createComponentByApi(name: string, category: ComponentCate
 
 export async function duplicateComponentByApi(componentId: string) {
   await requireAuth();
-  const created = await tauriRequest<ApiComponent>('duplicate_component', { id: componentId });
-  const detail = await tauriRequest<ApiComponentWithVersion>('get_component', { id: created.id });
+  const created = await request<ApiComponent>('duplicate_component', { id: componentId });
+  const detail = await request<ApiComponentWithVersion>('get_component', { id: created.id });
   return {
     component: toComponent(detail),
     matrix: toMatrix(detail.id, detail.latestVersion?.snapshot),
@@ -114,7 +114,7 @@ export async function duplicateComponentByApi(componentId: string) {
 
 export async function updateComponentMetaByApi(component: ElectricalComponent) {
   await requireAuth();
-  await tauriRequest('update_component', {
+  await request('update_component', {
     id: component.id,
     name: component.name,
     category: component.category,
@@ -124,12 +124,12 @@ export async function updateComponentMetaByApi(component: ElectricalComponent) {
 
 export async function deleteComponentByApi(componentId: string) {
   await requireAuth();
-  await tauriRequest('delete_component', { id: componentId });
+  await request('delete_component', { id: componentId });
 }
 
 export async function saveComponentVersionByApi(component: ElectricalComponent, matrix: ConnectivityMatrix) {
   await requireAuth();
-  await tauriRequest('create_component_version', {
+  await request('create_component_version', {
     id: component.id,
     snapshot: buildSnapshot(component, matrix),
   });
@@ -137,15 +137,15 @@ export async function saveComponentVersionByApi(component: ElectricalComponent, 
 
 export async function fetchCategories(): Promise<CategoryInfo[]> {
   await requireAuth();
-  return tauriRequest<CategoryInfo[]>('list_categories');
+  return request<CategoryInfo[]>('list_categories');
 }
 
 export async function createCategory(name: string, label: string, color: string): Promise<CategoryInfo> {
   await requireAuth();
-  return tauriRequest<CategoryInfo>('create_category', { name, label, color });
+  return request<CategoryInfo>('create_category', { name, label, color });
 }
 
 export async function deleteCategory(id: string): Promise<void> {
   await requireAuth();
-  await tauriRequest('delete_category', { id });
+  await request('delete_category', { id });
 }

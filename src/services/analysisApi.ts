@@ -1,7 +1,7 @@
-import { tauriRequest, ensureTauriAuth } from './tauriClient';
+import { request, ensureAuth } from './unifiedClient';
 
 async function requireAuth() {
-  const ok = await ensureTauriAuth();
+  const ok = await ensureAuth();
   if (!ok) throw new Error('未登录');
 }
 
@@ -22,7 +22,7 @@ export interface OutageSimulationResult {
 
 export async function runOutageSimulation(diagramId: string, disconnectInstanceId: string): Promise<OutageSimulationResult> {
   await requireAuth();
-  return tauriRequest<OutageSimulationResult>('outage_simulate', {
+  return request<OutageSimulationResult>('outage_simulate', {
     diagram_id: diagramId,
     disconnect_instance_id: disconnectInstanceId,
   });

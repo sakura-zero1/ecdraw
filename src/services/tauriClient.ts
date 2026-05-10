@@ -78,6 +78,14 @@ async function tryRefreshToken() {
   }
 }
 
+function isAuthError(err: unknown): boolean {
+  const msg = (err && typeof err === 'object' && (err as Record<string, unknown>).message)
+    ? String((err as Record<string, unknown>).message)
+    : String(err);
+  const kind = (err && typeof err === 'object') ? String((err as Record<string, unknown>).kind ?? '') : '';
+  return /令牌|无效|过期|AUTH|JWT|ExpiredSignature|token/i.test(msg + ' ' + kind);
+}
+
 /** Generic invoke wrapper that auto-attaches token and retries on auth error */
 export async function tauriRequest<T>(command: string, args: Record<string, unknown> = {}): Promise<T> {
   const token = getStoredAccessToken();
@@ -87,8 +95,7 @@ export async function tauriRequest<T>(command: string, args: Record<string, unkn
   try {
     return await invoke<T>(command, args);
   } catch (err) {
-    const msg = String(err);
-    if (msg.includes('令牌') || msg.includes('无效') || msg.includes('过期') || msg.includes('AUTH')) {
+    if (isAuthError(err)) {
       const refreshed = await tryRefreshToken();
       if (refreshed) {
         const newToken = getStoredAccessToken();

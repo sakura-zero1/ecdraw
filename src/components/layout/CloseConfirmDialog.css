@@ -1,0 +1,96 @@
+.close-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.36);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.close-dialog {
+  background: var(--surface);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  padding: 24px 28px;
+  min-width: 360px;
+  max-width: 400px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.close-dialog h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--gray-900);
+  margin: 0;
+}
+
+.close-dialog-body {
+  font-size: 13px;
+  color: var(--gray-500);
+  line-height: 1.5;
+}
+
+.close-dialog-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.close-dialog-actions .btn {
+  flex: 1;
+  padding: 10px 0;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius);
+  cursor: pointer;
+  border: 1px solid var(--gray-200);
+  background: var(--surface);
+  color: var(--gray-700);
+  transition: all 0.12s;
+}
+
+.close-dialog-actions .btn:hover {
+  background: var(--gray-50);
+}
+
+.close-dialog-actions .btn-hide {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.close-dialog-actions .btn-hide:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.close-dialog-actions .btn-exit {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.close-dialog-actions .btn-exit:hover {
+  background: var(--danger-soft);
+}
+
+.close-dialog-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--gray-500);
+  cursor: pointer;
+  user-select: none;
+}
+
+.close-dialog-remember input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  margin: 0;
+}

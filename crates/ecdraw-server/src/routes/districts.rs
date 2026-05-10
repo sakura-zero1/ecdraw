@@ -1,0 +1,73 @@
+use axum::{Router, routing::get, routing::put, routing::post, Json, extract::{Path, State}};
+use ecdraw_core::logic::district_logic::{self, DistrictWithInstance};
+use ecdraw_core::middleware;
+use ecdraw_core::models::DistrictData;
+use ecdraw_core::AppState;
+use crate::extractors::AuthClaims;
+use serde::Deserialize;
+use uuid::Uuid;
+
+#[derive(Deserialize)]
+pub struct UpsertDistrictBody {
+    #[serde(alias = "instanceId")]
+    instance_id: String,
+    #[serde(alias = "transformerCapacity")]
+    transformer_capacity: Option<f64>,
+    #[serde(alias = "supplyRange")]
+    supply_range: Option<String>,
+    #[serde(alias = "supplyArea")]
+    supply_area: Option<String>,
+    #[serde(alias = "householdCount")]
+    household_count: Option<i32>,
+}
+
+#[derive(Deserialize)]
+pub struct BatchItem {
+    #[serde(alias = "diagramInstanceId")]
+    diagram_instance_id: String,
+    #[serde(alias = "transformerCapacity")]
+    transformer_capacity: Option<f64>,
+    #[serde(alias = "supplyRange")]
+    supply_range: Option<String>,
+    #[serde(alias = "supplyArea")]
+    supply_area: Option<String>,
+    #[serde(alias = "householdCount")]
+    household_count: Option<i32>,
+}
+
+#[derive(Deserialize)]
+pub struct BatchBody {
+    items: Vec<BatchItem>,
+}
+
+async fn list_by_diagram(State(state): State<AppState>, AuthClaims(_claims): AuthClaims, Path(diagram_id): Path<String>) -> Result<Json<Vec<DistrictWithInstance>>, ecdraw_core::error::AppError> {
+    let did: Uuid = diagram_id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的图纸ID".into()))?;
+    let result = district_logic::list_districts_by_diagram(&state.pool, did).await?;
+    Ok(Json(result))
+}
+
+async fn upsert_district(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Json(body): Json<UpsertDistrictBody>) -> Result<Json<DistrictData>, ecdraw_core::error::AppError> {
+    middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR", "DISTRICT_EDITOR"])?;
+    let user_id: Uuid = claims.sub.parse().unwrap();
+    let iid: Uuid = body.instance_id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的实例ID".into()))?;
+    let result = district_logic::upsert_district(&state.pool, user_id, iid, body.transformer_capacity, body.supply_range, body.supply_area, body.household_count).await?;
+    Ok(Json(result))
+}
+
+async fn batch_upsert(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Json(body): Json<BatchBody>) -> Result<Json<i32>, ecdraw_core::error::AppError> {
+    middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR", "DISTRICT_EDITOR"])?;
+    let user_id: Uuid = claims.sub.parse().unwrap();
+    let items: Result<Vec<_>, ecdraw_core::error::AppError> = body.items.iter().map(|item| {
+        let iid: Uuid = item.diagram_instance_id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的实例ID".into()))?;
+        Ok((iid, item.transformer_capacity, item.supply_range.clone(), item.supply_area.clone(), item.household_count))
+    }).collect();
+    let count = district_logic::batch_upsert_districts(&state.pool, user_id, &items?).await?;
+    Ok(Json(count))
+}
+
+pub fn routes() -> Router<AppState> {
+    Router::new()
+        .route("/by-diagram/{diagramId}", get(list_by_diagram))
+        .route("/instance", put(upsert_district))
+        .route("/batch", post(batch_upsert))
+}

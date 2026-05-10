@@ -1,7 +1,7 @@
 import { Navigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useAuth } from '../../contexts/useAuth';
-import type { UserRole } from '../../services/tauriClient';
+import type { UserRole } from '../../services/unifiedClient';
 
 interface Props {
   children: ReactNode;

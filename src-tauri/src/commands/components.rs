@@ -1,48 +1,14 @@
-use crate::error::AppError;
-use crate::middleware;
-use crate::models::{Component, ComponentVersion};
-use crate::AppState;
+use ecdraw_core::error::AppError;
+use ecdraw_core::middleware;
+use ecdraw_core::models::{Component, ComponentVersion};
+use ecdraw_core::AppState;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::State;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AuthInput {
-    pub token: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateComponentInput {
-    pub token: String,
-    pub name: String,
-    pub category: String,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UpdateComponentInput {
-    pub token: String,
-    pub id: String,
-    pub name: Option<String>,
-    pub category: Option<String>,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DuplicateComponentInput {
-    pub token: String,
-    pub id: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateVersionInput {
-    pub token: String,
-    pub id: String,
-    pub snapshot: serde_json::Value,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ComponentWithVersion {
     #[serde(flatten)]
     pub component: Component,
@@ -53,9 +19,9 @@ pub struct ComponentWithVersion {
 #[tauri::command]
 pub async fn list_components(
     state: State<'_, AppState>,
-    input: AuthInput,
+    token: String,
 ) -> Result<Vec<ComponentWithVersion>, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
 
     let components = if claims.roles.contains(&"ADMIN".to_string()) {
         sqlx::query_as::<_, Component>(
@@ -103,7 +69,6 @@ pub async fn get_component(
         .await?
         .ok_or_else(|| AppError::NotFound("元件不存在".into()))?;
 
-    // Ownership check for non-admin
     let user_id: Uuid = claims.sub.parse().unwrap();
     if !claims.roles.contains(&"ADMIN".to_string()) && c.owner_id != user_id {
         return Err(AppError::Forbidden("无权访问此元件".into()));
@@ -123,12 +88,15 @@ pub async fn get_component(
 #[tauri::command]
 pub async fn create_component(
     state: State<'_, AppState>,
-    input: CreateComponentInput,
+    token: String,
+    name: String,
+    category: String,
+    description: Option<String>,
 ) -> Result<Component, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "COMPONENT_EDITOR", "DIAGRAM_EDITOR"])?;
 
-    if input.name.is_empty() || input.category.is_empty() {
+    if name.is_empty() || category.is_empty() {
         return Err(AppError::BadRequest("名称和分类不能为空".into()));
     }
 
@@ -136,14 +104,13 @@ pub async fn create_component(
     let component = sqlx::query_as::<_, Component>(
         "INSERT INTO components (name, category, description, owner_id) VALUES ($1, $2, $3, $4) RETURNING *"
     )
-    .bind(&input.name)
-    .bind(&input.category)
-    .bind(&input.description)
+    .bind(&name)
+    .bind(&category)
+    .bind(&description)
     .bind(user_id)
     .fetch_one(&state.pool)
     .await?;
 
-    // Create initial version with default snapshot
     let default_snapshot = json!({
         "schemaVersion": 1,
         "shapeElements": [],
@@ -159,13 +126,12 @@ pub async fn create_component(
     .execute(&state.pool)
     .await?;
 
-    // Audit
     sqlx::query(
         "INSERT INTO audit_logs (user_id, action, target_type, target_id, payload) VALUES ($1, 'COMPONENT_CREATE', 'Component', $2, $3)"
     )
     .bind(user_id)
     .bind(component.id)
-    .bind(json!({"name": &input.name, "category": &input.category}))
+    .bind(json!({"name": &name, "category": &category}))
     .execute(&state.pool)
     .await?;
 
@@ -176,12 +142,16 @@ pub async fn create_component(
 #[tauri::command]
 pub async fn update_component(
     state: State<'_, AppState>,
-    input: UpdateComponentInput,
+    token: String,
+    id: String,
+    name: Option<String>,
+    category: Option<String>,
+    description: Option<String>,
 ) -> Result<Component, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "COMPONENT_EDITOR", "DIAGRAM_EDITOR"])?;
 
-    let cid: Uuid = input.id.parse().map_err(|_| AppError::BadRequest("无效的元件ID".into()))?;
+    let cid: Uuid = id.parse().map_err(|_| AppError::BadRequest("无效的元件ID".into()))?;
     let c = sqlx::query_as::<_, Component>("SELECT * FROM components WHERE id = $1")
         .bind(cid)
         .fetch_optional(&state.pool)
@@ -193,13 +163,13 @@ pub async fn update_component(
         return Err(AppError::Forbidden("无权修改此元件".into()));
     }
 
-    if input.name.is_none() && input.category.is_none() && input.description.is_none() {
+    if name.is_none() && category.is_none() && description.is_none() {
         return Err(AppError::BadRequest("无更新内容".into()));
     }
 
-    let name = input.name.unwrap_or(c.name);
-    let category = input.category.unwrap_or(c.category);
-    let description = input.description.or(c.description);
+    let name = name.unwrap_or(c.name);
+    let category = category.unwrap_or(c.category);
+    let description = description.or(c.description);
 
     let updated = sqlx::query_as::<_, Component>(
         "UPDATE components SET name = $1, category = $2, description = $3, updated_at = NOW() WHERE id = $4 RETURNING *"
@@ -245,13 +215,11 @@ pub async fn delete_component(
         return Err(AppError::Forbidden("无权删除此元件".into()));
     }
 
-    // Delete instances first (cascade handles edges/district/gis/line via schema)
     sqlx::query("DELETE FROM diagram_instances WHERE component_id = $1")
         .bind(cid)
         .execute(&state.pool)
         .await?;
 
-    // Delete component (cascade handles versions)
     sqlx::query("DELETE FROM components WHERE id = $1")
         .bind(cid)
         .execute(&state.pool)
@@ -272,12 +240,13 @@ pub async fn delete_component(
 #[tauri::command]
 pub async fn duplicate_component(
     state: State<'_, AppState>,
-    input: DuplicateComponentInput,
+    token: String,
+    id: String,
 ) -> Result<Component, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "COMPONENT_EDITOR", "DIAGRAM_EDITOR"])?;
 
-    let cid: Uuid = input.id.parse().map_err(|_| AppError::BadRequest("无效的元件ID".into()))?;
+    let cid: Uuid = id.parse().map_err(|_| AppError::BadRequest("无效的元件ID".into()))?;
     let source = sqlx::query_as::<_, Component>("SELECT * FROM components WHERE id = $1")
         .bind(cid)
         .fetch_optional(&state.pool)
@@ -286,7 +255,6 @@ pub async fn duplicate_component(
 
     let user_id: Uuid = claims.sub.parse().unwrap();
 
-    // Get latest version
     let latest_ver = sqlx::query_as::<_, ComponentVersion>(
         "SELECT * FROM component_versions WHERE component_id = $1 ORDER BY version_no DESC LIMIT 1"
     )
@@ -294,7 +262,6 @@ pub async fn duplicate_component(
     .fetch_optional(&state.pool)
     .await?;
 
-    // Generate unique name: "{name}副本", "{name}副本2", ...
     let mut new_name = format!("{}副本", source.name);
     let mut suffix = 2;
     loop {
@@ -313,7 +280,6 @@ pub async fn duplicate_component(
         }
     }
 
-    // Transaction: create component + version
     let mut tx = state.pool.begin().await?;
     let dup = sqlx::query_as::<_, Component>(
         "INSERT INTO components (name, category, description, owner_id) VALUES ($1, $2, $3, $4) RETURNING *"
@@ -424,12 +390,14 @@ pub async fn get_component_version(
 #[tauri::command]
 pub async fn create_component_version(
     state: State<'_, AppState>,
-    input: CreateVersionInput,
+    token: String,
+    id: String,
+    snapshot: serde_json::Value,
 ) -> Result<ComponentVersion, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "COMPONENT_EDITOR", "DIAGRAM_EDITOR"])?;
 
-    let cid: Uuid = input.id.parse().map_err(|_| AppError::BadRequest("无效的元件ID".into()))?;
+    let cid: Uuid = id.parse().map_err(|_| AppError::BadRequest("无效的元件ID".into()))?;
     let c = sqlx::query_as::<_, Component>("SELECT * FROM components WHERE id = $1")
         .bind(cid)
         .fetch_optional(&state.pool)
@@ -441,11 +409,10 @@ pub async fn create_component_version(
         return Err(AppError::Forbidden("无权修改此元件".into()));
     }
 
-    if !input.snapshot.is_object() || input.snapshot.is_array() {
+    if !snapshot.is_object() || snapshot.is_array() {
         return Err(AppError::BadRequest("快照数据格式无效".into()));
     }
 
-    // Get latest version_no in transaction
     let mut tx = state.pool.begin().await?;
     let latest_no = sqlx::query_scalar::<_, i32>(
         "SELECT COALESCE(MAX(version_no), 0) FROM component_versions WHERE component_id = $1"
@@ -459,7 +426,7 @@ pub async fn create_component_version(
     )
     .bind(cid)
     .bind(latest_no + 1)
-    .bind(&input.snapshot)
+    .bind(&snapshot)
     .bind(user_id)
     .fetch_one(&mut *tx)
     .await?;

@@ -1,35 +1,14 @@
-use crate::error::AppError;
-use crate::middleware;
-use crate::models::LineSegmentData;
-use crate::AppState;
+use ecdraw_core::error::AppError;
+use ecdraw_core::middleware;
+use ecdraw_core::models::LineSegmentData;
+use ecdraw_core::AppState;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::State;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AuthInput {
-    pub token: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UpsertLineInput {
-    pub token: String,
-    pub edge_id: String,
-    pub length: Option<f64>,
-    pub wire_model: Option<String>,
-    pub wire_ownership: Option<String>,
-    pub wire_type: Option<String>,
-    pub is_main_display: Option<bool>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BatchLineInput {
-    pub token: String,
-    pub items: Vec<BatchLineItem>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BatchLineItem {
     pub diagram_edge_id: String,
     pub length: Option<f64>,
@@ -77,18 +56,24 @@ pub async fn list_lines_by_diagram(
 #[tauri::command]
 pub async fn upsert_line(
     state: State<'_, AppState>,
-    input: UpsertLineInput,
+    token: String,
+    edge_id: String,
+    length: Option<f64>,
+    wire_model: Option<String>,
+    wire_ownership: Option<String>,
+    wire_type: Option<String>,
+    is_main_display: Option<bool>,
 ) -> Result<LineSegmentData, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR", "LINE_EDITOR"])?;
     let user_id: Uuid = claims.sub.parse().unwrap();
-    let eid: Uuid = input.edge_id.parse().map_err(|_| AppError::BadRequest("无效的边ID".into()))?;
+    let eid: Uuid = edge_id.parse().map_err(|_| AppError::BadRequest("无效的边ID".into()))?;
 
     let _edge = sqlx::query_scalar::<_, Uuid>("SELECT id FROM diagram_edges WHERE id = $1")
         .bind(eid).fetch_optional(&state.pool).await?
         .ok_or_else(|| AppError::NotFound("边不存在".into()))?;
 
-    let is_main = input.is_main_display.unwrap_or(true);
+    let is_main = is_main_display.unwrap_or(true);
 
     let data = sqlx::query_as::<_, LineSegmentData>(
         r#"INSERT INTO line_segment_data (diagram_edge_id, length, wire_model, wire_ownership, wire_type, is_main_display, updated_by)
@@ -97,8 +82,8 @@ pub async fn upsert_line(
            DO UPDATE SET length = $2, wire_model = $3, wire_ownership = $4, wire_type = $5, is_main_display = $6, updated_by = $7, updated_at = NOW()
            RETURNING *"#
     )
-    .bind(eid).bind(input.length).bind(&input.wire_model)
-    .bind(&input.wire_ownership).bind(&input.wire_type)
+    .bind(eid).bind(length).bind(&wire_model)
+    .bind(&wire_ownership).bind(&wire_type)
     .bind(is_main).bind(user_id)
     .fetch_one(&state.pool)
     .await?;
@@ -110,18 +95,19 @@ pub async fn upsert_line(
 #[tauri::command]
 pub async fn batch_upsert_lines(
     state: State<'_, AppState>,
-    input: BatchLineInput,
+    token: String,
+    items: Vec<BatchLineItem>,
 ) -> Result<i32, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR", "LINE_EDITOR"])?;
     let user_id: Uuid = claims.sub.parse().unwrap();
 
-    if input.items.len() > 500 {
+    if items.len() > 500 {
         return Err(AppError::BadRequest("单次最多导入500条".into()));
     }
 
     let mut count = 0;
-    for item in &input.items {
+    for item in &items {
         let eid: Uuid = item.diagram_edge_id.parse().map_err(|_| AppError::BadRequest("无效的边ID".into()))?;
         let is_main = item.is_main_display.unwrap_or(true);
         let r = sqlx::query(

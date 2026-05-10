@@ -1,32 +1,14 @@
-use crate::error::AppError;
-use crate::middleware;
-use crate::models::GisData;
-use crate::AppState;
+use ecdraw_core::error::AppError;
+use ecdraw_core::middleware;
+use ecdraw_core::models::GisData;
+use ecdraw_core::AppState;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tauri::State;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AuthInput {
-    pub token: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UpsertGisInput {
-    pub token: String,
-    pub instance_id: String,
-    pub latitude: Option<f64>,
-    pub longitude: Option<f64>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BatchGisInput {
-    pub token: String,
-    pub items: Vec<BatchGisItem>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BatchGisItem {
     pub diagram_instance_id: String,
     pub latitude: Option<f64>,
@@ -68,12 +50,15 @@ pub async fn list_gis_by_diagram(
 #[tauri::command]
 pub async fn upsert_gis(
     state: State<'_, AppState>,
-    input: UpsertGisInput,
+    token: String,
+    instance_id: String,
+    latitude: Option<f64>,
+    longitude: Option<f64>,
 ) -> Result<GisData, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR", "GIS_EDITOR"])?;
     let user_id: Uuid = claims.sub.parse().unwrap();
-    let iid: Uuid = input.instance_id.parse().map_err(|_| AppError::BadRequest("无效的实例ID".into()))?;
+    let iid: Uuid = instance_id.parse().map_err(|_| AppError::BadRequest("无效的实例ID".into()))?;
 
     let _inst = sqlx::query_scalar::<_, Uuid>("SELECT id FROM diagram_instances WHERE id = $1")
         .bind(iid).fetch_optional(&state.pool).await?
@@ -86,7 +71,7 @@ pub async fn upsert_gis(
            DO UPDATE SET latitude = $2, longitude = $3, updated_by = $4, updated_at = NOW()
            RETURNING *"#
     )
-    .bind(iid).bind(input.latitude).bind(input.longitude).bind(user_id)
+    .bind(iid).bind(latitude).bind(longitude).bind(user_id)
     .fetch_one(&state.pool)
     .await?;
 
@@ -97,18 +82,19 @@ pub async fn upsert_gis(
 #[tauri::command]
 pub async fn batch_upsert_gis(
     state: State<'_, AppState>,
-    input: BatchGisInput,
+    token: String,
+    items: Vec<BatchGisItem>,
 ) -> Result<i32, AppError> {
-    let claims = middleware::verify_auth(&input.token, &state.jwt_access_secret)?;
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR", "GIS_EDITOR"])?;
     let user_id: Uuid = claims.sub.parse().unwrap();
 
-    if input.items.len() > 500 {
+    if items.len() > 500 {
         return Err(AppError::BadRequest("单次最多导入500条".into()));
     }
 
     let mut count = 0;
-    for item in &input.items {
+    for item in &items {
         let iid: Uuid = item.diagram_instance_id.parse().map_err(|_| AppError::BadRequest("无效的实例ID".into()))?;
         let r = sqlx::query(
             r#"INSERT INTO gis_data (diagram_instance_id, latitude, longitude, updated_by)

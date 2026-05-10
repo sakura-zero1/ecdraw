@@ -1,4 +1,4 @@
-import { tauriRequest, ensureTauriAuth } from './tauriClient';
+import { request, ensureAuth } from './unifiedClient';
 
 export interface GisDataInstance {
   id: string;
@@ -18,18 +18,18 @@ export interface GisData {
 }
 
 async function requireAuth(): Promise<void> {
-  const ok = await ensureTauriAuth();
+  const ok = await ensureAuth();
   if (!ok) throw new Error('未登录');
 }
 
 export async function fetchGisByDiagram(diagramId: string): Promise<GisData[]> {
   await requireAuth();
-  return tauriRequest<GisData[]>('list_gis_by_diagram', { diagram_id: diagramId });
+  return request<GisData[]>('list_gis_by_diagram', { diagram_id: diagramId });
 }
 
 export async function upsertGis(instanceId: string, data: { latitude?: number; longitude?: number }): Promise<GisData> {
   await requireAuth();
-  return tauriRequest<GisData>('upsert_gis', {
+  return request<GisData>('upsert_gis', {
     instance_id: instanceId,
     latitude: data.latitude,
     longitude: data.longitude,
@@ -47,5 +47,5 @@ export async function batchUpsertGis(items: Array<{
     latitude: item.latitude,
     longitude: item.longitude,
   }));
-  return tauriRequest<{ count: number }>('batch_upsert_gis', { items: itemsForRust });
+  return request<{ count: number }>('batch_upsert_gis', { items: itemsForRust });
 }

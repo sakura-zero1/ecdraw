@@ -1,9 +1,10 @@
-use crate::auth;
-use crate::AppState;
+use ecdraw_core::auth;
+use ecdraw_core::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SeedResult {
     pub success: bool,
     pub message: String,
@@ -11,7 +12,7 @@ pub struct SeedResult {
 
 /// Initialize seed data: create admin user if not exists
 #[tauri::command]
-pub async fn seed_admin(state: State<'_, AppState>) -> Result<SeedResult, crate::error::AppError> {
+pub async fn seed_admin(state: State<'_, AppState>) -> Result<SeedResult, ecdraw_core::error::AppError> {
     let username = std::env::var("SEED_ADMIN_USERNAME").unwrap_or_else(|_| "admin".into());
     let password = std::env::var("SEED_ADMIN_PASSWORD").unwrap_or_else(|_| "Admin123456".into());
 

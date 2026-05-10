@@ -1,15 +1,10 @@
 import { useEffect, useState } from 'react';
-import type { UserRole } from '../services/tauriClient';
+import type { UserRole } from '../services/unifiedClient';
 import { createUser, fetchUsers, type UserItem } from '../services/userApi';
+import { parseError } from '../utils/parseError';
 
 function parseApiError(error: unknown) {
-  if (!(error instanceof Error)) return '请求失败';
-  try {
-    const payload = JSON.parse(error.message) as { message?: string };
-    return payload.message || error.message;
-  } catch {
-    return error.message || '请求失败';
-  }
+  return parseError(error);
 }
 
 const ROLES: UserRole[] = ['ADMIN', 'COMPONENT_EDITOR', 'DIAGRAM_EDITOR', 'REVIEWER', 'DISTRICT_EDITOR', 'LINE_EDITOR', 'GIS_EDITOR', 'VIEWER'];
@@ -40,7 +35,7 @@ export default function UserManagementPage() {
     setError('');
     try {
       const result = await fetchUsers();
-      setItems(result.items);
+      setItems(result);
     } catch (e) {
       setError(parseApiError(e));
     } finally {

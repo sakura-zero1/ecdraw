@@ -24,6 +24,8 @@ pub struct DiagramVersion {
     pub snapshot: serde_json::Value,
     pub created_by: Uuid,
     pub created_at: DateTime<Utc>,
+    pub status: String,
+    pub published_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]

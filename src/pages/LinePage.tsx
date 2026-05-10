@@ -7,15 +7,10 @@ import {
   type DiagramSnapshot,
 } from '../services/diagramApi';
 import { fetchLinesByDiagram, upsertLineSegment, batchUpsertLineSegments, type LineSegmentData, type WireOwnership, type WireType } from '../services/lineApi';
+import { parseError } from '../utils/parseError';
 
-function parseApiError(error: unknown): string {
-  if (!(error instanceof Error)) return '请求失败';
-  try {
-    const payload = JSON.parse(error.message) as { message?: string };
-    return payload.message || error.message;
-  } catch {
-    return error.message || '请求失败';
-  }
+function parseApiError(error: unknown) {
+  return parseError(error);
 }
 
 const WIRE_OWNERSHIP_LABELS: Record<string, string> = { user: '用户', public: '公用' };

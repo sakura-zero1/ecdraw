@@ -1,7 +1,7 @@
-import { tauriRequest, ensureTauriAuth } from './tauriClient';
+import { request, ensureAuth } from './unifiedClient';
 
 async function requireAuth() {
-  const ok = await ensureTauriAuth();
+  const ok = await ensureAuth();
   if (!ok) throw new Error('未登录');
 }
 
@@ -30,5 +30,5 @@ export interface DashboardData {
 
 export async function fetchDashboard(): Promise<DashboardData> {
   await requireAuth();
-  return tauriRequest<DashboardData>('dashboard_stats');
+  return request<DashboardData>('dashboard_stats');
 }

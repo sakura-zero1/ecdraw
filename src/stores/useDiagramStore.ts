@@ -14,6 +14,7 @@ import {
   type DiagramListItem,
 } from '../services/diagramApi';
 import { fetchComponentLibrary } from '../services/componentApi';
+import { parseError } from '../utils/parseError';
 import type { Pin, ShapeElement } from '../types';
 import type { ConnectivityMatrix } from '../types/connection';
 
@@ -157,7 +158,7 @@ export const useDiagramStore = create<DiagramEditorState>()(
           state.panY = 0;
         });
       } catch (e) {
-        const message = e instanceof Error ? e.message : '加载图纸失败';
+        const message = parseError(e) || '加载图纸失败';
         set((state) => {
           state.loading = false;
           state.error = message;
@@ -183,7 +184,7 @@ export const useDiagramStore = create<DiagramEditorState>()(
           state.selectedEdgeId = null;
         });
       } catch (e) {
-        const message = e instanceof Error ? e.message : '添加实例失败';
+        const message = parseError(e) || '添加实例失败';
         set((state) => {
           state.error = message;
         });
@@ -212,7 +213,7 @@ export const useDiagramStore = create<DiagramEditorState>()(
           state.selectedEdgeId = null;
         });
       } catch (e) {
-        const message = e instanceof Error ? e.message : '粘贴实例失败';
+        const message = parseError(e) || '粘贴实例失败';
         set((state) => {
           state.error = message;
         });
@@ -262,7 +263,7 @@ export const useDiagramStore = create<DiagramEditorState>()(
           if (state.selectedInstanceId === id) state.selectedInstanceId = null;
         });
       } catch (e) {
-        const message = e instanceof Error ? e.message : '删除实例失败';
+        const message = parseError(e) || '删除实例失败';
         set((state) => {
           state.error = message;
         });
@@ -291,7 +292,7 @@ export const useDiagramStore = create<DiagramEditorState>()(
           state.edges.push(edge);
         });
       } catch (e) {
-        const message = e instanceof Error ? e.message : '添加连线失败';
+        const message = parseError(e) || '添加连线失败';
         set((state) => {
           state.error = message;
         });
@@ -311,7 +312,7 @@ export const useDiagramStore = create<DiagramEditorState>()(
           if (state.selectedEdgeId === id) state.selectedEdgeId = null;
         });
       } catch (e) {
-        const message = e instanceof Error ? e.message : '删除连线失败';
+        const message = parseError(e) || '删除连线失败';
         set((state) => {
           state.error = message;
         });
@@ -570,7 +571,7 @@ export const useDiagramStore = create<DiagramEditorState>()(
           state.diagramInfo = updated;
         });
       } catch (e) {
-        const message = e instanceof Error ? e.message : '保存草稿失败';
+        const message = parseError(e) || '保存草稿失败';
         set((state) => {
           state.error = message;
         });
@@ -590,7 +591,7 @@ export const useDiagramStore = create<DiagramEditorState>()(
           }
         });
       } catch (e) {
-        const message = e instanceof Error ? e.message : '撤回审核失败';
+        const message = parseError(e) || '撤回审核失败';
         set((state) => {
           state.error = message;
         });

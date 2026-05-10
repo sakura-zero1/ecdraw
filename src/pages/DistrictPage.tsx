@@ -7,15 +7,10 @@ import {
   type DiagramSnapshot,
 } from '../services/diagramApi';
 import { fetchDistrictsByDiagram, upsertDistrict, batchUpsertDistricts, type DistrictData } from '../services/districtApi';
+import { parseError } from '../utils/parseError';
 
-function parseApiError(error: unknown): string {
-  if (!(error instanceof Error)) return '请求失败';
-  try {
-    const payload = JSON.parse(error.message) as { message?: string };
-    return payload.message || error.message;
-  } catch {
-    return error.message || '请求失败';
-  }
+function parseApiError(error: unknown) {
+  return parseError(error);
 }
 
 export default function DistrictPage() {

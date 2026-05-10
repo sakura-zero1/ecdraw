@@ -5,6 +5,7 @@ import { useAuth } from './contexts/useAuth';
 import LoginPage from './pages/LoginPage';
 import AppShell from './components/layout/AppShell';
 import RoleGuard from './components/guards/RoleGuard';
+import ErrorBoundary from './components/guards/ErrorBoundary';
 import AppLayout from './components/layout/AppLayout';
 import DiagramEditorPage from './pages/DiagramEditorPage';
 import DiagramReviewPage from './pages/DiagramReviewPage';
@@ -55,7 +56,7 @@ export default function App() {
         <AuthProvider>
           <Routes>
             <Route path="/login" element={<LoginRoute />} />
-            <Route path="/*" element={<AppRoutes />} />
+            <Route path="/*" element={<ErrorBoundary><AppRoutes /></ErrorBoundary>} />
           </Routes>
         </AuthProvider>
       </ThemeProvider>

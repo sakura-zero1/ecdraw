@@ -1,4 +1,4 @@
-import { tauriRequest, ensureTauriAuth } from './tauriClient';
+import { request, ensureAuth } from './unifiedClient';
 
 export type ReviewStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 export type ReviewFilterStatus = ReviewStatus | 'ALL';
@@ -16,7 +16,7 @@ export interface ReviewQueueItem {
 }
 
 async function requireAuth() {
-  const ok = await ensureTauriAuth();
+  const ok = await ensureAuth();
   if (!ok) throw new Error('未登录，无法访问 API');
 }
 
@@ -26,7 +26,7 @@ export async function fetchReviewQueue(params: {
   pageSize?: number;
 }) {
   await requireAuth();
-  return tauriRequest<{
+  return request<{
     items: ReviewQueueItem[];
     page: number;
     pageSize: number;
@@ -41,10 +41,10 @@ export async function fetchReviewQueue(params: {
 
 export async function approveReviewByApi(id: string, comment?: string) {
   await requireAuth();
-  return tauriRequest('approve_review', { id, comment });
+  return request('approve_review', { id, comment });
 }
 
 export async function rejectReviewByApi(id: string, comment?: string) {
   await requireAuth();
-  return tauriRequest('reject_review', { id, comment });
+  return request('reject_review', { id, comment });
 }

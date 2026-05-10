@@ -166,7 +166,7 @@ export const useConnectionStore = create<ConnectionStore>()(
       },
     })),
     {
-      name: 'ecdraw-connection-library-v1',
+      name: 'ecdraw-connection-library-v2',
       partialize: (state) => ({ matrices: state.matrices }),
       merge: (persisted, current) => {
         const p = persisted as Partial<ConnectionStore>;

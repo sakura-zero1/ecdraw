@@ -15,6 +15,7 @@
   border-bottom: 1px solid var(--gray-200);
   position: relative;
   z-index: 100;
+  user-select: none;
 }
 
 .shell-topbar-left {
@@ -160,9 +161,58 @@ a.shell-overflow-item {
 .login-screen {
   height: 100vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   background: var(--gray-25);
+}
+
+.login-titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 0 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--gray-200);
+  z-index: 100;
+  user-select: none;
+}
+
+/* ===== Window Controls ===== */
+
+.win-controls {
+  display: flex;
+  align-items: stretch;
+  height: var(--topbar-h);
+  margin-left: 4px;
+}
+
+.win-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  background: none;
+  border: none;
+  color: var(--gray-500);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.win-btn:hover {
+  background: var(--gray-100);
+  color: var(--gray-700);
+}
+
+.win-btn-close:hover {
+  background: var(--danger);
+  color: #fff;
 }
 
 .login-card {
@@ -515,17 +565,16 @@ a.shell-overflow-item {
   gap: 0;
   flex: 1;
   min-height: 0;
-  height: calc(100vh - var(--topbar-h) - 46px);
 }
 
 .viewer-sidebar {
   width: var(--sidebar-w);
-  min-width: var(--sidebar-w);
+  min-width: 0;
   background: var(--surface);
   border-radius: var(--radius-md);
   border: 1px solid var(--gray-200);
   padding: 8px;
-  overflow-y: auto;
+  overflow: hidden auto;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -692,15 +741,126 @@ a.shell-overflow-item {
   background: var(--gray-25);
 }
 
+/* ===== Version Timeline ===== */
+.viewer-timeline {
+  width: 72px;
+  min-width: 72px;
+  background: var(--surface);
+  border-right: 1px solid var(--gray-200);
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 0;
+}
+.viewer-timeline-line {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 24px;
+  bottom: 24px;
+  width: 2px;
+  background: var(--gray-200);
+}
+.viewer-timeline-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  cursor: pointer;
+  z-index: 1;
+  transition: background 0.1s;
+}
+.viewer-timeline-node:hover {
+  background: var(--gray-25);
+}
+.viewer-timeline-node.selected {
+  background: var(--accent-soft);
+}
+.viewer-timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2.5px solid var(--gray-300);
+  background: var(--surface);
+  z-index: 2;
+  transition: all 0.15s;
+  position: relative;
+}
+.viewer-timeline-node:hover .viewer-timeline-dot {
+  transform: scale(1.3);
+  box-shadow: 0 0 0 3px rgba(0,0,0,0.04);
+}
+.viewer-timeline-node.selected .viewer-timeline-dot {
+  background: inherit;
+  box-shadow: 0 0 0 3px rgba(225,29,72,0.12);
+}
+.viewer-timeline-dot.online-pulse {
+  animation: viewer-pulse-ring 2s ease-out infinite;
+}
+@keyframes viewer-pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(22,163,74,0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(22,163,74,0); }
+  100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); }
+}
+.viewer-timeline-label {
+  position: absolute;
+  left: calc(50% + 10px);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--gray-500);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.viewer-timeline-node.selected .viewer-timeline-label {
+  color: var(--accent);
+  font-weight: 700;
+}
+.viewer-timeline-tooltip {
+  position: fixed;
+  z-index: 1000;
+  background: var(--gray-900);
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  pointer-events: none;
+  min-width: 120px;
+  box-shadow: var(--shadow-lg);
+  line-height: 1.5;
+}
+.viewer-timeline-tooltip .tt-title { font-weight: 700; margin-bottom: 2px; }
+.viewer-timeline-tooltip .tt-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-bottom: 4px;
+}
+.viewer-timeline-tooltip .tt-time {
+  color: rgba(255,255,255,0.5);
+  font-size: 11px;
+}
+
+/* Decommissioned diagram in list */
+.viewer-diagram-item.decommissioned {
+  opacity: 0.45;
+}
+.viewer-diagram-item.decommissioned .name {
+  text-decoration: line-through;
+  text-decoration-color: var(--gray-300);
+}
+
 .viewer-stats {
   width: var(--panel-w);
-  min-width: var(--panel-w);
+  min-width: 0;
   background: var(--surface);
   border: 1px solid var(--gray-200);
   border-radius: var(--radius-md);
   padding: 12px;
   margin-left: 12px;
-  overflow-y: auto;
+  overflow: hidden auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -809,6 +969,7 @@ a.shell-overflow-item {
 
 .diagram-viewer-page {
   height: calc(100vh - var(--topbar-h));
+  overflow: hidden;
 }
 
 /* ===== Dashboard ===== */
