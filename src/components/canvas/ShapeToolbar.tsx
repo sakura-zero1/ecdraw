@@ -6,6 +6,7 @@ import './ShapeToolbar.css';
 
 const TOOLS: { mode: ToolMode; icon: string; label: string }[] = [
   { mode: 'select', icon: '↖', label: '选择' },
+  { mode: 'wire', icon: '⎯', label: '连线' },
   { mode: 'draw-rect', icon: '▭', label: '矩形' },
   { mode: 'draw-circle', icon: '◯', label: '圆形' },
   { mode: 'draw-ellipse', icon: '⬭', label: '椭圆' },

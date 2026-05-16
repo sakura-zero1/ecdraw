@@ -17,7 +17,7 @@ const DEFAULT_CANVAS_WIDTH = 1200;
 const DEFAULT_CANVAS_HEIGHT = 800;
 const HANDLE_RADIUS = 5;
 const HANDLE_HIT_RADIUS = 10;
-const PIN_HIT_RADIUS = 10;
+const PIN_HIT_RADIUS = 20;
 
 // ─── Pure logic functions (unchanged from SvgCanvas) ───
 
@@ -352,12 +352,19 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
   const [snapPreview, setSnapPreview] = useState<{ x: number; y: number } | null>(null);
   const [alignmentGuides, setAlignmentGuides] = useState<{ axis: 'x' | 'y'; value: number }[]>([]);
   const preClickSelectionRef = useRef<string[]>([]);
+  const wireFromRef = useRef<{ pinId: string; x: number; y: number } | null>(null);
+  const mouseWorldPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [wireDragNonce, setWireDragNonce] = useState(0);
 
   const activeComp = components.find((c) => c.id === activeComponentId);
   const canvasWidth = activeComp?.width ?? DEFAULT_CANVAS_WIDTH;
   const canvasHeight = activeComp?.height ?? DEFAULT_CANVAS_HEIGHT;
   const isDrawTool = activeTool.startsWith('draw-');
+  const isWireMode = activeTool === 'wire';
   const effectiveSelect = activeTool === 'select' || altHeld;
+
+  // Clear wire state when leaving wire mode
+  if (!isWireMode && wireFromRef.current) { wireFromRef.current = null; setWireDragNonce(0); }
 
   // ─── Coordinate conversion (screen → world via viewport) ───
 
@@ -442,6 +449,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
 
       if (!hasMod && !e.altKey) {
         if (matchKey('KeyQ', 'q')) { e.preventDefault(); cvs.setActiveTool('select'); return; }
+        if (matchKey('KeyW', 'w')) { e.preventDefault(); cvs.setActiveTool('wire'); return; }
         if (matchKey('KeyA', 'a')) { e.preventDefault(); cvs.setActiveTool('draw-rect'); return; }
         if (matchKey('KeyS', 's')) { e.preventDefault(); cvs.setActiveTool('draw-circle'); return; }
         if (matchKey('KeyD', 'd')) { e.preventDefault(); cvs.setActiveTool('draw-ellipse'); return; }
@@ -449,6 +457,12 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
         if (matchKey('KeyT', 't')) { e.preventDefault(); cvs.setActiveTool('draw-text'); return; }
         if (e.key === 'Escape') {
           e.preventDefault();
+          if (wireFromRef.current) {
+            wireFromRef.current = null;
+            setWireDragNonce(0);
+            cvs.selectPin(null);
+            return;
+          }
           if (cvs.groupEditingGroupId) {
             const comp = store.components.find((c) => c.id === store.activeComponentId);
             cvs.exitGroupEditing();
@@ -592,6 +606,29 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
     }
     return null;
   }, [activeComp, viewport.zoom]);
+
+  const hitTestConnection = useCallback((cx: number, cy: number): string | null => {
+    if (!activeComp) return null;
+    const matrix = matrices[activeComp.id];
+    if (!matrix) return null;
+    const threshold = 8 / viewport.zoom;
+    for (const conn of matrix.connections) {
+      if (!conn.visible || conn.state === 'none') continue;
+      const pinA = activeComp.pins.find((p) => p.id === conn.pinAId);
+      const pinB = activeComp.pins.find((p) => p.id === conn.pinBId);
+      if (!pinA || !pinB) continue;
+      // Distance from point to line segment
+      const dx = pinB.position.x - pinA.position.x;
+      const dy = pinB.position.y - pinA.position.y;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq === 0) continue;
+      const t = Math.max(0, Math.min(1, ((cx - pinA.position.x) * dx + (cy - pinA.position.y) * dy) / lenSq));
+      const projX = pinA.position.x + t * dx;
+      const projY = pinA.position.y + t * dy;
+      if (Math.hypot(cx - projX, cy - projY) <= threshold) return conn.id;
+    }
+    return null;
+  }, [activeComp, matrices, viewport.zoom]);
 
   const hitTestShape = useCallback((cx: number, cy: number): string | null => {
     if (!activeComp) return null;
@@ -779,6 +816,28 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
       }
     }
 
+    // Wire mode: drag from pin to pin, click connection to delete
+    if (isWireMode && activeComp) {
+      const pinHit = hitTestPin(pos.x, pos.y);
+      if (pinHit) {
+        e.preventDefault();
+        const pin = activeComp.pins.find((p) => p.id === pinHit)!;
+        wireFromRef.current = { pinId: pinHit, x: pin.position.x, y: pin.position.y };
+        mouseWorldPosRef.current = pos;
+        setWireDragNonce(1);
+        selectPin(pinHit);
+      } else {
+        // Click on connection line → delete it
+        const connHit = hitTestConnection(pos.x, pos.y);
+        if (connHit) {
+          e.preventDefault();
+          useConnectionStore.getState().removeConnection(activeComp.id, connHit);
+        }
+        selectPin(null);
+      }
+      return;
+    }
+
     // Pin hit
     const pinHit = hitTestPin(pos.x, pos.y);
     if (pinHit && activeComp && effectiveSelect) {
@@ -889,6 +948,17 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
     }
 
     const pos = getCanvasPos(e);
+
+    // Wire mode: always track mouse and re-render for hover / drag feedback
+    if (isWireMode) {
+      mouseWorldPosRef.current = pos;
+      setWireDragNonce((n) => n + 1);
+      if (wireFromRef.current) return;
+    }
+
+    if (wireFromRef.current) {
+      return;
+    }
 
     if (rubberBand) { setRubberBand({ ...rubberBand, endX: pos.x, endY: pos.y }); return; }
 
@@ -1070,9 +1140,23 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
       default: return;
     }
     setDrawing({ startX, startY, preview });
-  }, [rubberBand, dragState, drawing, activeComp, activeTool, getCanvasPos, setViewport, updatePin, updateShapeElement]);
+  }, [rubberBand, dragState, drawing, activeComp, activeTool, wireDragNonce, getCanvasPos, setViewport, updatePin, updateShapeElement]);
 
   const handleMouseUp = useCallback(() => {
+    // Wire mode: complete connection on release
+    if (wireFromRef.current && activeComp && wireDragNonce > 0) {
+      const from = wireFromRef.current;
+      const mousePos = mouseWorldPosRef.current;
+      const hitPin = hitTestPin(mousePos.x, mousePos.y);
+      if (hitPin && hitPin !== from.pinId) {
+        useConnectionStore.getState().cycleCellState(activeComp.id, from.pinId, hitPin);
+      }
+      wireFromRef.current = null;
+      setWireDragNonce(0);
+      selectPin(null);
+      return;
+    }
+
     if (rubberBand && activeComp) {
       const left = Math.min(rubberBand.startX, rubberBand.endX);
       const top = Math.min(rubberBand.startY, rubberBand.endY);
@@ -1104,7 +1188,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
     setSnapPreview(null);
     setAlignmentGuides([]);
     setDrawing(null);
-  }, [rubberBand, dragState, drawing, activeComp, addShapeElement]);
+  }, [rubberBand, dragState, drawing, activeComp, addShapeElement, wireDragNonce, hitTestPin]);
 
   // ─── Drawing (Canvas render loop) ───
 
@@ -1152,32 +1236,6 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
     for (const sid of selectedShapeIds) {
       const s = activeComp.shapeElements.find((el) => el.id === sid);
       if (s?.groupId) selectedGroupIds.add(s.groupId);
-    }
-
-    // Connection lines
-    for (const conn of connections) {
-      if (!conn.visible || conn.state === 'none') continue;
-      const pinA = activeComp.pins.find((p) => p.id === conn.pinAId);
-      const pinB = activeComp.pins.find((p) => p.id === conn.pinBId);
-      if (!pinA || !pinB) continue;
-      const isClosed = conn.state === 'closed';
-      const isSelected = selectedConnectionId === conn.id;
-      ctx.save();
-      ctx.strokeStyle = isSelected ? '#0ea5e9' : isClosed ? '#10b981' : '#f97316';
-      ctx.lineWidth = (isSelected ? 3 : 2) / zoom;
-      if (!isClosed) ctx.setLineDash([6 / zoom, 4 / zoom]);
-      ctx.beginPath();
-      const d = conn.pathSvg || computeLinePath(pinA.position, pinB.position);
-      if (d) {
-        const path = new Path2D(d);
-        ctx.stroke(path);
-      } else {
-        ctx.moveTo(pinA.position.x, pinA.position.y);
-        ctx.lineTo(pinB.position.x, pinB.position.y);
-        ctx.stroke();
-      }
-      ctx.setLineDash([]);
-      ctx.restore();
     }
 
     // Shapes
@@ -1309,9 +1367,147 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
     }
 
     // Pins
+    const pinRadius = isWireMode ? 7 / zoom : 5 / zoom;
     for (const pin of activeComp.pins) {
       const isSelected = selectedPinIds.includes(pin.id);
-      drawPin(ctx, pin.position.x, pin.position.y, pin.pinType, pin.label, isSelected, 5 / zoom);
+      drawPin(ctx, pin.position.x, pin.position.y, pin.pinType, pin.label, isSelected, pinRadius);
+    }
+
+    // Connection lines (on top of shapes and pins)
+    for (const conn of connections) {
+      if (!conn.visible || conn.state === 'none') continue;
+      const pinA = activeComp.pins.find((p) => p.id === conn.pinAId);
+      const pinB = activeComp.pins.find((p) => p.id === conn.pinBId);
+      if (!pinA || !pinB) continue;
+      const isClosed = conn.state === 'closed';
+      const isSelected = selectedConnectionId === conn.id;
+      ctx.save();
+      ctx.strokeStyle = isSelected ? '#0ea5e9' : isClosed ? '#10b981' : '#f97316';
+      ctx.lineWidth = (isSelected ? 3 : 2) / zoom;
+      if (!isClosed) ctx.setLineDash([6 / zoom, 4 / zoom]);
+      ctx.beginPath();
+      const d = conn.pathSvg || computeLinePath(pinA.position, pinB.position);
+      if (d) {
+        const path = new Path2D(d);
+        ctx.stroke(path);
+      } else {
+        ctx.moveTo(pinA.position.x, pinA.position.y);
+        ctx.lineTo(pinB.position.x, pinB.position.y);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
+    // Wire mode overlay (drawn on top of everything)
+    if (isWireMode) {
+      // Rubber-band line while dragging from a pin
+      if (wireFromRef.current && wireDragNonce > 0) {
+        const from = wireFromRef.current;
+        const mousePos = mouseWorldPosRef.current;
+        const snapTarget = hitTestPin(mousePos.x, mousePos.y);
+        const snapPin = snapTarget && snapTarget !== from.pinId
+          ? activeComp.pins.find((p) => p.id === snapTarget) ?? null : null;
+
+        const targetX = snapPin?.position.x ?? mousePos.x;
+        const targetY = snapPin?.position.y ?? mousePos.y;
+
+        // Target pin: big green glow + snap ring (drawn first so line overlaps)
+        if (snapPin) {
+          ctx.save();
+          // Outer glow
+          ctx.fillStyle = 'rgba(34,197,94,0.25)';
+          ctx.beginPath();
+          ctx.arc(snapPin.position.x, snapPin.position.y, 20 / zoom, 0, Math.PI * 2);
+          ctx.fill();
+          // Solid ring
+          ctx.strokeStyle = '#22c55e';
+          ctx.lineWidth = 3 / zoom;
+          ctx.beginPath();
+          ctx.arc(snapPin.position.x, snapPin.position.y, 12 / zoom, 0, Math.PI * 2);
+          ctx.stroke();
+          // Inner filled dot
+          ctx.fillStyle = '#22c55e';
+          ctx.beginPath();
+          ctx.arc(snapPin.position.x, snapPin.position.y, 5 / zoom, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // Rubber-band line: solid + thick when snapped, dashed when free
+        ctx.save();
+        ctx.strokeStyle = snapPin ? '#16a34a' : '#3b82f6';
+        ctx.lineWidth = (snapPin ? 3.5 : 2) / zoom;
+        if (!snapPin) ctx.setLineDash([8 / zoom, 4 / zoom]);
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(targetX, targetY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // Source pin: pulsing blue ring
+        const pulse = 0.6 + 0.4 * Math.sin(Date.now() / 300);
+        ctx.save();
+        ctx.strokeStyle = `rgba(59,130,246,${pulse})`;
+        ctx.lineWidth = 2.5 / zoom;
+        ctx.beginPath();
+        ctx.arc(from.x, from.y, 12 / zoom, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(59,130,246,0.12)';
+        ctx.beginPath();
+        ctx.arc(from.x, from.y, 14 / zoom, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } else {
+        // Hover highlight on pin or connection under cursor
+        const mousePos = mouseWorldPosRef.current;
+        const hoverPin = hitTestPin(mousePos.x, mousePos.y);
+        if (hoverPin) {
+          const pin = activeComp.pins.find((p) => p.id === hoverPin)!;
+          ctx.save();
+          ctx.fillStyle = 'rgba(59,130,246,0.12)';
+          ctx.beginPath();
+          ctx.arc(pin.position.x, pin.position.y, 12 / zoom, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#3b82f6';
+          ctx.lineWidth = 2 / zoom;
+          ctx.beginPath();
+          ctx.arc(pin.position.x, pin.position.y, 9 / zoom, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        } else {
+          // Hover on connection → red highlight (click to delete)
+          const hoverConn = hitTestConnection(mousePos.x, mousePos.y);
+          if (hoverConn) {
+            const conn = connections.find((c) => c.id === hoverConn);
+            if (conn) {
+              const pinA = activeComp.pins.find((p) => p.id === conn.pinAId);
+              const pinB = activeComp.pins.find((p) => p.id === conn.pinBId);
+              if (pinA && pinB) {
+                ctx.save();
+                ctx.strokeStyle = '#ef4444';
+                ctx.lineWidth = 4 / zoom;
+                ctx.beginPath();
+                ctx.moveTo(pinA.position.x, pinA.position.y);
+                ctx.lineTo(pinB.position.x, pinB.position.y);
+                ctx.stroke();
+                // Small × mark at midpoint
+                const mx = (pinA.position.x + pinB.position.x) / 2;
+                const my = (pinA.position.y + pinB.position.y) / 2;
+                const s = 5 / zoom;
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2.5 / zoom;
+                ctx.beginPath();
+                ctx.moveTo(mx - s, my - s); ctx.lineTo(mx + s, my + s);
+                ctx.moveTo(mx + s, my - s); ctx.lineTo(mx - s, my + s);
+                ctx.stroke();
+                ctx.restore();
+              }
+            }
+          }
+        }
+      }
     }
 
     // Snap preview
@@ -1513,7 +1709,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
 
   // ─── Render ───
 
-  const cursor = dragState?.type === 'pan' ? 'grabbing' : isDrawTool ? 'crosshair' : activeTool === 'select' ? 'default' : 'grab';
+  const cursor = dragState?.type === 'pan' ? 'grabbing' : isDrawTool ? 'crosshair' : activeTool === 'wire' ? 'crosshair' : activeTool === 'select' ? 'default' : 'grab';
   const extDrag = useDragStore();
 
   const handleExternalDrop = useCallback((e: React.MouseEvent) => {

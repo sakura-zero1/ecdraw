@@ -182,6 +182,8 @@ export default function AppLayout() {
     const signature = JSON.stringify({
       width: activeComponent.width,
       height: activeComponent.height,
+      displayWidth: activeComponent.displayWidth,
+      displayHeight: activeComponent.displayHeight,
       shapeElements: activeComponent.shapeElements,
       pins: activeComponent.pins,
       matrix,
@@ -321,7 +323,7 @@ export default function AppLayout() {
       await saveComponentVersionByApi(comp, matrix);
       await updateComponentMetaByApi(comp);
       lastVersionSignaturesRef.current[comp.id] = JSON.stringify({
-        width: comp.width, height: comp.height, shapeElements: comp.shapeElements, pins: comp.pins, matrix,
+        width: comp.width, height: comp.height, displayWidth: comp.displayWidth, displayHeight: comp.displayHeight, shapeElements: comp.shapeElements, pins: comp.pins, matrix,
       });
       lastMetaSignaturesRef.current[comp.id] = JSON.stringify({
         name: comp.name, category: comp.category, description: comp.description,

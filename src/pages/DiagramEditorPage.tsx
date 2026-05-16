@@ -29,6 +29,66 @@ function parseApiError(error: unknown) {
   return parseError(error);
 }
 
+// ---------- Diagram Shortcut Help ----------
+
+const DIAGRAM_SHORTCUTS = [
+  { category: '编辑操作', items: [
+    { keys: 'Ctrl+D', desc: '复制选中元件' },
+    { keys: 'Ctrl+C', desc: '复制到剪贴板' },
+    { keys: 'Ctrl+V', desc: '粘贴元件' },
+    { keys: 'Delete', desc: '删除选中' },
+    { keys: 'Ctrl+Z', desc: '撤销' },
+    { keys: 'Ctrl+S', desc: '保存草稿' },
+  ]},
+  { category: '画布操作', items: [
+    { keys: '滚轮', desc: '缩放画布' },
+    { keys: '右键拖动', desc: '平移画布' },
+    { keys: 'Esc', desc: '取消选择' },
+  ]},
+];
+
+function DiagramShortcutHelp() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="shortcut-help">
+      <button
+        className="shortcut-help-btn"
+        onClick={() => setOpen(!open)}
+        title="快捷键说明"
+      >
+        ?
+      </button>
+      {open && (
+        <div className="shortcut-help-panel">
+          <div className="shortcut-help-title">快捷键说明</div>
+          {DIAGRAM_SHORTCUTS.map((group) => (
+            <div key={group.category} className="shortcut-group">
+              <div className="shortcut-group-title">{group.category}</div>
+              {group.items.map((item) => (
+                <div key={item.keys} className="shortcut-row">
+                  <kbd>{item.keys}</kbd>
+                  <span>{item.desc}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- District Data Panel ----------
 
 function DistrictDataPanel({
@@ -1348,6 +1408,22 @@ export default function DiagramEditorPage() {
         }
       }
 
+      if (hasMod && e.key === 'd') {
+        if (selectedInstanceId) {
+          const inst = instances.find((i) => i.id === selectedInstanceId);
+          if (inst) {
+            e.preventDefault();
+            const offset = 40;
+            const clipData = {
+              componentId: inst.componentId,
+              label: inst.label,
+              instanceData: JSON.parse(JSON.stringify(inst.instanceData)),
+            };
+            void addInstanceFromClipboard(clipData.componentId, inst.positionX + offset, inst.positionY + offset, clipData.label, clipData.instanceData);
+          }
+        }
+      }
+
       if (hasMod && e.key === 's') {
         e.preventDefault();
         if (diagramInfo?.status === 'DRAFT' || diagramInfo?.status === 'REJECTED') {
@@ -1494,6 +1570,7 @@ export default function DiagramEditorPage() {
               lineDataMap={lineDataMap}
             />
           )}
+          <DiagramShortcutHelp />
         </div>
 
         {/* Right panel: Instance/Edge properties */}

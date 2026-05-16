@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 const SHORTCUTS = [
   { category: '工具切换', items: [
     { keys: 'Q', desc: '选择工具' },
+    { keys: 'W', desc: '连线工具' },
     { keys: 'A', desc: '矩形工具' },
     { keys: 'S', desc: '圆形工具' },
     { keys: 'D', desc: '椭圆工具' },

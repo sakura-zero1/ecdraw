@@ -1,4 +1,4 @@
-﻿export type ToolMode = 'select' | 'pan' | 'add-pin' | 'draw-rect' | 'draw-circle' | 'draw-ellipse' | 'draw-line' | 'draw-text';
+﻿export type ToolMode = 'select' | 'pan' | 'add-pin' | 'wire' | 'draw-rect' | 'draw-circle' | 'draw-ellipse' | 'draw-line' | 'draw-text';
 
 export interface Viewport {
   offsetX: number;

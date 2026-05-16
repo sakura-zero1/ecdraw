@@ -37,7 +37,7 @@ function renderThumbShape(resolved: ShapeElement) {
   const base = {
     fill: resolved.fill || 'transparent',
     stroke: resolved.stroke || '#334155',
-    strokeWidth: 1.2,
+    strokeWidth: resolved.strokeWidth ?? 2,
     opacity: resolved.opacity ?? 1,
   };
   switch (resolved.type) {
