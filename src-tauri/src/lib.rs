@@ -151,6 +151,7 @@ pub fn run() {
             commands::diagrams::delete_diagram_edge,
             commands::diagrams::list_diagram_versions,
             commands::diagrams::get_diagram_version_topology,
+            commands::diagrams::delete_diagram_version,
             // Districts
             commands::districts::list_districts_by_diagram,
             commands::districts::upsert_district,
@@ -179,6 +180,7 @@ pub fn run() {
             commands::categories::list_categories,
             commands::categories::create_category,
             commands::categories::delete_category,
+            commands::categories::update_category_visibility,
             // Seed
             commands::seed::seed_admin,
             // App exit

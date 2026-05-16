@@ -139,6 +139,23 @@
   color: var(--red-500, #ef4444);
 }
 
+.category-vis-btn {
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  margin-left: 4px;
+  opacity: 0.45;
+  transition: opacity 0.15s;
+}
+.category-vis-btn:hover {
+  opacity: 1;
+}
+.category-vis-btn.hidden-cat {
+  opacity: 0.25;
+  filter: grayscale(1);
+}
+
 .component-item {
   display: flex;
   flex-direction: column;

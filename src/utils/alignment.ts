@@ -13,23 +13,24 @@ export interface Bounds {
 }
 
 export function getShapeBounds(el: ShapeElement): Bounds {
+  const halfStroke = (el.strokeWidth ?? 0) / 2;
   switch (el.type) {
     case 'rect': {
       const x = el.x ?? 0, y = el.y ?? 0, w = el.width ?? 0, h = el.height ?? 0;
-      return { left: x, top: y, right: x + w, bottom: y + h, width: w, height: h, cx: x + w / 2, cy: y + h / 2 };
+      return { left: x - halfStroke, top: y - halfStroke, right: x + w + halfStroke, bottom: y + h + halfStroke, width: w + halfStroke * 2, height: h + halfStroke * 2, cx: x + w / 2, cy: y + h / 2 };
     }
     case 'circle': {
       const cx = el.cx ?? 0, cy = el.cy ?? 0, r = el.r ?? 0;
-      return { left: cx - r, top: cy - r, right: cx + r, bottom: cy + r, width: r * 2, height: r * 2, cx, cy };
+      return { left: cx - r - halfStroke, top: cy - r - halfStroke, right: cx + r + halfStroke, bottom: cy + r + halfStroke, width: r * 2 + halfStroke * 2, height: r * 2 + halfStroke * 2, cx, cy };
     }
     case 'ellipse': {
       const cx = el.cx ?? 0, cy = el.cy ?? 0, rx = el.rx ?? 0, ry = el.ry ?? 0;
-      return { left: cx - rx, top: cy - ry, right: cx + rx, bottom: cy + ry, width: rx * 2, height: ry * 2, cx, cy };
+      return { left: cx - rx - halfStroke, top: cy - ry - halfStroke, right: cx + rx + halfStroke, bottom: cy + ry + halfStroke, width: rx * 2 + halfStroke * 2, height: ry * 2 + halfStroke * 2, cx, cy };
     }
     case 'line': {
       const x1 = el.x1 ?? 0, y1 = el.y1 ?? 0, x2 = el.x2 ?? 0, y2 = el.y2 ?? 0;
-      const left = Math.min(x1, x2), top = Math.min(y1, y2);
-      return { left, top, right: Math.max(x1, x2), bottom: Math.max(y1, y2), width: Math.abs(x2 - x1), height: Math.abs(y2 - y1), cx: (x1 + x2) / 2, cy: (y1 + y2) / 2 };
+      const left = Math.min(x1, x2) - halfStroke, top = Math.min(y1, y2) - halfStroke;
+      return { left, top, right: Math.max(x1, x2) + halfStroke, bottom: Math.max(y1, y2) + halfStroke, width: Math.abs(x2 - x1) + halfStroke * 2, height: Math.abs(y2 - y1) + halfStroke * 2, cx: (x1 + x2) / 2, cy: (y1 + y2) / 2 };
     }
     case 'text': {
       const b = getTextBounds(el);
@@ -349,7 +350,6 @@ export function flipShapes(shapes: ShapeElement[], horizontal: boolean): Map<str
   const bounds = getGroupBounds(shapes);
   if (!bounds) return result;
   const fn = horizontal ? flipShapeH : flipShapeV;
-  const center = horizontal ? bounds.cx : bounds.cy;
   for (const s of shapes) result.set(s.id, fn(s, bounds.cx, bounds.cy));
   return result;
 }

@@ -108,11 +108,11 @@ export default function DiagramReviewPage() {
           return (
             <div key={item.id} className="review-item">
               <div className="review-item-top">
-                <strong>{item.diagram.name}</strong>
+                <strong>图纸 #{item.diagramId.slice(0, 8)}</strong>
                 <span className={`review-status ${item.status.toLowerCase()}`}>{item.status}</span>
               </div>
               <div className="review-meta">
-                <span>版本: v{item.diagramVersion.versionNo}</span>
+                <span>版本 #{item.diagramVersionId.slice(0, 8)}</span>
                 <span>提交: {new Date(item.submittedAt).toLocaleString()}</span>
               </div>
               {item.status === 'PENDING' && (

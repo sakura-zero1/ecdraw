@@ -15,7 +15,6 @@ import './ComponentCanvas.css';
 
 const DEFAULT_CANVAS_WIDTH = 1200;
 const DEFAULT_CANVAS_HEIGHT = 800;
-const SNAP_THRESHOLD = 5;
 const HANDLE_RADIUS = 5;
 const HANDLE_HIT_RADIUS = 10;
 const PIN_HIT_RADIUS = 10;
@@ -332,7 +331,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
-  const { activeTool, setActiveTool, selectShape, selectPin, viewport, setViewport, flashedShapeIds, flashNonce } = useCanvasStore();
+  const { activeTool, selectShape, selectPin, viewport, setViewport } = useCanvasStore();
   const { components, activeComponentId, addShapeElement, updateShapeElement, updatePin, pushUndo, importSubComponentScaled } = useComponentStore();
   const matrices = useConnectionStore((s) => s.matrices);
 
@@ -738,10 +737,15 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
         if (groupEditingId && el.groupId !== groupEditingId) continue;
         const dStart = Math.hypot(pos.x - x1, pos.y - y1);
         const dEnd = Math.hypot(pos.x - x2, pos.y - y2);
-        if (dStart <= endpointR && dStart <= dEnd) {
+        // Endpoints are editable only when the line is ungrouped, or we are inside the
+        // matching group-editing mode. Otherwise treat any hit (including endpoints) as
+        // a body hit so the whole group gets selected — matches the "double-click to
+        // edit inside" requirement.
+        const endpointEditable = !el.groupId || groupEditingId === el.groupId;
+        if (endpointEditable && dStart <= endpointR && dStart <= dEnd) {
           pushUndo(); selectShape(el.id);
           setDragState({ type: 'handle', id: el.id, shapeType: 'line', handle: 'start', startCanvasX: pos.x, startCanvasY: pos.y, origData: getShapeResizeData(el) });
-        } else if (dEnd <= endpointR) {
+        } else if (endpointEditable && dEnd <= endpointR) {
           pushUndo(); selectShape(el.id);
           setDragState({ type: 'handle', id: el.id, shapeType: 'line', handle: 'end', startCanvasX: pos.x, startCanvasY: pos.y, origData: getShapeResizeData(el) });
         } else {
@@ -839,7 +843,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
     if (isDrawTool && !altHeld && activeComp) {
       if (activeTool === 'draw-text') {
         // Text tool: click to place immediately
-        const { defaultFill, defaultStroke } = useCanvasStore.getState();
+        const { defaultStroke } = useCanvasStore.getState();
         const textShape: Omit<ShapeElement, 'id'> = {
           type: 'text',
           fill: defaultStroke,
@@ -1555,7 +1559,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
         onDoubleClick={handleDoubleClick}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
-        onMouseUp={(e) => { handleMouseUp(e); handleExternalDrop(e); }}
+        onMouseUp={(e) => { handleMouseUp(); handleExternalDrop(e); }}
         onMouseLeave={handleMouseUp}
       />
     </div>

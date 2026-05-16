@@ -31,6 +31,25 @@ pub struct ComponentMeta {
     pub id: Uuid,
     pub name: String,
     pub category: String,
+    /// Latest version snapshot — contains shapeElements/pins/displayWidth/displayHeight.
+    /// The viewer needs this to render real component shapes; without it components
+    /// fall back to plain rectangles.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<serde_json::Value>,
+}
+
+/// Fetch the latest version snapshot for a component. Returns None if no version exists.
+async fn fetch_latest_component_snapshot_local(
+    pool: &sqlx::PgPool,
+    component_id: Uuid,
+) -> Result<Option<serde_json::Value>, AppError> {
+    let row = sqlx::query_scalar::<_, serde_json::Value>(
+        "SELECT snapshot FROM component_versions WHERE component_id = $1 ORDER BY version_no DESC LIMIT 1"
+    )
+    .bind(component_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -373,8 +392,8 @@ pub async fn get_diagram_editor(
                             let to = sc.get("toInstanceId").or_else(|| sc.get("targetInstanceId")).and_then(|v| v.as_str()).unwrap_or("");
                             let s_from = new_id_map.get(from).copied().unwrap_or(Uuid::nil());
                             let s_to = new_id_map.get(to).copied().unwrap_or(Uuid::nil());
-                            let spid = sc.get("sourcePinId").and_then(|v| v.as_str()).unwrap_or("");
-                            let tpid = sc.get("targetPinId").and_then(|v| v.as_str()).unwrap_or("");
+                            let spid = sc.get("sourcePinId").or_else(|| sc.get("fromPinId")).and_then(|v| v.as_str()).unwrap_or("");
+                            let tpid = sc.get("targetPinId").or_else(|| sc.get("toPinId")).and_then(|v| v.as_str()).unwrap_or("");
                             sqlx::query(
                                 "INSERT INTO diagram_edges (diagram_id, source_instance_id, target_instance_id, source_pin_id, target_pin_id) VALUES ($1, $2, $3, $4, $5)"
                             )
@@ -445,9 +464,15 @@ pub async fn get_diagram_topology(
         let gd = sqlx::query_as::<_, GisData>(
             "SELECT * FROM gis_data WHERE diagram_instance_id = $1"
         ).bind(inst.id).fetch_optional(&state.pool).await?;
+        let component_meta = if let Some(c) = comp {
+            let snap = fetch_latest_component_snapshot_local(&state.pool, c.id).await?;
+            Some(ComponentMeta { id: c.id, name: c.name, category: c.category, snapshot: snap })
+        } else {
+            None
+        };
         instances_with_extras.push(InstanceWithExtras {
             instance: inst.clone(),
-            component: comp.map(|c| ComponentMeta { id: c.id, name: c.name, category: c.category }),
+            component: component_meta,
             district_data: dd,
             gis_data: gd,
         });
@@ -499,15 +524,28 @@ pub async fn save_diagram(
     let snapshot = normalize_diagram_snapshot(&snapshot);
 
     let mut tx = state.pool.begin().await?;
-    let latest_no = sqlx::query_scalar::<_, i32>(
-        "SELECT COALESCE(MAX(version_no), 0) FROM diagram_versions WHERE diagram_id = $1"
-    ).bind(did).fetch_one(&mut *tx).await?;
 
-    sqlx::query(
-        "INSERT INTO diagram_versions (diagram_id, version_no, snapshot, created_by, status) VALUES ($1, $2, $3, $4, 'DRAFT')"
+    // Reuse existing DRAFT version instead of creating a new one each save
+    let existing_draft_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM diagram_versions WHERE diagram_id = $1 AND status = 'DRAFT' ORDER BY version_no DESC LIMIT 1"
     )
-    .bind(did).bind(latest_no + 1).bind(&snapshot).bind(user_id)
-    .execute(&mut *tx).await?;
+    .bind(did).fetch_optional(&mut *tx).await?;
+
+    if let Some(draft_id) = existing_draft_id {
+        sqlx::query("UPDATE diagram_versions SET snapshot = $1 WHERE id = $2")
+            .bind(&snapshot).bind(draft_id)
+            .execute(&mut *tx).await?;
+    } else {
+        let latest_no = sqlx::query_scalar::<_, i32>(
+            "SELECT COALESCE(MAX(version_no), 0) FROM diagram_versions WHERE diagram_id = $1"
+        ).bind(did).fetch_one(&mut *tx).await?;
+
+        sqlx::query(
+            "INSERT INTO diagram_versions (diagram_id, version_no, snapshot, created_by, status) VALUES ($1, $2, $3, $4, 'DRAFT')"
+        )
+        .bind(did).bind(latest_no + 1).bind(&snapshot).bind(user_id)
+        .execute(&mut *tx).await?;
+    }
 
     let updated = sqlx::query_as::<_, Diagram>(
         "UPDATE diagrams SET status = 'DRAFT', updated_at = NOW() WHERE id = $1 RETURNING *"
@@ -965,6 +1003,13 @@ pub async fn get_diagram_version_topology(
         let comp = sqlx::query_as::<_, Component>("SELECT * FROM components WHERE id = $1")
             .bind(comp_id).fetch_optional(&state.pool).await.ok().flatten();
 
+        let component_meta = if let Some(c) = comp {
+            let snap = fetch_latest_component_snapshot_local(&state.pool, c.id).await.ok().flatten();
+            Some(ComponentMeta { id: c.id, name: c.name, category: c.category, snapshot: snap })
+        } else {
+            None
+        };
+
         instances_with_extras.push(InstanceWithExtras {
             instance: DiagramInstance {
                 id: iid,
@@ -977,7 +1022,7 @@ pub async fn get_diagram_version_topology(
                 created_at: ver.created_at,
                 updated_at: ver.created_at,
             },
-            component: comp.map(|c| ComponentMeta { id: c.id, name: c.name, category: c.category }),
+            component: component_meta,
             district_data: None,
             gis_data: None,
         });
@@ -987,8 +1032,8 @@ pub async fn get_diagram_version_topology(
     for sc in &snap_connections {
         let from_str = sc.get("fromInstanceId").or_else(|| sc.get("sourceInstanceId")).and_then(|v| v.as_str()).unwrap_or("");
         let to_str = sc.get("toInstanceId").or_else(|| sc.get("targetInstanceId")).and_then(|v| v.as_str()).unwrap_or("");
-        let spid = sc.get("sourcePinId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let tpid = sc.get("targetPinId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let spid = sc.get("sourcePinId").or_else(|| sc.get("fromPinId")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let tpid = sc.get("targetPinId").or_else(|| sc.get("toPinId")).and_then(|v| v.as_str()).unwrap_or("").to_string();
         let s_from: Uuid = from_str.parse().unwrap_or(Uuid::nil());
         let s_to: Uuid = to_str.parse().unwrap_or(Uuid::nil());
 
@@ -1012,4 +1057,22 @@ pub async fn get_diagram_version_topology(
         instances: instances_with_extras,
         edges: edges_with_extras,
     })
+}
+
+#[tauri::command]
+pub async fn delete_diagram_version(
+    state: State<'_, AppState>,
+    token: String,
+    id: String,
+    version_id: String,
+) -> Result<(), AppError> {
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
+    middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
+    let user_id: Uuid = claims.sub.parse().unwrap();
+    let did: Uuid = id.parse().map_err(|_| AppError::BadRequest("无效的图纸ID".into()))?;
+    let vid: Uuid = version_id.parse().map_err(|_| AppError::BadRequest("无效的版本ID".into()))?;
+
+    ecdraw_core::logic::diagram_logic::delete_diagram_version(
+        &state.pool, &claims.roles, user_id, did, vid,
+    ).await
 }

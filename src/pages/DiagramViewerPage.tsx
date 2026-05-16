@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import ViewerCanvas, { type ViewMode, type TopologyInstance, type TopologyEdge } from '../components/diagram/ViewerCanvas';
 import VersionTimeline from '../components/diagram/VersionTimeline';
 import {
   fetchDiagrams,
   fetchDiagramTopology,
   fetchDiagramVersions,
+  deleteDiagramVersion,
   fetchDiagramVersionTopology,
   type DiagramListItem,
   type TopologyResponse,
@@ -16,7 +18,14 @@ import { hasRole } from '../services/unifiedClient';
 import { parseError } from '../utils/parseError';
 
 const NODE_WIDTH = 140;
-const NODE_HEIGHT = 56;
+const NODE_HEIGHT = 90;
+
+function getInstanceDisplaySize(inst: TopologyInstance): { w: number; h: number } {
+  const snap = inst.component?.snapshot as { displayWidth?: number; displayHeight?: number } | undefined;
+  const w = Number(snap?.displayWidth) > 0 ? Number(snap?.displayWidth) : NODE_WIDTH;
+  const h = Number(snap?.displayHeight) > 0 ? Number(snap?.displayHeight) : NODE_HEIGHT;
+  return { w, h };
+}
 
 function parseApiError(error: unknown) {
   return parseError(error);
@@ -24,6 +33,8 @@ function parseApiError(error: unknown) {
 
 export default function DiagramViewerPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const [diagrams, setDiagrams] = useState<DiagramListItem[]>([]);
   const [selectedDiagramId, setSelectedDiagramId] = useState('');
@@ -58,7 +69,14 @@ export default function DiagramViewerPage() {
         const list = await fetchDiagrams();
         if (cancelled) return;
         setDiagrams(list);
-        setSelectedDiagramId((prev) => prev || list[0]?.id || '');
+        // Check navigation state from editor
+        const navId = (location.state as { diagramId?: string } | null)?.diagramId;
+        if (navId) {
+          setSelectedDiagramId(navId);
+          window.history.replaceState({}, '');
+        } else {
+          setSelectedDiagramId((prev) => prev || list[0]?.id || '');
+        }
       } catch (e) {
         if (!cancelled) setError(parseApiError(e));
       } finally {
@@ -66,6 +84,7 @@ export default function DiagramViewerPage() {
       }
     })();
     return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---- Load versions + topology on diagram selection ----
@@ -152,10 +171,11 @@ export default function DiagramViewerPage() {
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const inst of instances) {
+      const { w, h } = getInstanceDisplaySize(inst);
       minX = Math.min(minX, inst.positionX);
       minY = Math.min(minY, inst.positionY);
-      maxX = Math.max(maxX, inst.positionX + NODE_WIDTH);
-      maxY = Math.max(maxY, inst.positionY + NODE_HEIGHT);
+      maxX = Math.max(maxX, inst.positionX + w);
+      maxY = Math.max(maxY, inst.positionY + h);
     }
 
     const contentW = maxX - minX;
@@ -196,6 +216,31 @@ export default function DiagramViewerPage() {
     setSimResult(null);
     setSelectedInstanceId(null);
   }, []);
+
+  // ---- Delete version ----
+  const handleDeleteVersion = useCallback(async (versionId: string) => {
+    if (!selectedDiagramId) return;
+    try {
+      await deleteDiagramVersion(selectedDiagramId, versionId);
+      const verList = await fetchDiagramVersions(selectedDiagramId);
+      setVersions(verList);
+      if (versionId === selectedVersionId) {
+        const latest = verList[0];
+        if (latest) {
+          setSelectedVersionId(latest.id);
+          const data = latest.status === 'ONLINE'
+            ? await fetchDiagramTopology(selectedDiagramId)
+            : await fetchDiagramVersionTopology(selectedDiagramId, latest.id);
+          setTopologyData(data);
+        } else {
+          setSelectedVersionId(null);
+          setTopologyData(null);
+        }
+      }
+    } catch (e) {
+      setError(parseApiError(e));
+    }
+  }, [selectedDiagramId, selectedVersionId]);
 
   // ---- Zoom buttons ----
   const handleZoomIn = useCallback(() => {
@@ -245,6 +290,7 @@ export default function DiagramViewerPage() {
             selectedVersionId={selectedVersionId}
             onSelectVersion={handleSelectVersion}
             currentOnlineVersionId={currentOnlineVersionId}
+            onDeleteVersion={handleDeleteVersion}
           />
         ) : null}
 
@@ -297,6 +343,15 @@ export default function DiagramViewerPage() {
                 >
                   {'⚡'} 停电模拟
                 </button>
+                {canSeeAll && selectedDiagramId ? (
+                  <button
+                    className="viewer-toolbar-btn"
+                    onClick={() => navigate('/diagrams', { state: { diagramId: selectedDiagramId } })}
+                    title="编辑此图纸"
+                  >
+                    编辑
+                  </button>
+                ) : null}
               </>
             ) : (
               <>

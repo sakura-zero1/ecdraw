@@ -777,6 +777,28 @@ a.shell-overflow-item {
 .viewer-timeline-node.selected {
   background: var(--accent-soft);
 }
+.viewer-timeline-delete {
+  display: none;
+  position: absolute;
+  top: -4px;
+  left: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 5;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+}
+.viewer-timeline-node:hover .viewer-timeline-delete {
+  display: flex;
+}
 .viewer-timeline-dot {
   width: 10px;
   height: 10px;

@@ -14,6 +14,7 @@ import {
   fetchCategories,
   createCategory,
   deleteCategory,
+  updateCategoryVisibility,
 } from '../../services/componentApi';
 import SvgCanvas from '../canvas/ComponentCanvas';
 import PropertyPanel from '../panels/PropertyPanel';
@@ -44,6 +45,7 @@ export default function AppLayout() {
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState<ComponentCategory>('junctionPoint');
   const [deleteTarget, setDeleteTarget] = useState<ElectricalComponent | null>(null);
+  const [deleteCatTarget, setDeleteCatTarget] = useState<CategoryInfo | null>(null);
 
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
   const [catLabel, setCatLabel] = useState('');
@@ -77,6 +79,7 @@ export default function AppLayout() {
       label: CATEGORY_LABELS[name] ?? name,
       color: '#6b7280',
       builtIn: true,
+      visible: true,
     }));
   }, [categoryList]);
 
@@ -351,10 +354,21 @@ export default function AppLayout() {
     if (cat.builtIn) return;
     try {
       await deleteCategory(cat.id);
-      await loadCategoriesFromApi();
+      await Promise.all([loadCategoriesFromApi(), hydrateFromApi()]);
       showToast(`类别「${cat.label}」已删除`);
     } catch (e) {
       showToast(e instanceof Error ? e.message : '删除类别失败');
+    }
+  };
+
+  const handleToggleCategoryVisibility = async (cat: CategoryInfo) => {
+    const newVisible = !cat.visible;
+    try {
+      await updateCategoryVisibility(cat.id, newVisible);
+      await loadCategoriesFromApi();
+      showToast(`类别「${cat.label}」${newVisible ? '已显示' : '已隐藏'}`);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '更新类别可见性失败');
     }
   };
 
@@ -444,11 +458,20 @@ export default function AppLayout() {
                     </svg>
                     <span className="category-title">{label}</span>
                     <span className="category-count">{items.length}</span>
-                    {catInfo && !catInfo.builtIn && items.length === 0 && (
+                    {catInfo && (
+                      <span
+                        className={`category-vis-btn ${catInfo.visible !== false ? '' : 'hidden-cat'}`}
+                        title={catInfo.visible !== false ? '在图纸编辑器中隐藏此类别' : '在图纸编辑器中显示此类别'}
+                        onClick={(e) => { e.stopPropagation(); void handleToggleCategoryVisibility(catInfo); }}
+                      >
+                        {catInfo.visible !== false ? '👁' : '👁‍🗨'}
+                      </span>
+                    )}
+                    {catInfo && !catInfo.builtIn && (
                       <span
                         className="category-delete-btn"
                         title="删除类别"
-                        onClick={(e) => { e.stopPropagation(); void handleDeleteCategory(catInfo); }}
+                        onClick={(e) => { e.stopPropagation(); setDeleteCatTarget(catInfo); }}
                       >✕</span>
                     )}
                   </button>
@@ -644,6 +667,32 @@ export default function AppLayout() {
               <button
                 className="btn btn-danger"
                 onClick={() => void handleDelete(deleteTarget)}
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteCatTarget && (
+        <div className="dialog-overlay" onClick={() => setDeleteCatTarget(null)}>
+          <div className="dialog" onClick={(e) => e.stopPropagation()}>
+            <h3>确认删除类别</h3>
+            <p style={{ margin: '12px 0', color: 'var(--color-text-dim)' }}>
+              确定要删除类别「{deleteCatTarget.label}」吗？
+              {groupedComponents[deleteCatTarget.name]?.length
+                ? `该类别下的 ${groupedComponents[deleteCatTarget.name].length} 个元件也将被一并删除。`
+                : ''}
+              此操作不可撤销。
+            </p>
+            <div className="dialog-actions">
+              <button className="btn btn-secondary" onClick={() => setDeleteCatTarget(null)}>
+                取消
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={() => { void handleDeleteCategory(deleteCatTarget); setDeleteCatTarget(null); }}
               >
                 删除
               </button>

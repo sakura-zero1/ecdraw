@@ -149,3 +149,8 @@ export async function deleteCategory(id: string): Promise<void> {
   await requireAuth();
   await request('delete_category', { id });
 }
+
+export async function updateCategoryVisibility(id: string, visible: boolean): Promise<CategoryInfo> {
+  await requireAuth();
+  return request<CategoryInfo>('update_category_visibility', { id, visible });
+}

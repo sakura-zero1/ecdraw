@@ -286,7 +286,7 @@ export interface TopologyResponse {
     positionX: number;
     positionY: number;
     instanceData: Record<string, unknown>;
-    component: { id: string; name: string; category: string };
+    component: { id: string; name: string; category: string; snapshot?: unknown };
     districtData: { id: string; transformerCapacity: number | null; supplyRange: string | null; supplyArea: string | null; householdCount: number | null } | null;
     gisData: { id: string; latitude: number | null; longitude: number | null } | null;
   }>;
@@ -333,4 +333,9 @@ export async function fetchDiagramVersionTopology(
     id: diagramId,
     versionId,
   });
+}
+
+export async function deleteDiagramVersion(diagramId: string, versionId: string) {
+  await requireAuth();
+  return request<void>('delete_diagram_version', { id: diagramId, versionId });
 }

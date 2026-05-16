@@ -58,10 +58,6 @@ export default function ComponentLibraryPanel(_props: ComponentLibraryPanelProps
 
     // 右侧放不下则放到左侧
     if (x + popRect.width > vw - 8) {
-      const itemRect = el.parentElement
-        ? undefined
-        : undefined;
-      // 从当前弹窗左侧往左推
       x = Math.max(8, x - popRect.width - 16);
     }
     // 下方超出视口则上移
@@ -114,20 +110,23 @@ export default function ComponentLibraryPanel(_props: ComponentLibraryPanelProps
       label: CATEGORY_LABELS[name] ?? name,
       color: '#6b7280',
       builtIn: true,
+      visible: true,
     }));
   }, [categoryList]);
 
-  const categoryOrder = useMemo(() => allCategories.map((c) => c.name), [allCategories]);
+  const visibleCategories = useMemo(() => allCategories.filter((c) => c.visible !== false), [allCategories]);
+
+  const categoryOrder = useMemo(() => visibleCategories.map((c) => c.name), [visibleCategories]);
   const categoryLabelMap = useMemo(() => {
     const m: Record<string, string> = {};
-    for (const c of allCategories) m[c.name] = c.label;
+    for (const c of visibleCategories) m[c.name] = c.label;
     return m;
-  }, [allCategories]);
+  }, [visibleCategories]);
   const categoryColorMap = useMemo(() => {
     const m: Record<string, string> = {};
-    for (const c of allCategories) m[c.name] = c.color;
+    for (const c of visibleCategories) m[c.name] = c.color;
     return m;
-  }, [allCategories]);
+  }, [visibleCategories]);
 
   const filteredComponents = useMemo(() => {
     if (!search.trim()) return components;
@@ -161,14 +160,26 @@ export default function ComponentLibraryPanel(_props: ComponentLibraryPanelProps
   // Simulate drag via document-level mouse events (reliable across all webviews)
   const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
   const draggingIdRef = useRef<string | null>(null);
+  const dragStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const dragActivatedRef = useRef(false);
+  const DRAG_THRESHOLD = 5;
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      if (!draggingIdRef.current) return;
+      if (!draggingIdRef.current || !dragStartPosRef.current) return;
+      if (!dragActivatedRef.current) {
+        const dx = e.clientX - dragStartPosRef.current.x;
+        const dy = e.clientY - dragStartPosRef.current.y;
+        if (Math.sqrt(dx * dx + dy * dy) < DRAG_THRESHOLD) return;
+        dragActivatedRef.current = true;
+        (window as any).__ecdraw_drag = { componentId: draggingIdRef.current, origin: 'library' };
+      }
       setGhostPos({ x: e.clientX, y: e.clientY });
     };
     const onUp = () => {
       draggingIdRef.current = null;
+      dragStartPosRef.current = null;
+      dragActivatedRef.current = false;
       setGhostPos(null);
     };
     document.addEventListener('mousemove', onMove);
@@ -182,9 +193,9 @@ export default function ComponentLibraryPanel(_props: ComponentLibraryPanelProps
   const handleItemMouseDown = useCallback((e: React.MouseEvent, componentId: string) => {
     if ((e.target as HTMLElement).closest('button')) return;
     e.preventDefault();
-    (window as any).__ecdraw_drag = { componentId, origin: 'library' };
     draggingIdRef.current = componentId;
-    setGhostPos({ x: e.clientX, y: e.clientY });
+    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+    dragActivatedRef.current = false;
   }, []);
 
   return (

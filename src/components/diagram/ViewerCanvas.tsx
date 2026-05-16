@@ -1,8 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Pin, ShapeElement } from '../../types';
+import {
+  drawShapeOnCanvas,
+  transformPoint,
+  getInstanceTransform,
+  computeShapesBounds,
+  getTransformedPinPos,
+  getDominantShapeColor,
+} from '../../utils/canvasShape';
 
 // ---------- Types ----------
 
 export type ViewMode = 'simplified' | 'complete' | 'geographic';
+
+interface ComponentSnapshot {
+  shapeElements?: ShapeElement[];
+  pins?: Pin[];
+  width?: number;
+  height?: number;
+  displayWidth?: number;
+  displayHeight?: number;
+}
 
 export interface TopologyInstance {
   id: string;
@@ -12,7 +30,7 @@ export interface TopologyInstance {
   positionX: number;
   positionY: number;
   instanceData: Record<string, unknown>;
-  component: { id: string; name: string; category: string };
+  component: { id: string; name: string; category: string; snapshot?: unknown };
   districtData: { id: string; transformerCapacity: number | null; supplyRange: string | null; supplyArea: string | null; householdCount: number | null } | null;
   gisData: { id: string; latitude: number | null; longitude: number | null } | null;
 }
@@ -48,9 +66,18 @@ export interface ViewerCanvasProps {
 // ---------- Constants ----------
 
 const NODE_WIDTH = 140;
-const NODE_HEIGHT = 56;
+const NODE_HEIGHT = 90;
+
 const NODE_RADIUS = 8;
 const GRID_SIZE = 40;
+
+/** Resolve the node dimensions for an instance, falling back to defaults when component data is missing. */
+function getInstanceSize(inst: TopologyInstance): { w: number; h: number } {
+  const snap = inst.component?.snapshot as ComponentSnapshot | undefined;
+  const w = Number(snap?.displayWidth) > 0 ? Number(snap?.displayWidth) : NODE_WIDTH;
+  const h = Number(snap?.displayHeight) > 0 ? Number(snap?.displayHeight) : NODE_HEIGHT;
+  return { w, h };
+}
 
 const CATEGORY_COLORS: Record<string, string> = {
   powerPoint: '#22c55e',
@@ -63,12 +90,10 @@ const EDGE_COLOR = '#94a3b8';
 const BG_COLOR = '#f8fafc';
 const GRID_COLOR = '#e2e8f0';
 const GRID_COLOR_MAJOR = '#cbd5e1';
-const LABEL_COLOR = '#ffffff';
 
 // Outage overlay colors
 const OUTAGE_REACHABLE_COLOR = '#22c55e';   // green
 const OUTAGE_UNREACHABLE_COLOR = '#ef4444';  // red
-const OUTAGE_DISCONNECT_COLOR = '#dc2626';    // darker red
 const HIGHLIGHT_COLOR = '#eab308';            // gold/yellow
 
 // ---------- Helpers ----------
@@ -280,22 +305,46 @@ export default function ViewerCanvas({
       ctx.stroke();
     }
 
-    // Build position map
+    // Build position + size + instance map
     const posMap = new Map<string, { x: number; y: number }>();
+    const sizeMap = new Map<string, { w: number; h: number }>();
+    const instMap = new Map<string, TopologyInstance>();
     for (const inst of visibleInstances) {
       posMap.set(inst.id, getInstancePosition(inst, displayW, displayH));
+      sizeMap.set(inst.id, getInstanceSize(inst));
+      instMap.set(inst.id, inst);
     }
+
+    // Compute endpoint of an edge at a given instance/pin. Falls back to the
+    // shape-area center when pin metadata is missing.
+    const computeEndpoint = (instanceId: string, pinId: string): { x: number; y: number } | null => {
+      const inst = instMap.get(instanceId);
+      const pos = posMap.get(instanceId);
+      const size = sizeMap.get(instanceId);
+      if (!inst || !pos || !size) return null;
+      const snap = inst.component?.snapshot as ComponentSnapshot | undefined;
+      const pins = Array.isArray(snap?.pins) ? (snap?.pins as Pin[]) : [];
+      const pin = pins.find((p) => p.id === pinId);
+      const shapesBounds = Array.isArray(snap?.shapeElements) && snap.shapeElements.length > 0
+        ? computeShapesBounds(snap.shapeElements as ShapeElement[])
+        : null;
+      if (pin) {
+        // Position the pin into world coords, then apply instance position offset
+        // (getTransformedPinPos expects instance origin to be inst.positionX/Y, but
+        // for geographic view pos may differ — we use pos.x/y as the origin)
+        return getTransformedPinPos(pin, pos.x, pos.y, size.w, size.h, shapesBounds, inst.instanceData);
+      }
+      // Fallback: shape-area center
+      const thumbAreaH = size.h;
+      return { x: pos.x + size.w / 2, y: pos.y + thumbAreaH / 2 };
+    };
 
     // ---- Edges ----
     for (const edge of visibleEdges) {
-      const sourcePos = posMap.get(edge.sourceInstanceId);
-      const targetPos = posMap.get(edge.targetInstanceId);
-      if (!sourcePos || !targetPos) continue;
-
-      const sx = sourcePos.x + NODE_WIDTH / 2;
-      const sy = sourcePos.y + NODE_HEIGHT / 2;
-      const tx = targetPos.x + NODE_WIDTH / 2;
-      const ty = targetPos.y + NODE_HEIGHT / 2;
+      const s = computeEndpoint(edge.sourceInstanceId, edge.sourcePinId);
+      const t = computeEndpoint(edge.targetInstanceId, edge.targetPinId);
+      if (!s || !t) continue;
+      const sx = s.x, sy = s.y, tx = t.x, ty = t.y;
 
       const lineData = edge.lineSegmentData;
       let edgeColor = EDGE_COLOR;
@@ -326,118 +375,182 @@ export default function ViewerCanvas({
       ctx.restore();
     }
 
-    // ---- Nodes ----
+    // ---- Nodes (rendering aligned with DiagramCanvas for visual consistency) ----
     const now = Date.now();
+    const THUMB_PAD = 4;
     for (const inst of visibleInstances) {
       const cat = inst.component?.category || 'junctionPoint';
-      const color = CATEGORY_COLORS[cat] || CATEGORY_COLORS.junctionPoint;
+      const fallbackColor = CATEGORY_COLORS[cat] || CATEGORY_COLORS.junctionPoint;
       const pos = posMap.get(inst.id);
-      if (!pos) continue;
+      const size = sizeMap.get(inst.id);
+      if (!pos || !size) continue;
 
       const x = pos.x;
       const y = pos.y;
+      const nw = size.w;
+      const nh = size.h;
+      const thumbAreaH = nh;
 
-      // Determine fill/stroke based on outage simulation
-      let fillColor = color;
-      let strokeColor = 'transparent';
-      let strokeWidth = 0;
-      let showHatch = false;
+      const snap = inst.component?.snapshot as ComponentSnapshot | undefined;
+      const shapeElements = Array.isArray(snap?.shapeElements) ? snap.shapeElements : [];
+      const hasShapes = shapeElements.length > 0;
+      const { rotation, flipH, flipV } = getInstanceTransform(inst.instanceData);
 
-      if (outageResult) {
-        if (outageResult.unreachableInstanceIds.includes(inst.id)) {
-          fillColor = OUTAGE_UNREACHABLE_COLOR;
-          fillColor = fillColor + '99'; // add transparency
+      const isReachable = !!outageResult && outageResult.reachableInstanceIds.includes(inst.id);
+      const isUnreachable = !!outageResult && outageResult.unreachableInstanceIds.includes(inst.id);
+      const isDisconnectPoint = !!highlightedInstanceId && inst.id === highlightedInstanceId;
+      const isSelected = inst.id === selectedInstanceId;
+
+      // Shape-area center used as the rotation/flip pivot
+      const cx = x + nw / 2;
+      const cy = y + thumbAreaH / 2;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate((rotation * Math.PI) / 180);
+      if (flipH) ctx.scale(-1, 1);
+      if (flipV) ctx.scale(1, -1);
+      ctx.translate(-cx, -cy);
+
+      // ---- Shape thumbnail area ----
+      if (hasShapes) {
+        ctx.save();
+        if (isUnreachable) ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.rect(x, y, nw, thumbAreaH);
+        ctx.clip();
+
+        const bounds = computeShapesBounds(shapeElements);
+        if (bounds && bounds.width > 0 && bounds.height > 0) {
+          const availW = nw - THUMB_PAD * 2;
+          const availH = thumbAreaH - THUMB_PAD * 2;
+          const scale = Math.min(availW / bounds.width, availH / bounds.height);
+          const offX = x + THUMB_PAD + (availW - bounds.width * scale) / 2;
+          const offY = y + THUMB_PAD + (availH - bounds.height * scale) / 2;
+
+          ctx.translate(offX, offY);
+          ctx.scale(scale, scale);
+          ctx.translate(-bounds.left, -bounds.top);
+
+          for (const s of shapeElements) {
+            drawShapeOnCanvas(ctx, s);
+          }
+
+          // Restore transform stack so subsequent border/etc draw correctly
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          ctx.translate(panX, panY);
+          ctx.scale(zoom, zoom);
+          // Re-apply the instance rotation/flip transform we were under
+          ctx.translate(cx, cy);
+          ctx.rotate((rotation * Math.PI) / 180);
+          if (flipH) ctx.scale(-1, 1);
+          if (flipV) ctx.scale(1, -1);
+          ctx.translate(-cx, -cy);
         }
-        if (outageResult.reachableInstanceIds.includes(inst.id)) {
-          strokeColor = OUTAGE_REACHABLE_COLOR;
-          strokeWidth = 3 / zoom;
-        }
-        if (outageResult.unreachableInstanceIds.includes(inst.id)) {
-          strokeColor = OUTAGE_UNREACHABLE_COLOR;
-          strokeWidth = 3 / zoom;
-          showHatch = true;
-        }
-        // The disconnected instance itself
-        if (highlightedInstanceId && inst.id === highlightedInstanceId) {
-          strokeColor = OUTAGE_DISCONNECT_COLOR;
-          strokeWidth = 4 / zoom;
-        }
+        ctx.restore();
+      } else {
+        // Fallback: solid rounded rectangle (legacy look for components missing shape data)
+        ctx.save();
+        let fillColor = fallbackColor;
+        if (isUnreachable) fillColor = OUTAGE_UNREACHABLE_COLOR + '99';
+        ctx.fillStyle = fillColor;
+        ctx.beginPath();
+        roundRect(ctx, x, y, nw, thumbAreaH, NODE_RADIUS);
+        ctx.fill();
+        ctx.restore();
       }
 
-      // Shadow
-      ctx.save();
-      ctx.shadowColor = 'rgba(0,0,0,0.12)';
-      ctx.shadowBlur = 8;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 2;
+      // ---- Outer border + selection highlight (inside transform, around shape area) ----
+      ctx.strokeStyle = isSelected ? '#2563eb' : 'rgba(148,163,184,0.4)';
+      ctx.lineWidth = isSelected ? 2.5 / zoom : 1 / zoom;
+      ctx.beginPath();
+      roundRect(ctx, x, y, nw, thumbAreaH, NODE_RADIUS);
+      ctx.stroke();
+      if (isSelected && !outageResult) {
+        ctx.fillStyle = 'rgba(37,99,235,0.06)';
+        ctx.beginPath();
+        roundRect(ctx, x, y, nw, thumbAreaH, NODE_RADIUS);
+        ctx.fill();
+      }
 
-      // Fill
-      ctx.fillStyle = fillColor;
-      roundRect(ctx, x, y, NODE_WIDTH, NODE_HEIGHT, NODE_RADIUS);
-      ctx.fill();
-      ctx.restore();
-
-      // Outage border
-      if (outageResult && strokeWidth > 0) {
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = strokeWidth;
-        roundRect(ctx, x, y, NODE_WIDTH, NODE_HEIGHT, NODE_RADIUS);
+      // ---- Outage borders & hatch ----
+      if (isReachable) {
+        ctx.strokeStyle = OUTAGE_REACHABLE_COLOR;
+        ctx.lineWidth = 3 / zoom;
+        ctx.beginPath();
+        roundRect(ctx, x, y, nw, thumbAreaH, NODE_RADIUS);
         ctx.stroke();
       }
-
-      // Hatch pattern for unreachable
-      if (showHatch) {
+      if (isUnreachable) {
+        ctx.strokeStyle = OUTAGE_UNREACHABLE_COLOR;
+        ctx.lineWidth = 3 / zoom;
+        ctx.beginPath();
+        roundRect(ctx, x, y, nw, thumbAreaH, NODE_RADIUS);
+        ctx.stroke();
+        // Hatch
         ctx.save();
-        roundRect(ctx, x, y, NODE_WIDTH, NODE_HEIGHT, NODE_RADIUS);
+        roundRect(ctx, x, y, nw, thumbAreaH, NODE_RADIUS);
         ctx.clip();
-        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.strokeStyle = 'rgba(239,68,68,0.35)';
         ctx.lineWidth = 2 / zoom;
         const step = 10 / zoom;
-        for (let hx = x - NODE_HEIGHT; hx < x + NODE_WIDTH + NODE_HEIGHT; hx += step) {
+        for (let hx = x - thumbAreaH; hx < x + nw + thumbAreaH; hx += step) {
           ctx.beginPath();
           ctx.moveTo(hx, y);
-          ctx.lineTo(hx + NODE_HEIGHT, y + NODE_HEIGHT);
+          ctx.lineTo(hx + thumbAreaH, y + thumbAreaH);
           ctx.stroke();
         }
         ctx.restore();
       }
-
-      // Highlighted instance (pulsing yellow border)
-      if (highlightedInstanceId && inst.id === highlightedInstanceId) {
+      if (isDisconnectPoint) {
         const pulse = 0.6 + 0.4 * Math.sin(now / 300);
         ctx.strokeStyle = HIGHLIGHT_COLOR;
         ctx.lineWidth = (3 + pulse * 2) / zoom;
         ctx.globalAlpha = 0.7 + pulse * 0.3;
-        roundRect(ctx, x - 3 / zoom, y - 3 / zoom, NODE_WIDTH + 6 / zoom, NODE_HEIGHT + 6 / zoom, NODE_RADIUS + 2 / zoom);
+        ctx.beginPath();
+        roundRect(ctx, x - 3 / zoom, y - 3 / zoom, nw + 6 / zoom, thumbAreaH + 6 / zoom, NODE_RADIUS + 2 / zoom);
         ctx.stroke();
         ctx.globalAlpha = 1;
       }
 
-      // Selected instance border
-      const isSelected = inst.id === selectedInstanceId;
-      if (isSelected && !outageResult) {
-        ctx.strokeStyle = '#2563eb';
-        ctx.lineWidth = 2.5 / zoom;
-        roundRect(ctx, x, y, NODE_WIDTH, NODE_HEIGHT, NODE_RADIUS);
-        ctx.stroke();
-      }
+      ctx.restore(); // end shape transform
 
-      // Label
-      ctx.fillStyle = LABEL_COLOR;
-      ctx.font = `${13 / Math.max(zoom, 0.3)}px "Microsoft YaHei", "PingFang SC", sans-serif`;
+      // ---- Label (always upright, below the transformed shape bounding box) ----
+      const corners = (rotation !== 0 || flipH || flipV)
+        ? [
+            transformPoint(x, y, cx, cy, rotation, flipH, flipV),
+            transformPoint(x + nw, y, cx, cy, rotation, flipH, flipV),
+            transformPoint(x, y + thumbAreaH, cx, cy, rotation, flipH, flipV),
+            transformPoint(x + nw, y + thumbAreaH, cx, cy, rotation, flipH, flipV),
+          ]
+        : null;
+      const shapeBottom = corners ? Math.max(...corners.map((c) => c.y)) : y + thumbAreaH;
+      const shapeCenterX = corners
+        ? (Math.min(...corners.map((c) => c.x)) + Math.max(...corners.map((c) => c.x))) / 2
+        : x + nw / 2;
+      const gap = corners ? 2 : 0;
+      const labelTop = shapeBottom + gap;
+
+      const instData = (inst.instanceData as Record<string, unknown>) ?? {};
+      const labelOffsetX = (instData.labelOffsetX as number) ?? 0;
+      const labelOffsetY = (instData.labelOffsetY as number) ?? 0;
+
+      // Label size + color mirror DiagramCanvas:
+      // - size: user's labelFontSize (persisted in localStorage by the editor), default 20
+      // - color: dominant fill/stroke color of the component's shapes, white→black
+      const fontSize = Number(localStorage.getItem('ecdraw-label-font-size')) || 20;
+      ctx.save();
+      ctx.translate(shapeCenterX + labelOffsetX, labelTop + labelOffsetY);
+      const rawColor = (hasShapes ? getDominantShapeColor(shapeElements) : null) ?? fallbackColor;
+      const labelColor = /^#ffffff$/i.test(rawColor) || /^#fff$/i.test(rawColor) || /^white$/i.test(rawColor)
+        ? '#000000'
+        : rawColor;
+      ctx.fillStyle = labelColor;
+      ctx.font = `500 ${fontSize}px "Microsoft YaHei", "PingFang SC", sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-
-      const label = inst.label || inst.component?.name || '未知';
-      const maxLabelWidth = NODE_WIDTH - 12;
-      let displayLabel = label;
-      if (ctx.measureText(displayLabel).width > maxLabelWidth) {
-        while (displayLabel.length > 1 && ctx.measureText(displayLabel + '...').width > maxLabelWidth) {
-          displayLabel = displayLabel.slice(0, -1);
-        }
-        displayLabel += '...';
-      }
-      ctx.fillText(displayLabel, x + NODE_WIDTH / 2, y + NODE_HEIGHT / 2);
+      ctx.fillText(inst.label || inst.component?.name || '未知', 0, fontSize / 2);
+      ctx.restore();
     }
 
     ctx.restore();
@@ -493,11 +606,13 @@ export default function ViewerCanvas({
       for (let i = visibleInstances.length - 1; i >= 0; i--) {
         const inst = visibleInstances[i];
         const pos = getInstancePosition(inst, displayW, displayH);
+        const { w, h } = getInstanceSize(inst);
+        const thumbAreaH = h;
         if (
           worldX >= pos.x &&
-          worldX <= pos.x + NODE_WIDTH &&
+          worldX <= pos.x + w &&
           worldY >= pos.y &&
-          worldY <= pos.y + NODE_HEIGHT
+          worldY <= pos.y + thumbAreaH
         ) {
           return inst.id;
         }

@@ -11,11 +11,11 @@ function tauriWindow() {
 
 function startDrag(e: React.MouseEvent) {
   if ((e.target as HTMLElement).closest('button, a, input, select, [role="button"]')) return;
-  tauriWindow().then((w) => w?.startDragging());
+  tauriWindow()?.then((w) => w?.startDragging());
 }
 
 function toggleMaximize() {
-  tauriWindow().then((w) => w?.toggleMaximize());
+  tauriWindow()?.then((w) => w?.toggleMaximize());
 }
 
 function parseApiError(error: unknown) {

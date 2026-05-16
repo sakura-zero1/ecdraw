@@ -34,5 +34,6 @@ pub struct ComponentCategory {
     pub label: String,
     pub color: String,
     pub built_in: bool,
+    pub visible: bool,
     pub created_at: DateTime<Utc>,
 }

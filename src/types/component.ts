@@ -6,6 +6,7 @@ export interface CategoryInfo {
   label: string;
   color: string;
   builtIn: boolean;
+  visible: boolean;
 }
 
 export interface Position {

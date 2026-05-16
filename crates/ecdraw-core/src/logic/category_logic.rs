@@ -55,15 +55,11 @@ pub async fn delete_category(pool: &PgPool, id: &str) -> Result<(), AppError> {
         return Err(AppError::Forbidden("内置分类不能删除".into()));
     }
 
-    let count = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM components WHERE category = $1"
-    )
-    .bind(&cat.name)
-    .fetch_one(pool)
-    .await?;
-    if count > 0 {
-        return Err(AppError::Conflict(format!("该分类下有 {} 个元件，无法删除", count)));
-    }
+    // Delete all components in this category first (cascades: versions, instances, edges)
+    sqlx::query("DELETE FROM components WHERE category = $1")
+        .bind(&cat.name)
+        .execute(pool)
+        .await?;
 
     sqlx::query("DELETE FROM component_categories WHERE id = $1")
         .bind(uid)
@@ -71,4 +67,23 @@ pub async fn delete_category(pool: &PgPool, id: &str) -> Result<(), AppError> {
         .await?;
 
     Ok(())
+}
+
+pub async fn update_category_visibility(
+    pool: &PgPool,
+    id: &str,
+    visible: bool,
+) -> Result<ComponentCategory, AppError> {
+    let uid: Uuid = id.parse().map_err(|_| AppError::BadRequest("无效的分类ID".into()))?;
+
+    let cat = sqlx::query_as::<_, ComponentCategory>(
+        "UPDATE component_categories SET visible = $1 WHERE id = $2 RETURNING *"
+    )
+    .bind(visible)
+    .bind(uid)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("分类不存在".into()))?;
+
+    Ok(cat)
 }

@@ -17,6 +17,8 @@ const STATUS_LABELS: Record<VersionStatus, string> = {
   DECOMMISSIONED: '已退运',
 };
 
+const DELETABLE_STATUSES: VersionStatus[] = ['DRAFT', 'REJECTED', 'DECOMMISSIONED'];
+
 interface TooltipData {
   version: VersionSummary;
   x: number;
@@ -28,6 +30,7 @@ interface VersionTimelineProps {
   selectedVersionId: string | null;
   onSelectVersion: (versionId: string) => void;
   currentOnlineVersionId: string | null;
+  onDeleteVersion?: (versionId: string) => void;
 }
 
 export default function VersionTimeline({
@@ -35,6 +38,7 @@ export default function VersionTimeline({
   selectedVersionId,
   onSelectVersion,
   currentOnlineVersionId,
+  onDeleteVersion,
 }: VersionTimelineProps) {
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -47,12 +51,23 @@ export default function VersionTimeline({
     setTooltip(null);
   }, []);
 
+  const handleDelete = useCallback((e: React.MouseEvent, v: VersionSummary) => {
+    e.stopPropagation();
+    const label = `v${v.versionNo} (${STATUS_LABELS[v.status]})`;
+    if (window.confirm(`确定删除版本 ${label} 吗？此操作不可恢复。`)) {
+      onDeleteVersion?.(v.id);
+    }
+  }, [onDeleteVersion]);
+
+  const canDelete = onDeleteVersion && versions.length > 1;
+
   return (
     <div className="viewer-timeline" ref={containerRef}>
       <div className="viewer-timeline-line" />
       {versions.map((v) => {
         const isSelected = v.id === selectedVersionId;
         const isOnline = v.id === currentOnlineVersionId;
+        const showDelete = canDelete && DELETABLE_STATUSES.includes(v.status);
         return (
           <div
             key={v.id}
@@ -69,6 +84,15 @@ export default function VersionTimeline({
               }}
             />
             <span className="viewer-timeline-label">{`v${v.versionNo}`}</span>
+            {showDelete && (
+              <button
+                className="viewer-timeline-delete"
+                onClick={(e) => handleDelete(e, v)}
+                title="删除此版本"
+              >
+                ×
+              </button>
+            )}
           </div>
         );
       })}

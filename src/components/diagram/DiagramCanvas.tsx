@@ -4,6 +4,7 @@ import { CATEGORY_LABELS } from '../../constants/categories';
 import type { ComponentCategory, Pin, PinType, ShapeElement } from '../../types';
 import type { ConnectivityMatrix } from '../../types/connection';
 import { getShapeBounds, type Bounds } from '../../utils/alignment';
+import { drawShapeOnCanvas, getDominantShapeColor } from '../../utils/canvasShape';
 import type { LineSegmentData } from '../../services/lineApi';
 
 // ---------- Constants ----------
@@ -87,33 +88,6 @@ function getInstanceTransform(instanceData: Record<string, unknown>) {
   };
 }
 
-/** Check if two AABB rectangles overlap. */
-function aabbOverlap(
-  a: { left: number; right: number; top: number; bottom: number },
-  b: { left: number; right: number; top: number; bottom: number },
-): boolean {
-  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
-}
-
-/** Compute overlap depth of two AABBs projected onto a direction vector. */
-function overlapDepthAlong(
-  a: { left: number; right: number; top: number; bottom: number },
-  b: { left: number; right: number; top: number; bottom: number },
-  dx: number, dy: number,
-): number {
-  const aCorners = [
-    [a.left, a.top], [a.right, a.top], [a.left, a.bottom], [a.right, a.bottom],
-  ];
-  const bCorners = [
-    [b.left, b.top], [b.right, b.top], [b.left, b.bottom], [b.right, b.bottom],
-  ];
-  const aProjs = aCorners.map(([x, y]) => x * dx + y * dy);
-  const bProjs = bCorners.map(([x, y]) => x * dx + y * dy);
-  const aMin = Math.min(...aProjs), aMax = Math.max(...aProjs);
-  const bMin = Math.min(...bProjs), bMax = Math.max(...bProjs);
-  return Math.max(0, Math.min(aMax, bMax) - Math.max(aMin, bMin));
-}
-
 /** Get the world-space pin position for an instance, accounting for rotation/flip. */
 function getTransformedPinPos(
   pin: Pin | undefined,
@@ -122,8 +96,7 @@ function getTransformedPinPos(
   shapesBounds: Bounds | null,
   instanceData: Record<string, unknown>,
 ): { x: number; y: number } {
-  const LABEL_BAR_H = 22;
-  const thumbAreaH = nh - LABEL_BAR_H;
+  const thumbAreaH = nh;
   const localPos = pin
     ? getPinNodePos(pin, instX, instY, shapesBounds, nw, nh)
     : { x: instX + nw / 2, y: instY + thumbAreaH / 2 };
@@ -169,55 +142,7 @@ function getPinsForInstance(inst: DiagramInstance): Pin[] {
   return Array.isArray(pins) ? pins : [];
 }
 
-function drawShapeOnCanvas(ctx: CanvasRenderingContext2D, el: ShapeElement) {
-  const fill = el.fill || 'transparent';
-  const stroke = el.stroke || '#334155';
-  const strokeWidth = el.strokeWidth ?? 2;
-  const opacity = el.opacity ?? 1;
-
-  ctx.save();
-  ctx.globalAlpha = opacity;
-  ctx.fillStyle = fill;
-  ctx.strokeStyle = stroke;
-  ctx.lineWidth = strokeWidth;
-
-  switch (el.type) {
-    case 'rect':
-      ctx.beginPath();
-      ctx.rect(el.x ?? 0, el.y ?? 0, el.width ?? 0, el.height ?? 0);
-      if (fill !== 'transparent' && fill !== 'none') ctx.fill();
-      ctx.stroke();
-      break;
-    case 'circle': {
-      const r = el.r ?? 0;
-      ctx.beginPath();
-      ctx.arc(el.cx ?? 0, el.cy ?? 0, r, 0, Math.PI * 2);
-      if (fill !== 'transparent' && fill !== 'none') ctx.fill();
-      ctx.stroke();
-      break;
-    }
-    case 'ellipse':
-      ctx.beginPath();
-      ctx.ellipse(el.cx ?? 0, el.cy ?? 0, el.rx ?? 0, el.ry ?? 0, 0, 0, Math.PI * 2);
-      if (fill !== 'transparent' && fill !== 'none') ctx.fill();
-      ctx.stroke();
-      break;
-    case 'line':
-      ctx.beginPath();
-      ctx.moveTo(el.x1 ?? 0, el.y1 ?? 0);
-      ctx.lineTo(el.x2 ?? 0, el.y2 ?? 0);
-      ctx.stroke();
-      break;
-    case 'path':
-      if (el.d) {
-        const path = new Path2D(el.d);
-        if (fill !== 'transparent' && fill !== 'none') ctx.fill(path);
-        ctx.stroke(path);
-      }
-      break;
-  }
-  ctx.restore();
-}
+// drawShapeOnCanvas moved to '../../utils/canvasShape' so ViewerCanvas can share it.
 
 function computeShapesBounds(shapes: ShapeElement[]): Bounds | null {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -233,88 +158,7 @@ function computeShapesBounds(shapes: ShapeElement[]): Bounds | null {
   return { left: minX, top: minY, right: maxX, bottom: maxY, width: maxX - minX, height: maxY - minY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
 }
 
-/** Find the fill color with the largest total area, or fallback to stroke color with longest total perimeter. */
-function getDominantShapeColor(shapes: ShapeElement[]): string | null {
-  const areaByColor: Record<string, number> = {};
-  const perimeterByColor: Record<string, number> = {};
-
-  for (const el of shapes) {
-    // Fill area
-    const fill = el.fill || 'transparent';
-    if (fill !== 'transparent' && fill !== 'none') {
-      let area = 0;
-      switch (el.type) {
-        case 'rect':
-          area = (el.width ?? 0) * (el.height ?? 0);
-          break;
-        case 'circle':
-          area = Math.PI * (el.r ?? 0) ** 2;
-          break;
-        case 'ellipse':
-          area = Math.PI * (el.rx ?? 0) * (el.ry ?? 0);
-          break;
-        case 'path': {
-          const b = getShapeBounds(el);
-          area = b.width * b.height;
-          break;
-        }
-        case 'line':
-          break;
-      }
-      if (area > 0) {
-        areaByColor[fill] = (areaByColor[fill] || 0) + area;
-      }
-    }
-
-    // Stroke perimeter
-    const stroke = el.stroke || '#334155';
-    if (stroke !== 'transparent' && stroke !== 'none') {
-      let len = 0;
-      switch (el.type) {
-        case 'rect':
-          len = 2 * ((el.width ?? 0) + (el.height ?? 0));
-          break;
-        case 'circle':
-          len = 2 * Math.PI * (el.r ?? 0);
-          break;
-        case 'ellipse': {
-          // Ramanujan approximation
-          const rx = el.rx ?? 0, ry = el.ry ?? 0;
-          len = Math.PI * (3 * (rx + ry) - Math.sqrt((3 * rx + ry) * (rx + 3 * ry)));
-          break;
-        }
-        case 'line': {
-          const dx = (el.x2 ?? 0) - (el.x1 ?? 0);
-          const dy = (el.y2 ?? 0) - (el.y1 ?? 0);
-          len = Math.sqrt(dx * dx + dy * dy);
-          break;
-        }
-        case 'path': {
-          const b = getShapeBounds(el);
-          len = 2 * (b.width + b.height);
-          break;
-        }
-      }
-      if (len > 0) {
-        perimeterByColor[stroke] = (perimeterByColor[stroke] || 0) + len;
-      }
-    }
-  }
-
-  // Prefer dominant fill color
-  let best: string | null = null;
-  let bestVal = 0;
-  for (const [c, a] of Object.entries(areaByColor)) {
-    if (a > bestVal) { best = c; bestVal = a; }
-  }
-  if (best) return best;
-
-  // Fallback to dominant stroke color by perimeter
-  for (const [c, l] of Object.entries(perimeterByColor)) {
-    if (l > bestVal) { best = c; bestVal = l; }
-  }
-  return best;
-}
+// getDominantShapeColor moved to '../../utils/canvasShape'.
 
 function getPinNodePos(
   pin: Pin,
@@ -327,9 +171,8 @@ function getPinNodePos(
   if (!shapesBounds || shapesBounds.width === 0 || shapesBounds.height === 0) {
     return { x: instX + pin.position.x, y: instY + pin.position.y };
   }
-  const LABEL_BAR_H = 22;
   const THUMB_PAD = 4;
-  const thumbAreaH = nodeH - LABEL_BAR_H;
+  const thumbAreaH = nodeH;
   const availW = nodeW - THUMB_PAD * 2;
   const availH = thumbAreaH - THUMB_PAD * 2;
   const scaleX = availW / shapesBounds.width;
@@ -377,6 +220,7 @@ export interface DiagramCanvasProps {
   onPersistInstanceLabelMove?: (id: string) => void;
   onUpdateInstanceLabel?: (id: string, label: string) => void;
   lineDataMap?: Record<string, LineSegmentData>;
+  labelFontSize?: number;
 }
 
 // ---------- Component ----------
@@ -406,6 +250,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
   onPersistInstanceLabelMove,
   onUpdateInstanceLabel,
   lineDataMap = {},
+  labelFontSize = 20,
 }, ref) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -571,122 +416,6 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
     }
     ctx.stroke();
 
-    // ---- Pre-pass: compute label overlap adjustments ----
-    const labelPadX = 10;
-    const labelPadY = 4;
-    const LABEL_BASE_SIZE = 40;
-    const LABEL_MIN_SIZE = 14;
-    const PUSH_PADDING = 6;
-
-    // Build adjacency map from edges
-    const adjMap = new Map<string, Set<string>>();
-    for (const edge of edges) {
-      if (!adjMap.has(edge.sourceInstanceId)) adjMap.set(edge.sourceInstanceId, new Set());
-      if (!adjMap.has(edge.targetInstanceId)) adjMap.set(edge.targetInstanceId, new Set());
-      adjMap.get(edge.sourceInstanceId)!.add(edge.targetInstanceId);
-      adjMap.get(edge.targetInstanceId)!.add(edge.sourceInstanceId);
-    }
-
-    // Phase 1: compute shape AABB and initial label footprint for each instance
-    const shapeAABBMap = new Map<string, { left: number; right: number; top: number; bottom: number }>();
-    const labelFPMap = new Map<string, { left: number; right: number; top: number; bottom: number }>();
-    const labelCenterXMap = new Map<string, number>();
-    const labelTopMap = new Map<string, number>();
-    const fontSizeMap = new Map<string, number>();
-
-    for (const inst of instances) {
-      const comp = componentMap[inst.componentId];
-      const nw = comp?.displayWidth ?? NODE_WIDTH;
-      const nh = comp?.displayHeight ?? NODE_HEIGHT;
-      const thumbAreaH = nh - 22;
-      const { rotation, flipH, flipV } = getInstanceTransform(inst.instanceData);
-      const cx = inst.positionX + nw / 2;
-      const cy = inst.positionY + thumbAreaH / 2;
-
-      // Shape AABB
-      const corners = (rotation !== 0 || flipH || flipV)
-        ? [
-            transformPoint(inst.positionX, inst.positionY, cx, cy, rotation, flipH, flipV),
-            transformPoint(inst.positionX + nw, inst.positionY, cx, cy, rotation, flipH, flipV),
-            transformPoint(inst.positionX, inst.positionY + thumbAreaH, cx, cy, rotation, flipH, flipV),
-            transformPoint(inst.positionX + nw, inst.positionY + thumbAreaH, cx, cy, rotation, flipH, flipV),
-          ]
-        : null;
-      const sAABB = corners
-        ? { left: Math.min(...corners.map(c => c.x)), right: Math.max(...corners.map(c => c.x)), top: Math.min(...corners.map(c => c.y)), bottom: Math.max(...corners.map(c => c.y)) }
-        : { left: inst.positionX, right: inst.positionX + nw, top: inst.positionY, bottom: inst.positionY + thumbAreaH };
-      shapeAABBMap.set(inst.id, sAABB);
-
-      // Label footprint at base font size
-      const shapeCenterX = (sAABB.left + sAABB.right) / 2;
-      const labelTop = sAABB.bottom + 2;
-      labelCenterXMap.set(inst.id, shapeCenterX);
-      labelTopMap.set(inst.id, labelTop);
-
-      const label = inst.label || comp?.name || '未知';
-      const font = `${LABEL_BASE_SIZE}px "Microsoft YaHei", "PingFang SC", sans-serif`;
-      ctx.font = font;
-      const screenW = ctx.measureText(label).width + labelPadX * 2;
-      const screenH = LABEL_BASE_SIZE + labelPadY * 2;
-      const worldW = screenW / zoom;
-      const worldH = screenH / zoom;
-
-      labelFPMap.set(inst.id, {
-        left: shapeCenterX - worldW / 2,
-        right: shapeCenterX + worldW / 2,
-        top: labelTop,
-        bottom: labelTop + worldH,
-      });
-      fontSizeMap.set(inst.id, LABEL_BASE_SIZE);
-    }
-
-    // Phase 2: font shrinking for overlapping labels
-    for (const instA of instances) {
-      const fpA = labelFPMap.get(instA.id)!;
-      let hasOverlap = false;
-      for (const instB of instances) {
-        if (instA.id === instB.id) continue;
-        const sB = shapeAABBMap.get(instB.id)!;
-        const fpB = labelFPMap.get(instB.id)!;
-        if (aabbOverlap(fpA, sB) || aabbOverlap(fpA, fpB)) {
-          hasOverlap = true;
-          break;
-        }
-      }
-      if (!hasOverlap) continue;
-
-      // Try shrinking font
-      const comp = componentMap[instA.componentId];
-      const label = instA.label || comp?.name || '未知';
-      const scx = labelCenterXMap.get(instA.id)!;
-      const lt = labelTopMap.get(instA.id)!;
-
-      for (let fs = LABEL_BASE_SIZE - 2; fs >= LABEL_MIN_SIZE; fs -= 2) {
-        const font = `${fs}px "Microsoft YaHei", "PingFang SC", sans-serif`;
-        ctx.font = font;
-        const sw = ctx.measureText(label).width + labelPadX * 2;
-        const sh = fs + labelPadY * 2;
-        const ww = sw / zoom;
-        const wh = sh / zoom;
-        const newFP = { left: scx - ww / 2, right: scx + ww / 2, top: lt, bottom: lt + wh };
-
-        let stillOverlaps = false;
-        for (const instB of instances) {
-          if (instA.id === instB.id) continue;
-          const sB = shapeAABBMap.get(instB.id)!;
-          const fpB = labelFPMap.get(instB.id)!;
-          if (aabbOverlap(newFP, sB) || aabbOverlap(newFP, fpB)) {
-            stillOverlaps = true;
-            break;
-          }
-        }
-        fontSizeMap.set(instA.id, fs);
-        labelFPMap.set(instA.id, newFP);
-        if (!stillOverlaps) break;
-      }
-    }
-
-    // Phase 3: simplified approach without edge length changes
     pushOffsetsRef.current = {}; // Clear any existing offsets
 
     // ---- Edges ----
@@ -711,8 +440,8 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
       const sNh = sourceComp?.displayHeight ?? NODE_HEIGHT;
       const tNw = targetComp?.displayWidth ?? NODE_WIDTH;
       const tNh = targetComp?.displayHeight ?? NODE_HEIGHT;
-      const sThumbH = sNh - 22;
-      const tThumbH = tNh - 22;
+      const sThumbH = sNh;
+      const tThumbH = tNh;
       const sPo = pushOffsetsRef.current[source.id] ?? { dx: 0, dy: 0 };
       const tPo = pushOffsetsRef.current[target.id] ?? { dx: 0, dy: 0 };
       const sVisX = source.positionX + sPo.dx;
@@ -774,7 +503,6 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
     }
 
     // ---- Nodes ----
-    const LABEL_BAR_H = 22;
     const THUMB_PAD = 4;
 
     for (const inst of instances) {
@@ -794,7 +522,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
 
       // Apply instance transform (rotation + flip) — only for shape + pins
       const { rotation, flipH, flipV } = getInstanceTransform(inst.instanceData);
-      const thumbAreaH = nh - LABEL_BAR_H;
+      const thumbAreaH = nh;
       // Rotate around center of shape area (not including label bar space)
       const cx = x + nw / 2;
       const cy = y + thumbAreaH / 2;
@@ -930,32 +658,27 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
       const gap = corners ? 2 : 0;
       const labelTop = shapeBottom + gap;
 
-      // Apply label offset from instanceData (stored as screen pixels)
+      // Apply label offset from instanceData (stored as world coordinates)
       const instData = (inst.instanceData as Record<string, unknown>) ?? {};
       const labelOffsetX = (instData.labelOffsetX as number) ?? 0;
       const labelOffsetY = (instData.labelOffsetY as number) ?? 0;
 
-      // Use pre-computed font size (may be shrunk for overlap avoidance)
-      const labelTextSize = fontSizeMap.get(inst.id) ?? 20;
-      const labelFont = `${labelTextSize}px "Microsoft YaHei", "PingFang SC", sans-serif`;
       const label = inst.label || comp?.name || (CATEGORY_LABELS[cat] || '未知');
 
       // Skip canvas rendering if inline editing this label
       if (editingLabelId !== inst.id) {
-        // Single line, no width limit — draw text in world space (scales with zoom)
+        // Label scales with zoom (world-space text)
+        const fontSize = labelFontSize;
         ctx.save();
         ctx.translate(shapeCenterX + labelOffsetX, labelTop + labelOffsetY);
 
-        ctx.font = labelFont;
-        const padY = 4;
-        const labelBarH = labelTextSize + padY * 2;
-
-        // Label text — single line, color matches dominant fill in shapes
-        const dominantColor = (comp?.shapeElements?.length ? getDominantShapeColor(comp.shapeElements) : null) ?? color;
+        const rawColor = (comp?.shapeElements?.length ? getDominantShapeColor(comp.shapeElements) : null) ?? color;
+        const dominantColor = /^#ffffff$/i.test(rawColor) || /^#fff$/i.test(rawColor) || /^white$/i.test(rawColor) ? '#000000' : rawColor;
         ctx.fillStyle = dominantColor;
+        ctx.font = `500 ${fontSize}px "Microsoft YaHei", "PingFang SC", sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(label, 0, labelBarH / 2);
+        ctx.fillText(label, 0, fontSize / 2);
 
         ctx.restore();
       }
@@ -995,10 +718,9 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
         const midX = (posA.x + posB.x) / 2 + entry.offsetX;
         const midY = (posA.y + posB.y) / 2 + entry.offsetY;
 
-        // Draw zoom-independent label
+        // Connection label scales with zoom (world-space)
         ctx.save();
         ctx.translate(midX, midY);
-        ctx.scale(1 / zoom, 1 / zoom);
 
         const fontSize = 12;
         ctx.font = `500 ${fontSize}px "Microsoft YaHei", "PingFang SC", sans-serif`;
@@ -1009,7 +731,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
         // Background
         ctx.fillStyle = 'rgba(255,255,255,0.92)';
         ctx.strokeStyle = 'rgba(148,163,184,0.6)';
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1 / zoom;
         ctx.beginPath();
         roundRect(ctx, -textW / 2 - padX, -fontSize / 2 - padY, textW + padX * 2, fontSize + padY * 2, 3);
         ctx.fill();
@@ -1155,7 +877,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
     }
 
     ctx.restore();
-  }, [instances, edges, componentMap, selectedInstanceId, selectedEdgeId, zoom, panX, panY, hoveredEdgeId, unnamedHighlightIds, componentConnections, editingLabelId, editingConnectionLabel, lineDataMap]);
+  }, [instances, edges, componentMap, selectedInstanceId, selectedEdgeId, zoom, panX, panY, hoveredEdgeId, unnamedHighlightIds, componentConnections, editingLabelId, editingConnectionLabel, lineDataMap, labelFontSize]);
 
   // ---------- Render loop ----------
 
@@ -1196,7 +918,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
         const nw = comp?.displayWidth ?? NODE_WIDTH;
         const nh = comp?.displayHeight ?? NODE_HEIGHT;
         const { rotation, flipH, flipV } = getInstanceTransform(inst.instanceData);
-        const thumbAreaH = nh - 22;
+        const thumbAreaH = nh;
         const po = pushOffsetsRef.current[inst.id] ?? { dx: 0, dy: 0 };
         const vx = inst.positionX + po.dx;
         const vy = inst.positionY + po.dy;
@@ -1226,7 +948,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
         const nw = comp?.displayWidth ?? NODE_WIDTH;
         const nh = comp?.displayHeight ?? NODE_HEIGHT;
         const { rotation, flipH, flipV } = getInstanceTransform(inst.instanceData);
-        const thumbAreaH = nh - 22;
+        const thumbAreaH = nh;
         const cx = inst.positionX + nw / 2;
         const cy = inst.positionY + thumbAreaH / 2;
 
@@ -1251,12 +973,11 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
         const labelCX = sCenterX + labelOffsetX;
         const labelTY = sBottom + gap + labelOffsetY;
 
-        // Approximate label size (world coords)
-        const labelTextSize = 20; // base size
+        // Label scales with zoom (world-space)
         const label = inst.label || comp?.name || '未知';
-        // Approximate label width (can't measure without ctx in callback)
-        const approxW = label.length * labelTextSize * 0.6 / zoom;
-        const approxH = (labelTextSize + 8) / zoom;
+        const fontSize = labelFontSize;
+        const approxW = label.length * fontSize * 0.6;
+        const approxH = fontSize + 8;
 
         if (
           worldX >= labelCX - approxW / 2 - padding &&
@@ -1280,7 +1001,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
   const getVisualBounds = useCallback(
     (instX: number, instY: number, w: number, h: number, rotation: number, flipH: boolean, flipV: boolean) => {
       // Use thumbAreaH (excluding label bar) for the visual shape bounds
-      const thumbH = h - 22;
+      const thumbH = h;
       if (rotation === 0 && !flipH && !flipV) {
         return { left: instX, right: instX + w, top: instY, bottom: instY + thumbH, cx: instX + w / 2, cy: instY + thumbH / 2 };
       }
@@ -1385,7 +1106,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
         const nw = comp?.displayWidth ?? NODE_WIDTH;
         const nh = comp?.displayHeight ?? NODE_HEIGHT;
         const { rotation, flipH, flipV } = getInstanceTransform(inst.instanceData);
-        const thumbAreaH = nh - 22;
+        const thumbAreaH = nh;
         const po = pushOffsetsRef.current[inst.id] ?? { dx: 0, dy: 0 };
         const vx = inst.positionX + po.dx;
         const vy = inst.positionY + po.dy;
@@ -1458,7 +1179,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
 
   const hitTestConnectionLabel = useCallback(
     (worldX: number, worldY: number): { instanceId: string; connId: string } | null => {
-      const threshold = 14 / zoom; // hit area (half-size of label box)
+      const threshold = 14; // hit area in world coords
       for (let i = instances.length - 1; i >= 0; i--) {
         const inst = instances[i];
         const comp = componentMap[inst.componentId];
@@ -1497,7 +1218,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
       }
       return null;
     },
-    [instances, componentMap, componentConnections, zoom],
+    [instances, componentMap, componentConnections],
   );
 
   // ---------- Mouse handlers ----------
@@ -1974,7 +1695,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
     const nw = comp?.displayWidth ?? NODE_WIDTH;
     const nh = comp?.displayHeight ?? NODE_HEIGHT;
     const { rotation, flipH, flipV } = getInstanceTransform(inst.instanceData);
-    const thumbAreaH = nh - 22;
+    const thumbAreaH = nh;
     const cx = inst.positionX + nw / 2;
     const cy = inst.positionY + thumbAreaH / 2;
 
@@ -1999,14 +1720,15 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
     const screenX = (sCenterX + labelOffsetX) * zoom + panX;
     const screenY = (sBottom + 2 + labelOffsetY) * zoom + panY;
 
-    const dominantColor = (comp?.shapeElements?.length ? getDominantShapeColor(comp.shapeElements) : null) ?? CATEGORY_COLORS[comp?.category || 'junctionPoint'];
+    const rawColor = (comp?.shapeElements?.length ? getDominantShapeColor(comp.shapeElements) : null) ?? CATEGORY_COLORS[comp?.category || 'junctionPoint'];
+    const dominantColor = /^#ffffff$/i.test(rawColor) || /^#fff$/i.test(rawColor) || /^white$/i.test(rawColor) ? '#000000' : rawColor;
 
     return {
       position: 'absolute' as const,
       left: `${screenX}px`,
       top: `${screenY}px`,
       transform: 'translate(-50%, 0)',
-      fontSize: `${20}px`,
+      fontSize: `${labelFontSize * zoom * 0.65}px`,
       fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif',
       color: dominantColor,
       background: 'rgba(255,255,255,0.92)',
@@ -2063,7 +1785,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
       left: `${screenX}px`,
       top: `${screenY}px`,
       transform: 'translate(-50%, -50%)',
-      fontSize: `${12}px`,
+      fontSize: `${12 * zoom}px`,
       fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif',
       color: '#475569',
       background: 'rgba(255,255,255,0.92)',

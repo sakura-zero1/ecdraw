@@ -62,6 +62,10 @@ interface DiagramEditorState {
   // Highlight unnamed instances (flashing red border)
   unnamedHighlightIds: string[];
 
+  // User settings
+  labelFontSize: number;
+  setLabelFontSize: (size: number) => void;
+
   // Actions
   loadDiagram: (diagramId: string) => Promise<void>;
   addInstance: (componentId: string, x: number, y: number) => Promise<void>;
@@ -112,6 +116,11 @@ export const useDiagramStore = create<DiagramEditorState>()(
     panY: 0,
     undoStack: [],
     unnamedHighlightIds: [],
+    labelFontSize: Number(localStorage.getItem('ecdraw-label-font-size')) || 20,
+    setLabelFontSize: (size: number) => {
+      localStorage.setItem('ecdraw-label-font-size', String(size));
+      set((state) => { state.labelFontSize = size; });
+    },
 
     loadDiagram: async (diagramId: string) => {
       set((state) => {
@@ -557,10 +566,16 @@ export const useDiagramStore = create<DiagramEditorState>()(
         })),
         connections: edges.map((edge) => ({
           id: edge.id,
+          // Write both naming conventions so future readers (and the historic
+          // version-topology reader) all find what they expect.
           fromInstanceId: edge.sourceInstanceId,
           toInstanceId: edge.targetInstanceId,
+          sourceInstanceId: edge.sourceInstanceId,
+          targetInstanceId: edge.targetInstanceId,
           fromPinId: edge.sourcePinId,
           toPinId: edge.targetPinId,
+          sourcePinId: edge.sourcePinId,
+          targetPinId: edge.targetPinId,
         })),
         viewport: { zoom: get().zoom, panX: get().panX, panY: get().panY },
       };

@@ -1,4 +1,4 @@
-use axum::{Router, routing::get, routing::post, routing::patch, routing::delete, Json, extract::{Path, State}};
+use axum::{Router, routing::get, routing::post, routing::patch, routing::delete, Json, extract::{Path, State}, http::StatusCode};
 use ecdraw_core::logic::diagram_logic::{self, TopologyResponse, VersionSummary};
 use ecdraw_core::middleware;
 use ecdraw_core::models::{Diagram, DiagramEdge, DiagramInstance};
@@ -237,6 +237,18 @@ async fn get_version_topology(
     Ok(Json(result))
 }
 
+async fn delete_version(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((id, version_id)): Path<(String, String)>,
+) -> Result<StatusCode, ecdraw_core::error::AppError> {
+    let user_id: Uuid = claims.sub.parse().unwrap();
+    let did = id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的图纸ID".into()))?;
+    let vid = version_id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的版本ID".into()))?;
+    diagram_logic::delete_diagram_version(&state.pool, &claims.roles, user_id, did, vid).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_diagrams).post(create_diagram))
@@ -254,4 +266,5 @@ pub fn routes() -> Router<AppState> {
         .route("/{id}/edges/{edgeId}", delete(delete_edge))
         .route("/{id}/versions", get(list_versions))
         .route("/{id}/versions/{versionId}/topology", get(get_version_topology))
+        .route("/{id}/versions/{versionId}", delete(delete_version))
 }

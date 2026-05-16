@@ -1,4 +1,4 @@
-use axum::{Router, routing::get, routing::post, routing::delete, Json, extract::{Path, State}};
+use axum::{Router, routing::get, routing::post, routing::delete, routing::patch, Json, extract::{Path, State}};
 use ecdraw_core::logic::category_logic;
 use ecdraw_core::middleware;
 use ecdraw_core::AppState;
@@ -11,6 +11,11 @@ pub struct CreateCategoryBody {
     name: String,
     label: String,
     color: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateVisibilityBody {
+    visible: bool,
 }
 
 async fn list_categories(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<Vec<ComponentCategory>>, ecdraw_core::error::AppError> {
@@ -33,8 +38,15 @@ async fn delete_category(State(state): State<AppState>, AuthClaims(claims): Auth
     Ok(())
 }
 
+async fn update_visibility(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>, Json(body): Json<UpdateVisibilityBody>) -> Result<Json<ComponentCategory>, ecdraw_core::error::AppError> {
+    middleware::require_role(&claims, &["ADMIN", "COMPONENT_EDITOR", "DIAGRAM_EDITOR"])?;
+    let cat = category_logic::update_category_visibility(&state.pool, &id, body.visible).await?;
+    Ok(Json(cat))
+}
+
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", get(list_categories).post(create_category))
         .route("/{id}", delete(delete_category))
+        .route("/{id}/visibility", patch(update_visibility))
 }
