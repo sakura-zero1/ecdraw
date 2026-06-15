@@ -482,7 +482,7 @@ pub async fn save_diagram(pool: &PgPool, roles: &[String], user_id: Uuid, id: Uu
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权保存此图纸".into()));
     }
-    if !is_diagram_editable(&d.status) {
+    if !latest_version_editable(pool, id).await? {
         return Err(AppError::BadRequest("当前状态的图纸不可保存".into()));
     }
 
@@ -516,10 +516,14 @@ pub async fn save_diagram(pool: &PgPool, roles: &[String], user_id: Uuid, id: Uu
         .execute(&mut *tx).await?;
     }
 
-    let updated = sqlx::query_as::<_, Diagram>(
-        "UPDATE diagrams SET status = 'DRAFT', updated_at = NOW() WHERE id = $1 RETURNING *"
-    )
-    .bind(id).fetch_one(&mut *tx).await?;
+    let online = has_online_version(pool, id).await?;
+    let updated = if online {
+        sqlx::query_as::<_, Diagram>("UPDATE diagrams SET updated_at = NOW() WHERE id = $1 RETURNING *")
+            .bind(id).fetch_one(&mut *tx).await?
+    } else {
+        sqlx::query_as::<_, Diagram>("UPDATE diagrams SET status = 'DRAFT', updated_at = NOW() WHERE id = $1 RETURNING *")
+            .bind(id).fetch_one(&mut *tx).await?
+    };
 
     tx.commit().await?;
     Ok(updated)
@@ -535,7 +539,7 @@ pub async fn submit_diagram_review(pool: &PgPool, roles: &[String], user_id: Uui
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if !is_diagram_editable(&d.status) {
+    if !latest_version_editable(pool, id).await? {
         return Err(AppError::BadRequest("图纸状态不允许提交审核".into()));
     }
 
@@ -545,8 +549,12 @@ pub async fn submit_diagram_review(pool: &PgPool, roles: &[String], user_id: Uui
         .ok_or_else(|| AppError::BadRequest("请先保存图纸".into()))?;
 
     let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE diagrams SET status = 'PENDING_REVIEW', updated_at = NOW() WHERE id = $1")
-        .bind(id).execute(&mut *tx).await?;
+    let online = has_online_version(pool, id).await?;
+    if online {
+        sqlx::query("UPDATE diagrams SET updated_at = NOW() WHERE id = $1").bind(id).execute(&mut *tx).await?;
+    } else {
+        sqlx::query("UPDATE diagrams SET status = 'PENDING_REVIEW', updated_at = NOW() WHERE id = $1").bind(id).execute(&mut *tx).await?;
+    }
 
     sqlx::query(
         "INSERT INTO review_requests (diagram_id, diagram_version_id, submitter_id, status) VALUES ($1, $2, $3, 'PENDING')"
@@ -569,13 +577,20 @@ pub async fn withdraw_diagram_review(pool: &PgPool, roles: &[String], user_id: U
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if d.status != "PENDING_REVIEW" {
+    let latest_reviewing = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM diagram_versions WHERE diagram_id = $1 ORDER BY version_no DESC LIMIT 1"
+    ).bind(id).fetch_optional(pool).await?;
+    if latest_reviewing.as_deref() != Some("REVIEWING") {
         return Err(AppError::BadRequest("只有审核中的图纸可以撤回".into()));
     }
 
     let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE diagrams SET status = 'DRAFT', updated_at = NOW() WHERE id = $1")
-        .bind(id).execute(&mut *tx).await?;
+    let online = has_online_version(pool, id).await?;
+    if online {
+        sqlx::query("UPDATE diagrams SET updated_at = NOW() WHERE id = $1").bind(id).execute(&mut *tx).await?;
+    } else {
+        sqlx::query("UPDATE diagrams SET status = 'DRAFT', updated_at = NOW() WHERE id = $1").bind(id).execute(&mut *tx).await?;
+    }
 
     sqlx::query(
         "UPDATE review_requests SET status = 'WITHDRAWN' WHERE diagram_id = $1 AND status = 'PENDING'"
@@ -629,7 +644,7 @@ pub async fn create_diagram_instance(
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if !is_diagram_editable(&d.status) {
+    if !latest_version_editable(pool, diagram_id).await? {
         return Err(AppError::BadRequest("当前状态的图纸不可编辑".into()));
     }
 
@@ -662,7 +677,7 @@ pub async fn update_diagram_instance(
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if !is_diagram_editable(&d.status) {
+    if !latest_version_editable(pool, diagram_id).await? {
         return Err(AppError::BadRequest("当前状态的图纸不可编辑".into()));
     }
 
@@ -699,7 +714,7 @@ pub async fn delete_diagram_instance(pool: &PgPool, roles: &[String], user_id: U
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if !is_diagram_editable(&d.status) {
+    if !latest_version_editable(pool, diagram_id).await? {
         return Err(AppError::BadRequest("当前状态的图纸不可编辑".into()));
     }
 
@@ -724,7 +739,7 @@ pub async fn create_diagram_edge(
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if !is_diagram_editable(&d.status) {
+    if !latest_version_editable(pool, diagram_id).await? {
         return Err(AppError::BadRequest("当前状态的图纸不可编辑".into()));
     }
 
@@ -759,7 +774,7 @@ pub async fn update_diagram_edge_line_type(
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if !is_diagram_editable(&d.status) {
+    if !latest_version_editable(pool, diagram_id).await? {
         return Err(AppError::BadRequest("当前状态的图纸不可编辑".into()));
     }
 
@@ -789,7 +804,7 @@ pub async fn update_diagram_edge_polyline_mid_ratio(
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if !is_diagram_editable(&d.status) {
+    if !latest_version_editable(pool, diagram_id).await? {
         return Err(AppError::BadRequest("当前状态的图纸不可编辑".into()));
     }
 
@@ -815,7 +830,7 @@ pub async fn delete_diagram_edge(pool: &PgPool, roles: &[String], user_id: Uuid,
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if !is_diagram_editable(&d.status) {
+    if !latest_version_editable(pool, diagram_id).await? {
         return Err(AppError::BadRequest("当前状态的图纸不可编辑".into()));
     }
 
