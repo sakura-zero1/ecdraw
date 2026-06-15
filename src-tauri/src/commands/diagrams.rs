@@ -163,6 +163,32 @@ pub async fn withdraw_diagram_review(
 }
 
 #[tauri::command]
+pub async fn revise_diagram(
+    state: State<'_, AppState>,
+    token: String,
+    id: String,
+) -> Result<Diagram, AppError> {
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
+    middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
+    let user_id = parse_uid(&claims.sub)?;
+    let did = to_uuid(&id, "图纸ID")?;
+    diagram_logic::revise_diagram(&state.pool, &claims.roles, user_id, did).await
+}
+
+#[tauri::command]
+pub async fn discard_revision(
+    state: State<'_, AppState>,
+    token: String,
+    id: String,
+) -> Result<Diagram, AppError> {
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
+    middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
+    let user_id = parse_uid(&claims.sub)?;
+    let did = to_uuid(&id, "图纸ID")?;
+    diagram_logic::discard_revision(&state.pool, &claims.roles, user_id, did).await
+}
+
+#[tauri::command]
 pub async fn request_delete_diagram(
     state: State<'_, AppState>,
     token: String,

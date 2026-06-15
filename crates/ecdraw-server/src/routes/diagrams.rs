@@ -171,6 +171,22 @@ async fn withdraw_review(State(state): State<AppState>, AuthClaims(claims): Auth
     Ok(())
 }
 
+async fn revise(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<Json<Diagram>, ecdraw_core::error::AppError> {
+    middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
+    let did = to_uuid(&id, "图纸ID")?;
+    let d = diagram_logic::revise_diagram(&state.pool, &claims.roles, user_id, did).await?;
+    Ok(Json(d))
+}
+
+async fn discard_revision(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<Json<Diagram>, ecdraw_core::error::AppError> {
+    middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
+    let did = to_uuid(&id, "图纸ID")?;
+    let d = diagram_logic::discard_revision(&state.pool, &claims.roles, user_id, did).await?;
+    Ok(Json(d))
+}
+
 async fn request_delete(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<(), ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
     let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
@@ -293,6 +309,8 @@ pub fn routes() -> Router<AppState> {
         .route("/{id}/save", post(save_diagram))
         .route("/{id}/submit-review", post(submit_review))
         .route("/{id}/withdraw-review", post(withdraw_review))
+        .route("/{id}/revise", post(revise))
+        .route("/{id}/discard-revision", post(discard_revision))
         .route("/{id}/request-delete", post(request_delete))
         .route("/{id}/instances", post(create_instance))
         .route("/{id}/instances/{instanceId}", patch(update_instance).delete(delete_instance))

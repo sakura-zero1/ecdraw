@@ -154,6 +154,8 @@ pub fn run() {
             commands::diagrams::list_diagram_versions,
             commands::diagrams::get_diagram_version_topology,
             commands::diagrams::delete_diagram_version,
+            commands::diagrams::revise_diagram,
+            commands::diagrams::discard_revision,
             // Districts
             commands::districts::list_districts_by_diagram,
             commands::districts::upsert_district,
