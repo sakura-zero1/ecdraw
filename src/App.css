@@ -1214,3 +1214,135 @@ a.shell-overflow-item {
   border-radius: 3px;
   color: var(--gray-700);
 }
+
+/* ===== 审核列表行 ===== */
+.review-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+.review-row-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.review-row-meta {
+  display: flex;
+  gap: 14px;
+  color: var(--gray-500);
+  font-size: 12px;
+}
+
+/* ===== 审核对比视图 ===== */
+.review-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+}
+.review-compare-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--gray-600);
+}
+.review-compare-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--gray-500);
+}
+.review-compare-panes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  flex: 1;
+  min-height: 360px;
+}
+.review-compare-pane {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.review-compare-pane-title {
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--gray-25);
+  border-bottom: 1px solid var(--gray-200);
+}
+.review-compare-canvas {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.review-compare-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--gray-400);
+  font-size: 13px;
+}
+.review-compare-changes {
+  max-height: 200px;
+  overflow: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+.review-compare-changes-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.review-compare-changes ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.review-compare-changes li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+}
+.review-compare-changes li:hover {
+  background: var(--gray-50);
+}
+.review-compare-changes .change-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  font-weight: 700;
+  color: #fff;
+}
+.change-added .change-badge { background: #22c55e; }
+.change-removed .change-badge { background: #ef4444; }
+.change-changed .change-badge { background: #eab308; }
+.review-compare-empty-sm {
+  color: var(--gray-400);
+  font-size: 13px;
+}
+.review-compare-actions {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+}
