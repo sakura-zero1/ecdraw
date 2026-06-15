@@ -67,6 +67,10 @@ export interface ViewerCanvasProps {
     unreachableInstanceIds: string[];
   } | null;
   highlightedInstanceId?: string | null;
+  diffHighlights?: {
+    instances: Map<string, 'added' | 'removed' | 'changed'>;
+    edges: Map<string, 'added' | 'removed' | 'changed'>;
+  } | null;
 }
 
 // ---------- Constants ----------
@@ -101,6 +105,18 @@ const GRID_COLOR_MAJOR = '#cbd5e1';
 const OUTAGE_REACHABLE_COLOR = '#22c55e';   // green
 const OUTAGE_UNREACHABLE_COLOR = '#ef4444';  // red
 const HIGHLIGHT_COLOR = '#eab308';            // gold/yellow
+
+// Diff overlay colors
+const DIFF_ADDED_COLOR = '#22c55e';    // green
+const DIFF_REMOVED_COLOR = '#ef4444';  // red
+const DIFF_CHANGED_COLOR = '#eab308';  // yellow
+
+function diffColor(s?: 'added' | 'removed' | 'changed'): string | null {
+  if (s === 'added') return DIFF_ADDED_COLOR;
+  if (s === 'removed') return DIFF_REMOVED_COLOR;
+  if (s === 'changed') return DIFF_CHANGED_COLOR;
+  return null;
+}
 
 // ---------- Helpers ----------
 
@@ -140,6 +156,7 @@ export default function ViewerCanvas({
   onSelectInstance,
   outageResult,
   highlightedInstanceId,
+  diffHighlights,
 }: ViewerCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -424,6 +441,11 @@ export default function ViewerCanvas({
       ctx.globalAlpha = g.edgeAlpha;
       ctx.strokeStyle = g.edgeColor;
       ctx.lineWidth = 2 / zoom;
+      const edgeDiffColor = diffColor(diffHighlights?.edges.get(g.edge.id));
+      if (edgeDiffColor) {
+        ctx.strokeStyle = edgeDiffColor;
+        ctx.lineWidth = 4 / zoom;
+      }
       if (g.isCable) ctx.setLineDash([8 / zoom, 4 / zoom]);
       ctx.beginPath();
       const crs = viewCrossings.get(ei);
@@ -619,6 +641,15 @@ export default function ViewerCanvas({
         ctx.globalAlpha = 1;
       }
 
+      const nodeDiffColor = diffColor(diffHighlights?.instances.get(inst.id));
+      if (nodeDiffColor) {
+        ctx.strokeStyle = nodeDiffColor;
+        ctx.lineWidth = 3 / zoom;
+        ctx.beginPath();
+        roundRect(ctx, x, y, nw, thumbAreaH, NODE_RADIUS);
+        ctx.stroke();
+      }
+
       ctx.restore(); // end shape transform
 
       // ---- Label (always upright, below the transformed shape bounding box) ----
@@ -660,7 +691,7 @@ export default function ViewerCanvas({
     }
 
     ctx.restore();
-  }, [instances, edges, viewMode, zoom, panX, panY, selectedInstanceId, outageResult, highlightedInstanceId, getVisibleData, getInstancePosition]);
+  }, [instances, edges, viewMode, zoom, panX, panY, selectedInstanceId, outageResult, highlightedInstanceId, diffHighlights, getVisibleData, getInstancePosition]);
 
   // ---- Render loop ----
 

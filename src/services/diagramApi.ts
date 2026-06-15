@@ -324,6 +324,8 @@ export interface TopologyResponse {
     targetInstanceId: string;
     sourcePinId: string;
     targetPinId: string;
+    lineType?: LineType;
+    polylineMidRatio?: number | null;
     lineSegmentData: { id: string; length: number | null; wireModel: string | null; wireOwnership: string | null; wireType: string | null; isMainDisplay: boolean | null } | null;
   }>;
 }
