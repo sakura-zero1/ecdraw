@@ -42,12 +42,25 @@ export function getShapeBounds(el: ShapeElement): Bounds {
 }
 
 export function moveShapeBy(el: ShapeElement, dx: number, dy: number): Partial<ShapeElement> {
-  const updates: Record<string, number> = {};
+  const updates: Record<string, unknown> = {};
   const pos = getShapePositionKeys(el);
   for (const [k, v] of Object.entries(pos)) {
     updates[k] = Math.round(v + (k.includes('x') || k === 'cx' ? dx : k.includes('y') || k === 'cy' ? dy : 0));
   }
-  return updates;
+  // Also offset stateClosed/stateOpen position keys
+  for (const ovKey of ['stateClosed', 'stateOpen'] as const) {
+    const ov = el[ovKey];
+    if (ov && typeof ov === 'object') {
+      const ovUpdates: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(ov)) {
+        if (typeof v !== 'number') continue;
+        if (k.includes('x') || k === 'cx') ovUpdates[k] = v + dx;
+        else if (k.includes('y') || k === 'cy') ovUpdates[k] = v + dy;
+      }
+      if (Object.keys(ovUpdates).length > 0) updates[ovKey] = { ...ov, ...ovUpdates };
+    }
+  }
+  return updates as Partial<ShapeElement>;
 }
 
 function getShapePositionKeys(el: ShapeElement): Record<string, number> {
@@ -122,7 +135,7 @@ export function scaleShapeInGroup(
       result = {
         cx: Math.round(newBounds.left + relX * scaleX),
         cy: Math.round(newBounds.top + relY * scaleY),
-        r: Math.round(Math.max(2, (shape.r ?? 0) * (scaleX + scaleY) / 2)),
+        r: Math.round(Math.max(2, (shape.r ?? 0) * Math.sqrt(scaleX * scaleY))),
       };
       break;
     }
@@ -153,7 +166,7 @@ export function scaleShapeInGroup(
       result = {
         x: Math.round(newBounds.left + relX * scaleX),
         y: Math.round(newBounds.top + relY * scaleY),
-        fontSize: Math.round(Math.max(8, (shape.fontSize ?? 16) * (scaleX + scaleY) / 2)),
+        fontSize: Math.round(Math.max(8, (shape.fontSize ?? 16) * Math.sqrt(scaleX * scaleY))),
       };
       break;
     }
@@ -200,7 +213,7 @@ function scaleOverride(
     case 'circle':
       if (typeof ov.cx === 'number') updates.cx = Math.round(newBounds.left + (ov.cx - origBounds.left) * scaleX);
       if (typeof ov.cy === 'number') updates.cy = Math.round(newBounds.top + (ov.cy - origBounds.top) * scaleY);
-      if (typeof ov.r === 'number') updates.r = Math.round(Math.max(2, ov.r * (scaleX + scaleY) / 2));
+      if (typeof ov.r === 'number') updates.r = Math.round(Math.max(2, ov.r * Math.sqrt(scaleX * scaleY)));
       break;
     case 'ellipse':
       if (typeof ov.cx === 'number') updates.cx = Math.round(newBounds.left + (ov.cx - origBounds.left) * scaleX);
@@ -213,6 +226,11 @@ function scaleOverride(
       if (typeof ov.y1 === 'number') updates.y1 = Math.round(newBounds.top + (ov.y1 - origBounds.top) * scaleY);
       if (typeof ov.x2 === 'number') updates.x2 = Math.round(newBounds.left + (ov.x2 - origBounds.left) * scaleX);
       if (typeof ov.y2 === 'number') updates.y2 = Math.round(newBounds.top + (ov.y2 - origBounds.top) * scaleY);
+      break;
+    case 'text':
+      if (typeof ov.x === 'number') updates.x = Math.round(newBounds.left + (ov.x - origBounds.left) * scaleX);
+      if (typeof ov.y === 'number') updates.y = Math.round(newBounds.top + (ov.y - origBounds.top) * scaleY);
+      if (typeof ov.fontSize === 'number') updates.fontSize = Math.round(Math.max(8, ov.fontSize * Math.sqrt(scaleX * scaleY)));
       break;
   }
   return Object.keys(updates).length > 0 ? updates : null;
@@ -461,22 +479,29 @@ export function groupShapesByUnit(shapes: ShapeElement[]): GroupUnit[] {
   return units;
 }
 
+export interface AlignResult {
+  shapeUpdates: Map<string, Partial<ShapeElement>>;
+  groupOffsets: Map<string, { dx: number; dy: number }>;
+}
+
 export function computeAlignmentByGroup(
   shapes: ShapeElement[],
   mode: AlignMode,
-): Map<string, Partial<ShapeElement>> {
-  const result = new Map<string, Partial<ShapeElement>>();
-  if (shapes.length < 2) return result;
+): AlignResult {
+  const shapeUpdates = new Map<string, Partial<ShapeElement>>();
+  const groupOffsets = new Map<string, { dx: number; dy: number }>();
+  if (shapes.length < 2) return { shapeUpdates, groupOffsets };
 
   const units = groupShapesByUnit(shapes);
-  if (units.length < 2) return result;
+  if (units.length < 2) return { shapeUpdates, groupOffsets };
 
   switch (mode) {
     case 'left': {
       const target = Math.min(...units.map((u) => u.bounds.left));
       for (const u of units) {
         const dx = target - u.bounds.left;
-        for (const s of u.shapes) result.set(s.id, moveShapeBy(s, dx, 0));
+        for (const s of u.shapes) shapeUpdates.set(s.id, moveShapeBy(s, dx, 0));
+        groupOffsets.set(u.groupId, { dx, dy: 0 });
       }
       break;
     }
@@ -484,7 +509,8 @@ export function computeAlignmentByGroup(
       const target = Math.max(...units.map((u) => u.bounds.right));
       for (const u of units) {
         const dx = target - u.bounds.right;
-        for (const s of u.shapes) result.set(s.id, moveShapeBy(s, dx, 0));
+        for (const s of u.shapes) shapeUpdates.set(s.id, moveShapeBy(s, dx, 0));
+        groupOffsets.set(u.groupId, { dx, dy: 0 });
       }
       break;
     }
@@ -492,7 +518,8 @@ export function computeAlignmentByGroup(
       const target = Math.min(...units.map((u) => u.bounds.left)) / 2 + Math.max(...units.map((u) => u.bounds.right)) / 2;
       for (const u of units) {
         const dx = Math.round(target - u.bounds.cx);
-        for (const s of u.shapes) result.set(s.id, moveShapeBy(s, dx, 0));
+        for (const s of u.shapes) shapeUpdates.set(s.id, moveShapeBy(s, dx, 0));
+        groupOffsets.set(u.groupId, { dx, dy: 0 });
       }
       break;
     }
@@ -500,7 +527,8 @@ export function computeAlignmentByGroup(
       const target = Math.min(...units.map((u) => u.bounds.top));
       for (const u of units) {
         const dy = target - u.bounds.top;
-        for (const s of u.shapes) result.set(s.id, moveShapeBy(s, 0, dy));
+        for (const s of u.shapes) shapeUpdates.set(s.id, moveShapeBy(s, 0, dy));
+        groupOffsets.set(u.groupId, { dx: 0, dy });
       }
       break;
     }
@@ -508,7 +536,8 @@ export function computeAlignmentByGroup(
       const target = Math.max(...units.map((u) => u.bounds.bottom));
       for (const u of units) {
         const dy = target - u.bounds.bottom;
-        for (const s of u.shapes) result.set(s.id, moveShapeBy(s, 0, dy));
+        for (const s of u.shapes) shapeUpdates.set(s.id, moveShapeBy(s, 0, dy));
+        groupOffsets.set(u.groupId, { dx: 0, dy });
       }
       break;
     }
@@ -516,7 +545,8 @@ export function computeAlignmentByGroup(
       const target = Math.min(...units.map((u) => u.bounds.top)) / 2 + Math.max(...units.map((u) => u.bounds.bottom)) / 2;
       for (const u of units) {
         const dy = Math.round(target - u.bounds.cy);
-        for (const s of u.shapes) result.set(s.id, moveShapeBy(s, 0, dy));
+        for (const s of u.shapes) shapeUpdates.set(s.id, moveShapeBy(s, 0, dy));
+        groupOffsets.set(u.groupId, { dx: 0, dy });
       }
       break;
     }
@@ -528,7 +558,8 @@ export function computeAlignmentByGroup(
       const step = (maxCx - minCx) / (sorted.length - 1);
       sorted.forEach((u, i) => {
         const dx = Math.round(minCx + step * i - u.bounds.cx);
-        for (const s of u.shapes) result.set(s.id, moveShapeBy(s, dx, 0));
+        for (const s of u.shapes) shapeUpdates.set(s.id, moveShapeBy(s, dx, 0));
+        groupOffsets.set(u.groupId, { dx, dy: 0 });
       });
       break;
     }
@@ -540,11 +571,12 @@ export function computeAlignmentByGroup(
       const step = (maxCy - minCy) / (sorted.length - 1);
       sorted.forEach((u, i) => {
         const dy = Math.round(minCy + step * i - u.bounds.cy);
-        for (const s of u.shapes) result.set(s.id, moveShapeBy(s, 0, dy));
+        for (const s of u.shapes) shapeUpdates.set(s.id, moveShapeBy(s, 0, dy));
+        groupOffsets.set(u.groupId, { dx: 0, dy });
       });
       break;
     }
   }
 
-  return result;
+  return { shapeUpdates, groupOffsets };
 }

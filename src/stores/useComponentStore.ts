@@ -8,9 +8,6 @@ import { useCanvasStore } from './useCanvasStore';
 import { getGroupBounds, scaleShapeInGroup } from '../utils/alignment';
 import type { Bounds } from '../utils/alignment';
 
-/** Anchors for import scaling: first-import content bounds per target component.
- *  Stored outside Zustand state because Immer freezes objects. */
-const importAnchorMap = new Map<string, { cw: number; ch: number }>();
 
 interface ComponentStore {
   components: ElectricalComponent[];
@@ -48,6 +45,17 @@ interface ComponentStore {
 }
 
 const MAX_UNDO = 50;
+
+function offsetOverride(ov: Record<string, unknown>, dx: number, dy: number): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(ov)) {
+    if (typeof v !== 'number') { result[k] = v; continue; }
+    if (k.includes('x') || k === 'cx') result[k] = v + dx;
+    else if (k.includes('y') || k === 'cy') result[k] = v + dy;
+    else result[k] = v;
+  }
+  return result;
+}
 
 export const useComponentStore = create<ComponentStore>()(
   persist(immer((set, get) => ({
@@ -171,7 +179,16 @@ export const useComponentStore = create<ComponentStore>()(
       set((state) => {
         const comp = state.components.find((c) => c.id === componentId);
         if (comp) {
-          comp.pins.push({ id, label, number: comp.pins.length + 1, position: { x: 50, y: 50 }, pinType, visible: true });
+          const bounds = getGroupBounds(comp.shapeElements);
+          let px = 50, py = 50;
+          if (bounds && bounds.width > 0) {
+            const offset = 20;
+            const step = 20;
+            const existing = comp.pins.length;
+            px = bounds.left - offset;
+            py = bounds.top + existing * step;
+          }
+          comp.pins.push({ id, label, number: comp.pins.length + 1, position: { x: Math.round(px), y: Math.round(py) }, pinType, visible: true });
           comp.updatedAt = new Date().toISOString();
         }
       });
@@ -205,7 +222,6 @@ export const useComponentStore = create<ComponentStore>()(
         if (comp) {
           comp.shapeElements.push({ ...element, id });
           comp.updatedAt = new Date().toISOString();
-          importAnchorMap.delete(componentId);
         }
       });
       return id;
@@ -228,7 +244,6 @@ export const useComponentStore = create<ComponentStore>()(
         if (comp) {
           comp.shapeElements = comp.shapeElements.filter((e) => e.id !== elementId);
           comp.updatedAt = new Date().toISOString();
-          importAnchorMap.delete(componentId);
         }
       });
     },
@@ -248,7 +263,6 @@ export const useComponentStore = create<ComponentStore>()(
           comp.pins = comp.pins.filter((p) => !ids.has(p.id));
         }
         comp.updatedAt = new Date().toISOString();
-        importAnchorMap.delete(componentId);
       });
       for (const pid of pinIds) {
         useConnectionStore.getState().removePinConnections(componentId, pid);
@@ -272,6 +286,8 @@ export const useComponentStore = create<ComponentStore>()(
       if ('y1' in cloned && cloned.y1 !== undefined) cloned.y1 += 20;
       if ('x2' in cloned && cloned.x2 !== undefined) cloned.x2 += 20;
       if ('y2' in cloned && cloned.y2 !== undefined) cloned.y2 += 20;
+      if (cloned.stateClosed) cloned.stateClosed = offsetOverride(cloned.stateClosed, 20, 20);
+      if (cloned.stateOpen) cloned.stateOpen = offsetOverride(cloned.stateOpen, 20, 20);
       set((state) => {
         const c = state.components.find((c) => c.id === componentId);
         if (c) { c.shapeElements.push(cloned); c.updatedAt = new Date().toISOString(); }
@@ -294,6 +310,8 @@ export const useComponentStore = create<ComponentStore>()(
       if ('y1' in cloned && cloned.y1 !== undefined) cloned.y1 += 20;
       if ('x2' in cloned && cloned.x2 !== undefined) cloned.x2 += 20;
       if ('y2' in cloned && cloned.y2 !== undefined) cloned.y2 += 20;
+      if (cloned.stateClosed) cloned.stateClosed = offsetOverride(cloned.stateClosed, 20, 20);
+      if (cloned.stateOpen) cloned.stateOpen = offsetOverride(cloned.stateOpen, 20, 20);
       set((state) => {
         const c = state.components.find((c) => c.id === componentId);
         if (c) { c.shapeElements.push(cloned); c.updatedAt = new Date().toISOString(); }
@@ -363,68 +381,94 @@ export const useComponentStore = create<ComponentStore>()(
       const contentBounds = getGroupBounds(sourceComp.shapeElements);
       if (!contentBounds || (contentBounds.width === 0 && contentBounds.height === 0)) return [];
 
-      const dw = sourceComp.displayWidth ?? 140;
-      const dh = sourceComp.displayHeight ?? 90;
       const cw = contentBounds.width || 1;
       const ch = contentBounds.height || 1;
+      const sdw = sourceComp.displayWidth || 140;
+      const sdh = sourceComp.displayHeight || 90;
 
-      // Use stable anchor bounds so repeated imports don't cascade in size.
-      // The first import snapshots the target's current content bounds; later
-      // imports reuse the same anchor to keep imported shapes consistent.
       const targetComp = get().components.find(c => c.id === targetId);
-      const targetDw = targetComp?.displayWidth ?? 140;
-      const targetDh = targetComp?.displayHeight ?? 90;
-      let anchor = importAnchorMap.get(targetId);
-      if (!anchor) {
-        const targetContentBounds = targetComp ? getGroupBounds(targetComp.shapeElements) : null;
-        const anchorCw = targetContentBounds?.width || targetComp?.width || cw;
-        const anchorCh = targetContentBounds?.height || targetComp?.height || ch;
-        anchor = { cw: anchorCw, ch: anchorCh };
-        importAnchorMap.set(targetId, anchor);
+      const tdw = targetComp?.displayWidth || 140;
+      const tdh = targetComp?.displayHeight || 90;
+      const outputRatioX = sdw / tdw;
+      const outputRatioY = sdh / tdh;
+
+      // Use target's ORIGINAL content (exclude previously imported shapes via groupId)
+      // as the reference for sizing. This prevents the reference from growing with each import.
+      // For degenerate targets (line-like), fall back to output dimensions directly.
+      let refW = tdw;
+      let refH = tdh;
+
+      if (targetComp && targetComp.shapeElements.length > 0) {
+        const originalShapes = targetComp.shapeElements.filter(s => !s.groupId);
+        if (originalShapes.length > 0) {
+          const tcb = getGroupBounds(originalShapes);
+          const tcw = tcb?.width || 0;
+          const tch = tcb?.height || 0;
+          if (tcw > 0 && tch > 0) {
+            const contentAspect = tcw / tch;
+            const outputAspect = tdw / tdh;
+            const aspectDiff = contentAspect / outputAspect;
+            const isDegenerate = aspectDiff > 5 || aspectDiff < 0.2;
+            if (!isDegenerate) {
+              refW = tcw;
+              refH = tch;
+            }
+          }
+        }
       }
 
-      // Per-dimension scale: source content → source display → target display → anchor content
-      // Then pick the more constraining dimension to preserve aspect ratio.
-      const scaleW = (dw / cw) * (anchor.cw / targetDw);
-      const scaleH = (dh / ch) * (anchor.ch / targetDh);
-      const uniformScale = Math.min(scaleW, scaleH);
+      const renderedW = outputRatioX * refW;
+      const renderedH = outputRatioY * refH;
 
       const targetBounds: Bounds = {
-        left: centerX - (cw * uniformScale) / 2,
-        top: centerY - (ch * uniformScale) / 2,
-        right: centerX + (cw * uniformScale) / 2,
-        bottom: centerY + (ch * uniformScale) / 2,
-        width: cw * uniformScale,
-        height: ch * uniformScale,
+        left: centerX - renderedW / 2,
+        top: centerY - renderedH / 2,
+        right: centerX + renderedW / 2,
+        bottom: centerY + renderedH / 2,
+        width: renderedW,
+        height: renderedH,
         cx: centerX,
         cy: centerY,
       };
 
       const groupId = uuid();
-      const newShapeIds: string[] = [];
-      const newShapes = sourceComp.shapeElements.map((shape) => {
-        const newId = uuid();
-        newShapeIds.push(newId);
-        const updates = scaleShapeInGroup(shape, contentBounds, targetBounds);
-        return { ...shape, ...updates, id: newId, groupId, linkedConnectionId: undefined, stateClosed: undefined, stateOpen: undefined } as ShapeElement;
-      });
 
+      // Build pins first to get pinIdMap
       const newPins = sourceComp.pins.map((p) => {
         const relX = p.position.x - contentBounds.left;
         const relY = p.position.y - contentBounds.top;
+        const pinScaleX = targetBounds.width / cw;
+        const pinScaleY = targetBounds.height / ch;
         return {
           ...p,
           id: uuid(),
           groupId,
           position: {
-            x: Math.round(targetBounds.left + relX * uniformScale),
-            y: Math.round(targetBounds.top + relY * uniformScale),
+            x: Math.round(targetBounds.left + relX * pinScaleX),
+            y: Math.round(targetBounds.top + relY * pinScaleY),
           },
         };
       });
 
       const pinIdMap: Record<string, string> = {};
       sourceComp.pins.forEach((oldPin, i) => { pinIdMap[oldPin.id] = newPins[i].id; });
+
+      const connectionIdMap = useConnectionStore.getState().importConnections(targetId, sourceComp.id, pinIdMap);
+
+      const newShapeIds: string[] = [];
+      const newShapes = sourceComp.shapeElements.map((shape) => {
+        const newId = uuid();
+        newShapeIds.push(newId);
+        const updates = scaleShapeInGroup(shape, contentBounds, targetBounds);
+        return {
+          ...shape,
+          ...updates,
+          id: newId,
+          groupId,
+          strokeWidth: shape.strokeWidth ?? 2,
+          linkedConnectionId: shape.linkedConnectionId ? (connectionIdMap[shape.linkedConnectionId] || undefined) : undefined,
+        } as ShapeElement;
+      });
 
       set((state) => {
         const comp = state.components.find((c) => c.id === targetId);

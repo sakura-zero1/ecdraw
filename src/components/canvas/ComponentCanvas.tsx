@@ -3,7 +3,7 @@ import { useCanvasStore } from '../../stores/useCanvasStore';
 import { useComponentStore } from '../../stores/useComponentStore';
 import { useConnectionStore } from '../../stores/useConnectionStore';
 import { useDragStore } from '../../stores/useDragStore';
-import type { ShapeElement, Pin } from '../../types';
+import type { ShapeElement, Pin, ShapeStateOverride } from '../../types';
 import { computeLinePath } from '../../utils/geometry';
 import { getShapeBounds, getGroupBounds, getGroupResizeHandles, scaleShapeInGroup, moveShapeBy } from '../../utils/alignment';
 import type { Bounds } from '../../utils/alignment';
@@ -261,15 +261,337 @@ function computeAlignmentGuidesFromBounds(
   return guides.filter((g) => { const k = `${g.axis}:${Math.round(g.value)}`; if (seen.has(k)) return false; seen.add(k); return true; });
 }
 
-function resolveShapeProps(el: ShapeElement, matrices: Record<string, import('../../types').ConnectivityMatrix>, compId: string): ShapeElement {
+function resolveShapeProps(
+  el: ShapeElement,
+  matrices: Record<string, import('../../types').ConnectivityMatrix>,
+  compId: string,
+  previewState?: { connectionId: string; state: 'closed' | 'open' } | null,
+): ShapeElement {
   if (el.linkedConnectionId) {
     const conn = matrices[compId]?.connections.find((c) => c.id === el.linkedConnectionId);
-    if (conn && conn.state !== 'none') {
-      const override = conn.state === 'closed' ? el.stateClosed : el.stateOpen;
-      if (override) return { ...el, ...override };
-    }
+    if (!conn || conn.state === 'none') return el;
+    // 态编辑预览模式：使用预览态而非连线实际态
+    const activeState = (previewState && previewState.connectionId === el.linkedConnectionId)
+      ? previewState.state
+      : conn.state;
+    const override = activeState === 'closed' ? el.stateClosed : el.stateOpen;
+    if (override) return { ...el, ...override };
   }
   return el;
+}
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  ctx.closePath();
+}
+
+const COLOR_PALETTE = [
+  '#000000', '#ffffff', '#ef4444', '#f97316', '#eab308', '#22c55e',
+  '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280', '#92400e', 'transparent',
+];
+
+const SHAPE_TYPE_LABELS: Record<string, string> = {
+  rect: '矩形', circle: '圆形', ellipse: '椭圆',
+  line: '直线', polyline: '折线', path: '路径',
+  arc: '弧形', text: '文字', image: '图片',
+};
+
+function hitTestPropertyEditor(
+  cx: number, cy: number,
+  shapeBounds: { left: number; top: number; width: number; height: number; right: number; bottom: number },
+  zoom: number,
+  shape: ShapeElement,
+  editState: 'closed' | 'open',
+  compId: string,
+): boolean {
+  const key = editState === 'closed' ? 'stateClosed' : 'stateOpen';
+  const override = (shape as any)[key] as ShapeStateOverride | undefined;
+  const pad = 8 / zoom;
+  const gap = 4 / zoom;
+  const swatchSize = 18 / zoom;
+  const cols = 6;
+  const fontSize = 9 / zoom;
+  const numRowH = 18 / zoom;
+  const numBtnR = 7 / zoom;
+  const numValueW = 36 / zoom;
+  const panelW = 160 / zoom;
+
+  let px = shapeBounds.right + 10 / zoom;
+  let py = shapeBounds.top;
+  if (px + panelW > 800) px = shapeBounds.left - panelW - 10 / zoom;
+
+  // Calculate panel height
+  let panelH = pad;
+  panelH += fontSize + gap + Math.ceil(COLOR_PALETTE.length / cols) * (swatchSize + gap) + gap;
+  panelH += fontSize + gap + Math.ceil(COLOR_PALETTE.length / cols) * (swatchSize + gap) + gap;
+  panelH += fontSize + gap + numRowH + gap;
+  if (shape.type === 'rect' || shape.type === 'circle' || shape.type === 'ellipse') panelH += numRowH * 2 + gap;
+  else if (shape.type === 'line') panelH += numRowH + gap;
+  else panelH += numRowH + gap;
+  panelH += pad;
+
+  if (cx < px || cx > px + panelW || cy < py || cy > py + panelH) return false;
+
+  const { updateShapeElement } = useComponentStore.getState();
+  let curY = py + pad;
+
+  // Fill swatches
+  curY += fontSize + gap;
+  for (let i = 0; i < COLOR_PALETTE.length; i++) {
+    const col = i % cols, row = Math.floor(i / cols);
+    const sx = px + pad + col * (swatchSize + gap);
+    const sy = curY + row * (swatchSize + gap);
+    if (cx >= sx && cx <= sx + swatchSize && cy >= sy && cy <= sy + swatchSize) {
+      updateShapeElement(compId, shape.id, { [key]: { ...override, fill: COLOR_PALETTE[i] } } as any);
+      return true;
+    }
+  }
+  curY += Math.ceil(COLOR_PALETTE.length / cols) * (swatchSize + gap) + gap;
+
+  // Stroke swatches
+  curY += fontSize + gap;
+  for (let i = 0; i < COLOR_PALETTE.length; i++) {
+    const col = i % cols, row = Math.floor(i / cols);
+    const sx = px + pad + col * (swatchSize + gap);
+    const sy = curY + row * (swatchSize + gap);
+    if (cx >= sx && cx <= sx + swatchSize && cy >= sy && cy <= sy + swatchSize) {
+      updateShapeElement(compId, shape.id, { [key]: { ...override, stroke: COLOR_PALETTE[i] } } as any);
+      return true;
+    }
+  }
+  curY += Math.ceil(COLOR_PALETTE.length / cols) * (swatchSize + gap) + gap;
+
+  // Helper: hit test a numeric +/- field
+  const hitNumField = (fieldX: number, fieldY: number, _fieldW: number, label: string, fieldKey: string, val: number, step: number): boolean => {
+    const midY = fieldY + numRowH / 2;
+    const labelW = label.length * fontSize * 0.6 + gap;
+    const minusCX = fieldX + labelW + numBtnR;
+    const plusCX = minusCX + numBtnR * 2 + gap + numValueW + gap + numBtnR;
+    if (Math.hypot(cx - minusCX, cy - midY) <= numBtnR) {
+      updateShapeElement(compId, shape.id, { [key]: { ...override, [fieldKey]: Math.round((val - step) * 100) / 100 } } as any);
+      return true;
+    }
+    if (Math.hypot(cx - plusCX, cy - midY) <= numBtnR) {
+      updateShapeElement(compId, shape.id, { [key]: { ...override, [fieldKey]: Math.round((val + step) * 100) / 100 } } as any);
+      return true;
+    }
+    return false;
+  };
+
+  const halfW = (panelW - pad * 2 - gap) / 2;
+  const hitNumPair = (y: number, l1: string, k1: string, v1: number, s1: number, l2: string, k2: string, v2: number, s2: number): boolean => {
+    if (hitNumField(px + pad, y, halfW, l1, k1, v1, s1)) return true;
+    if (l2 && hitNumField(px + pad + halfW + gap, y, halfW, l2, k2, v2, s2)) return true;
+    return false;
+  };
+
+  // Stroke width + Opacity
+  curY += fontSize + gap;
+  const sw = override?.strokeWidth ?? shape.strokeWidth ?? 1;
+  const op = override?.opacity ?? shape.opacity ?? 1;
+  if (hitNumPair(curY, '线宽', 'strokeWidth', sw, 0.5, '透明', 'opacity', op, 0.1)) return true;
+  curY += numRowH + gap;
+
+  if (shape.type === 'rect') {
+    if (hitNumPair(curY, 'X', 'x', override?.x ?? shape.x ?? 0, 1, 'Y', 'y', override?.y ?? shape.y ?? 0, 1)) return true;
+    curY += numRowH + gap;
+    if (hitNumPair(curY, '宽', 'width', override?.width ?? shape.width ?? 0, 1, '高', 'height', override?.height ?? shape.height ?? 0, 1)) return true;
+  } else if (shape.type === 'circle') {
+    if (hitNumPair(curY, 'CX', 'cx', override?.cx ?? shape.cx ?? 0, 1, 'CY', 'cy', override?.cy ?? shape.cy ?? 0, 1)) return true;
+    curY += numRowH + gap;
+    if (hitNumPair(curY, 'R', 'r', override?.r ?? shape.r ?? 0, 1, '', '', 0, 0)) return true;
+  } else if (shape.type === 'ellipse') {
+    if (hitNumPair(curY, 'CX', 'cx', override?.cx ?? shape.cx ?? 0, 1, 'CY', 'cy', override?.cy ?? shape.cy ?? 0, 1)) return true;
+    curY += numRowH + gap;
+    if (hitNumPair(curY, 'RX', 'rx', override?.rx ?? shape.rx ?? 0, 1, 'RY', 'ry', override?.ry ?? shape.ry ?? 0, 1)) return true;
+  } else if (shape.type === 'line') {
+    if (hitNumPair(curY, 'X1', 'x1', override?.x1 ?? shape.x1 ?? 0, 1, 'Y1', 'y1', override?.y1 ?? shape.y1 ?? 0, 1)) return true;
+  } else {
+    if (hitNumPair(curY, 'X', 'x', override?.x ?? shape.x ?? 0, 1, 'Y', 'y', override?.y ?? shape.y ?? 0, 1)) return true;
+  }
+  return false;
+}
+
+function drawNumField(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, _w: number, h: number,
+  zoom: number,
+  label: string, value: number,
+) {
+  const fontSize = 9 / zoom;
+  const btnR = 7 / zoom;
+  const numValueW = 36 / zoom;
+  const gap2 = 4 / zoom;
+  const midY = y + h / 2;
+
+  ctx.fillStyle = '#6b7280';
+  ctx.font = `${fontSize}px "Microsoft YaHei", sans-serif`;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(label, x, midY);
+  const labelW = ctx.measureText(label).width + gap2;
+
+  const minusCX = x + labelW + btnR;
+  ctx.fillStyle = '#f3f4f6';
+  ctx.beginPath(); ctx.arc(minusCX, midY, btnR, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#d1d5db'; ctx.lineWidth = 0.8 / zoom;
+  ctx.beginPath(); ctx.arc(minusCX, midY, btnR, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = '#6b7280'; ctx.font = `bold ${10 / zoom}px sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('−', minusCX, midY);
+
+  const valX = minusCX + btnR + gap2;
+  ctx.fillStyle = '#374151'; ctx.font = `${fontSize}px "Microsoft YaHei", sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText(String(Math.round(value * 100) / 100), valX + numValueW / 2, midY);
+
+  const plusCX = valX + numValueW + gap2 + btnR;
+  ctx.fillStyle = '#f3f4f6';
+  ctx.beginPath(); ctx.arc(plusCX, midY, btnR, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#d1d5db'; ctx.lineWidth = 0.8 / zoom;
+  ctx.beginPath(); ctx.arc(plusCX, midY, btnR, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = '#6b7280'; ctx.font = `bold ${10 / zoom}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText('+', plusCX, midY);
+}
+
+function drawPropertyEditor(
+  ctx: CanvasRenderingContext2D,
+  shape: ShapeElement,
+  editState: 'closed' | 'open',
+  shapeBounds: { left: number; top: number; width: number; height: number; right: number; bottom: number },
+  zoom: number,
+) {
+  const key = editState === 'closed' ? 'stateClosed' : 'stateOpen';
+  const override = (shape as any)[key] as ShapeStateOverride | undefined;
+  const currentFill = override?.fill ?? shape.fill;
+  const currentStroke = override?.stroke ?? shape.stroke;
+
+  const pad = 8 / zoom;
+  const gap = 4 / zoom;
+  const swatchSize = 18 / zoom;
+  const cols = 6;
+  const fontSize = 9 / zoom;
+  const numRowH = 18 / zoom;
+  const panelW = 160 / zoom;
+
+  let px = shapeBounds.right + 10 / zoom;
+  let py = shapeBounds.top;
+  if (px + panelW > 800) px = shapeBounds.left - panelW - 10 / zoom;
+
+  let panelH = pad;
+  panelH += fontSize + gap + Math.ceil(COLOR_PALETTE.length / cols) * (swatchSize + gap) + gap;
+  panelH += fontSize + gap + Math.ceil(COLOR_PALETTE.length / cols) * (swatchSize + gap) + gap;
+  panelH += fontSize + gap + numRowH + gap;
+  if (shape.type === 'rect' || shape.type === 'circle' || shape.type === 'ellipse') panelH += numRowH * 2 + gap;
+  else if (shape.type === 'line') panelH += numRowH + gap;
+  else panelH += numRowH + gap;
+  panelH += pad;
+
+  ctx.save();
+  ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,0.15)'; ctx.shadowBlur = 6 / zoom;
+  roundRect(ctx, px, py, panelW, panelH, 6 / zoom); ctx.fill();
+  ctx.shadowBlur = 0; ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1 / zoom; ctx.stroke();
+  ctx.restore();
+
+  const textColor = '#374151';
+  const halfW = (panelW - pad * 2 - gap) / 2;
+
+  // Fill swatches
+  let curY = py + pad;
+  ctx.save(); ctx.fillStyle = textColor; ctx.font = `${fontSize}px "Microsoft YaHei", sans-serif`;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('填充色', px + pad, curY); ctx.restore();
+  curY += fontSize + gap;
+  for (let i = 0; i < COLOR_PALETTE.length; i++) {
+    const col = i % cols, row = Math.floor(i / cols);
+    const sx = px + pad + col * (swatchSize + gap), sy = curY + row * (swatchSize + gap);
+    ctx.save();
+    if (COLOR_PALETTE[i] === 'transparent') {
+      ctx.fillStyle = '#f3f4f6'; ctx.fillRect(sx, sy, swatchSize, swatchSize);
+      ctx.strokeStyle = '#d1d5db'; ctx.lineWidth = 0.5 / zoom; ctx.strokeRect(sx, sy, swatchSize, swatchSize);
+      ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1 / zoom;
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + swatchSize, sy + swatchSize); ctx.stroke();
+    } else { ctx.fillStyle = COLOR_PALETTE[i]; ctx.fillRect(sx, sy, swatchSize, swatchSize); }
+    if (currentFill === COLOR_PALETTE[i]) {
+      ctx.strokeStyle = '#0ea5e9'; ctx.lineWidth = 2 / zoom;
+      ctx.strokeRect(sx - 1 / zoom, sy - 1 / zoom, swatchSize + 2 / zoom, swatchSize + 2 / zoom);
+    }
+    ctx.restore();
+  }
+  curY += Math.ceil(COLOR_PALETTE.length / cols) * (swatchSize + gap) + gap;
+
+  // Stroke swatches
+  ctx.save(); ctx.fillStyle = textColor; ctx.font = `${fontSize}px "Microsoft YaHei", sans-serif`;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('描边色', px + pad, curY); ctx.restore();
+  curY += fontSize + gap;
+  for (let i = 0; i < COLOR_PALETTE.length; i++) {
+    const col = i % cols, row = Math.floor(i / cols);
+    const sx = px + pad + col * (swatchSize + gap), sy = curY + row * (swatchSize + gap);
+    ctx.save();
+    if (COLOR_PALETTE[i] === 'transparent') {
+      ctx.fillStyle = '#f3f4f6'; ctx.fillRect(sx, sy, swatchSize, swatchSize);
+      ctx.strokeStyle = '#d1d5db'; ctx.lineWidth = 0.5 / zoom; ctx.strokeRect(sx, sy, swatchSize, swatchSize);
+      ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1 / zoom;
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + swatchSize, sy + swatchSize); ctx.stroke();
+    } else { ctx.fillStyle = COLOR_PALETTE[i]; ctx.fillRect(sx, sy, swatchSize, swatchSize); }
+    if (currentStroke === COLOR_PALETTE[i]) {
+      ctx.strokeStyle = '#0ea5e9'; ctx.lineWidth = 2 / zoom;
+      ctx.strokeRect(sx - 1 / zoom, sy - 1 / zoom, swatchSize + 2 / zoom, swatchSize + 2 / zoom);
+    }
+    ctx.restore();
+  }
+  curY += Math.ceil(COLOR_PALETTE.length / cols) * (swatchSize + gap) + gap;
+
+  // Separator
+  ctx.save(); ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1 / zoom;
+  ctx.beginPath(); ctx.moveTo(px + pad, curY); ctx.lineTo(px + panelW - pad, curY); ctx.stroke(); ctx.restore();
+  curY += gap;
+
+  // StrokeWidth + Opacity
+  ctx.save();
+  drawNumField(ctx, px + pad, curY, halfW, numRowH, zoom, '线宽', override?.strokeWidth ?? shape.strokeWidth ?? 1);
+  drawNumField(ctx, px + pad + halfW + gap, curY, halfW, numRowH, zoom, '透明', override?.opacity ?? shape.opacity ?? 1);
+  ctx.restore();
+  curY += numRowH + gap;
+
+  // Shape-specific
+  if (shape.type === 'rect') {
+    ctx.save();
+    drawNumField(ctx, px + pad, curY, halfW, numRowH, zoom, 'X', override?.x ?? shape.x ?? 0);
+    drawNumField(ctx, px + pad + halfW + gap, curY, halfW, numRowH, zoom, 'Y', override?.y ?? shape.y ?? 0);
+    ctx.restore(); curY += numRowH + gap;
+    ctx.save();
+    drawNumField(ctx, px + pad, curY, halfW, numRowH, zoom, '宽', override?.width ?? shape.width ?? 0);
+    drawNumField(ctx, px + pad + halfW + gap, curY, halfW, numRowH, zoom, '高', override?.height ?? shape.height ?? 0);
+    ctx.restore();
+  } else if (shape.type === 'circle') {
+    ctx.save();
+    drawNumField(ctx, px + pad, curY, halfW, numRowH, zoom, 'CX', override?.cx ?? shape.cx ?? 0);
+    drawNumField(ctx, px + pad + halfW + gap, curY, halfW, numRowH, zoom, 'CY', override?.cy ?? shape.cy ?? 0);
+    ctx.restore(); curY += numRowH + gap;
+    ctx.save();
+    drawNumField(ctx, px + pad, curY, halfW, numRowH, zoom, 'R', override?.r ?? shape.r ?? 0);
+    ctx.restore();
+  } else if (shape.type === 'ellipse') {
+    ctx.save();
+    drawNumField(ctx, px + pad, curY, halfW, numRowH, zoom, 'CX', override?.cx ?? shape.cx ?? 0);
+    drawNumField(ctx, px + pad + halfW + gap, curY, halfW, numRowH, zoom, 'CY', override?.cy ?? shape.cy ?? 0);
+    ctx.restore(); curY += numRowH + gap;
+    ctx.save();
+    drawNumField(ctx, px + pad, curY, halfW, numRowH, zoom, 'RX', override?.rx ?? shape.rx ?? 0);
+    drawNumField(ctx, px + pad + halfW + gap, curY, halfW, numRowH, zoom, 'RY', override?.ry ?? shape.ry ?? 0);
+    ctx.restore();
+  } else if (shape.type === 'line') {
+    ctx.save();
+    drawNumField(ctx, px + pad, curY, halfW, numRowH, zoom, 'X1', override?.x1 ?? shape.x1 ?? 0);
+    drawNumField(ctx, px + pad + halfW + gap, curY, halfW, numRowH, zoom, 'Y1', override?.y1 ?? shape.y1 ?? 0);
+    ctx.restore();
+  } else {
+    ctx.save();
+    drawNumField(ctx, px + pad, curY, halfW, numRowH, zoom, 'X', override?.x ?? shape.x ?? 0);
+    drawNumField(ctx, px + pad + halfW + gap, curY, halfW, numRowH, zoom, 'Y', override?.y ?? shape.y ?? 0);
+    ctx.restore();
+  }
 }
 
 function getResizeHandles(el: ShapeElement): Array<{ key: string; x: number; y: number }> {
@@ -355,6 +677,18 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
   const wireFromRef = useRef<{ pinId: string; x: number; y: number } | null>(null);
   const mouseWorldPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const [wireDragNonce, setWireDragNonce] = useState(0);
+  const wireHoverShapeRef = useRef<string | null>(null);
+  const wireTagRectsRef = useRef<{ shapeId: string; x: number; y: number; w: number; h: number; closeX: number; closeY: number; closeR: number }[]>([]);
+  const wireToolbarRectsRef = useRef<{
+    closedBtn: { x: number; y: number; w: number; h: number };
+    openBtn: { x: number; y: number; w: number; h: number };
+    saveBtn: { x: number; y: number; w: number; h: number };
+    closeBtn: { cx: number; cy: number; r: number };
+    fullRect: { x: number; y: number; w: number; h: number };
+  } | null>(null);
+  const wireShapeUnlinkRectsRef = useRef<{ shapeId: string; cx: number; cy: number; r: number }[]>([]);
+  const wireToolbarOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [wireSaveFlash, setWireSaveFlash] = useState(0);
 
   const activeComp = components.find((c) => c.id === activeComponentId);
   const canvasWidth = activeComp?.width ?? DEFAULT_CANVAS_WIDTH;
@@ -630,7 +964,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
     return null;
   }, [activeComp, matrices, viewport.zoom]);
 
-  const hitTestShape = useCallback((cx: number, cy: number): string | null => {
+  const hitTestShape = useCallback((cx: number, cy: number, previewStateParam?: { connectionId: string; state: 'closed' | 'open' } | null): string | null => {
     if (!activeComp) return null;
     const ctx = canvasRef.current?.getContext('2d');
     if (!ctx) return null;
@@ -640,7 +974,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     for (let i = activeComp.shapeElements.length - 1; i >= 0; i--) {
       const el = activeComp.shapeElements[i];
-      const resolved = resolveShapeProps(el, matrices, activeComp.id);
+      const resolved = resolveShapeProps(el, matrices, activeComp.id, previewStateParam);
       const path = buildShapePath(resolved);
       ctx.lineWidth = Math.max(resolved.strokeWidth ?? 2, hitMargin * 2);
       if (ctx.isPointInPath(path, cx, cy) || ctx.isPointInStroke(path, cx, cy)) {
@@ -816,8 +1150,130 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
       }
     }
 
-    // Wire mode: drag from pin to pin, click connection to delete
+    // Wire mode: drag from pin to pin, click connection to enter state editing
     if (isWireMode && activeComp) {
+      const cvs = useCanvasStore.getState();
+      const { wireStateEditing: wse, selectedConnectionId: selConnId, wireEditState: wEditState } = cvs;
+
+      // ─── 态编辑模式 ───
+      if (wse && selConnId) {
+        // 1. 检查工具栏按钮点击
+        const tbRects = wireToolbarRectsRef.current;
+        if (tbRects) {
+          const { closedBtn, openBtn, saveBtn, closeBtn } = tbRects;
+          // 闭合态按钮
+          if (pos.x >= closedBtn.x && pos.x <= closedBtn.x + closedBtn.w && pos.y >= closedBtn.y && pos.y <= closedBtn.y + closedBtn.h) {
+            e.preventDefault();
+            cvs.setWireEditState('closed');
+            selectPin(null);
+            return;
+          }
+          // 断开态按钮
+          if (pos.x >= openBtn.x && pos.x <= openBtn.x + openBtn.w && pos.y >= openBtn.y && pos.y <= openBtn.y + openBtn.h) {
+            e.preventDefault();
+            cvs.setWireEditState('open');
+            selectPin(null);
+            return;
+          }
+          // 保存按钮（仅确认标记，修改已实时生效）
+          if (pos.x >= saveBtn.x && pos.x <= saveBtn.x + saveBtn.w && pos.y >= saveBtn.y && pos.y <= saveBtn.y + saveBtn.h) {
+            e.preventDefault();
+            setWireSaveFlash(Date.now());
+            selectPin(null);
+            return;
+          }
+          // 关闭按钮
+          if (Math.hypot(pos.x - closeBtn.cx, pos.y - closeBtn.cy) <= closeBtn.r) {
+            e.preventDefault();
+            cvs.exitWireStateEditing();
+            selectPin(null);
+            return;
+          }
+          // 拖拽工具栏（点击工具栏空白区域）
+          if (pos.x >= tbRects.fullRect.x && pos.x <= tbRects.fullRect.x + tbRects.fullRect.w &&
+              pos.y >= tbRects.fullRect.y && pos.y <= tbRects.fullRect.y + tbRects.fullRect.h) {
+            e.preventDefault();
+            setDragState({
+              type: 'pan' as const, id: '__toolbar__', startCanvasX: e.clientX, startCanvasY: e.clientY,
+              origData: {},
+              startOffsetX: wireToolbarOffsetRef.current.x, startOffsetY: wireToolbarOffsetRef.current.y,
+            });
+            return;
+          }
+        }
+
+        // 2. 计算当前 previewState 用于碰撞检测
+        const currentPreviewState = { connectionId: selConnId, state: wEditState };
+
+        // 3. 检查选中形状的 resize 手柄
+        const handleHit = hitTestHandle(pos.x, pos.y);
+        if (handleHit) {
+          const el = activeComp.shapeElements.find((s) => s.id === handleHit.shapeId);
+          if (el && el.linkedConnectionId === selConnId) {
+            e.preventDefault();
+            pushUndo();
+            selectShape(handleHit.shapeId);
+            // 态编辑模式下：origData 需要记录覆盖属性的原始值
+            const ovKey = wEditState === 'closed' ? 'stateClosed' : 'stateOpen';
+            const override = (el as any)[ovKey] as ShapeStateOverride | undefined;
+            const origData = getShapeResizeData(override ? { ...el, ...override } as ShapeElement : el);
+            setDragState({
+              type: 'handle', id: handleHit.shapeId, shapeType: el.type,
+              handle: handleHit.handle, startCanvasX: pos.x, startCanvasY: pos.y,
+              origData,
+            });
+            selectPin(null);
+            return;
+          }
+        }
+
+        // 4. 检查关联形状的 × 取消按钮
+        const unlinkBtns = wireShapeUnlinkRectsRef.current;
+        for (const btn of unlinkBtns) {
+          if (Math.hypot(pos.x - btn.cx, pos.y - btn.cy) <= btn.r + 4 / viewport.zoom) {
+            e.preventDefault();
+            useComponentStore.getState().updateShapeElement(activeComp.id, btn.shapeId, { linkedConnectionId: undefined } as any);
+            selectShape(null);
+            selectPin(null);
+            return;
+          }
+        }
+
+        // 5. 检查形状点击
+        const shapeHit = hitTestShape(pos.x, pos.y, currentPreviewState);
+        if (shapeHit) {
+          e.preventDefault();
+          const shape = activeComp.shapeElements.find(s => s.id === shapeHit);
+          if (shape) {
+            if (shape.linkedConnectionId === selConnId) {
+              // 点击关联形状 → 选中并准备拖动
+              pushUndo();
+              selectShape(shapeHit);
+              const ovKey = wEditState === 'closed' ? 'stateClosed' : 'stateOpen';
+              const override = (shape as any)[ovKey] as ShapeStateOverride | undefined;
+              const resolvedPos = override ? { ...shape, ...override } as ShapeElement : shape;
+              setDragState({
+                type: 'shape', id: shapeHit,
+                startCanvasX: pos.x, startCanvasY: pos.y,
+                origData: getShapePosition(resolvedPos),
+              });
+            } else {
+              // 非关联形状 → 关联到当前连线
+              useComponentStore.getState().updateShapeElement(activeComp.id, shapeHit, { linkedConnectionId: selConnId } as any);
+              selectShape(shapeHit);
+            }
+          }
+          selectPin(null);
+          return;
+        }
+
+        // 6. 点击空白 → 取消形状选择（保持态编辑模式）
+        selectShape(null);
+        selectPin(null);
+        return;
+      }
+
+      // ─── 非态编辑模式（原有拖线 + 选连线逻辑） ───
       const pinHit = hitTestPin(pos.x, pos.y);
       if (pinHit) {
         e.preventDefault();
@@ -826,15 +1282,37 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
         mouseWorldPosRef.current = pos;
         setWireDragNonce(1);
         selectPin(pinHit);
-      } else {
-        // Click on connection line → delete it
-        const connHit = hitTestConnection(pos.x, pos.y);
-        if (connHit) {
-          e.preventDefault();
-          useConnectionStore.getState().removeConnection(activeComp.id, connHit);
-        }
-        selectPin(null);
+        return;
       }
+
+      // 点击连线 → 中点×删除连线，否则进入态编辑模式
+      const connHit = hitTestConnection(pos.x, pos.y);
+      if (connHit) {
+        e.preventDefault();
+        // Check if clicking near the × mark at midpoint → delete
+        const connMatrix = useConnectionStore.getState().matrices[activeComp.id];
+        const conn = connMatrix?.connections.find((c) => c.id === connHit);
+        if (conn) {
+          const pinA = activeComp.pins.find((p) => p.id === conn.pinAId);
+          const pinB = activeComp.pins.find((p) => p.id === conn.pinBId);
+          if (pinA && pinB) {
+            const mx = (pinA.position.x + pinB.position.x) / 2;
+            const my = (pinA.position.y + pinB.position.y) / 2;
+            if (Math.hypot(pos.x - mx, pos.y - my) <= 14 / viewport.zoom) {
+              useConnectionStore.getState().removeConnection(activeComp.id, connHit);
+              selectPin(null);
+              return;
+            }
+          }
+        }
+        cvs.selectConnection(connHit);
+        wireToolbarOffsetRef.current = { x: 0, y: 0 };
+        cvs.enterWireStateEditing();
+        selectPin(null);
+        return;
+      }
+
+      selectPin(null);
       return;
     }
 
@@ -936,14 +1414,23 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
   }, [activeComp, activeTool, isDrawTool, altHeld, effectiveSelect, getCanvasPos, viewport, selectShape, selectPin, pushUndo, hitTestHandle, hitTestPin, hitTestShape]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    // Pan drag
+    // Pan drag (viewport or toolbar)
     if (dragState?.type === 'pan') {
       const dx = e.clientX - dragState.startCanvasX;
       const dy = e.clientY - dragState.startCanvasY;
-      setViewport({
-        offsetX: (dragState.startOffsetX ?? 0) + dx,
-        offsetY: (dragState.startOffsetY ?? 0) + dy,
-      });
+      if (dragState.id === '__toolbar__') {
+        const zoom = useCanvasStore.getState().viewport.zoom;
+        wireToolbarOffsetRef.current = {
+          x: (dragState.startOffsetX ?? 0) + dx / zoom,
+          y: (dragState.startOffsetY ?? 0) + dy / zoom,
+        };
+        setWireDragNonce((n) => n + 1); // trigger re-render
+      } else {
+        setViewport({
+          offsetX: (dragState.startOffsetX ?? 0) + dx,
+          offsetY: (dragState.startOffsetY ?? 0) + dy,
+        });
+      }
       return;
     }
 
@@ -1006,7 +1493,28 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
             cx: (movedLeft + movedRight) / 2, cy: (movedTop + movedBottom) / 2 },
           activeComp.shapeElements, movingIds, viewport.zoom,
         ));
-        for (const sid of shapeIds) { const orig = shapeOrigMap[sid]; if (orig) applyShapeMove(activeComp.id, sid, orig, snappedDx, snappedDy, updateShapeElement, dragState.shapeOvOrigMap?.[sid]); }
+        for (const sid of shapeIds) {
+          const orig = shapeOrigMap[sid];
+          if (!orig) continue;
+          // 态编辑模式：写入覆盖属性而非基础属性
+          const cvsState = useCanvasStore.getState();
+          if (cvsState.wireStateEditing && cvsState.selectedConnectionId) {
+            const el = activeComp.shapeElements.find(s => s.id === sid);
+            if (el && el.linkedConnectionId === cvsState.selectedConnectionId) {
+              const ovKey = cvsState.wireEditState === 'closed' ? 'stateClosed' : 'stateOpen';
+              const existingOv = ((el as any)[ovKey] ?? {}) as Record<string, unknown>;
+              const newOv: Record<string, unknown> = { ...existingOv };
+              for (const [k, v] of Object.entries(orig)) {
+                const isX = k.includes('x') || k === 'cx';
+                const isY = k.includes('y') || k === 'cy';
+                newOv[k] = Math.round((v as number) + (isX ? snappedDx : isY ? snappedDy : 0));
+              }
+              updateShapeElement(activeComp.id, sid, { [ovKey]: newOv } as any);
+              continue;
+            }
+          }
+          applyShapeMove(activeComp.id, sid, orig, snappedDx, snappedDy, updateShapeElement, dragState.shapeOvOrigMap?.[sid]);
+        }
         // Move pins in the same group
         if (dragState.pinOrigMap) {
           for (const [pinId, origPos] of Object.entries(dragState.pinOrigMap)) {
@@ -1061,7 +1569,20 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
           setAlignmentGuides(computeAlignmentGuidesFromBounds(
             getShapeBounds(finalShape), activeComp.shapeElements, new Set([dragState.id]), viewport.zoom,
           ));
-          updateShapeElement(activeComp.id, dragState.id, finalResize);
+          // 态编辑模式：写入覆盖属性而非基础属性
+          const cvsState = useCanvasStore.getState();
+          if (cvsState.wireStateEditing && cvsState.selectedConnectionId) {
+            const el = activeComp.shapeElements.find(s => s.id === dragState.id);
+            if (el && el.linkedConnectionId === cvsState.selectedConnectionId) {
+              const ovKey = cvsState.wireEditState === 'closed' ? 'stateClosed' : 'stateOpen';
+              const existingOv = (el as any)[ovKey] as ShapeStateOverride | undefined;
+              updateShapeElement(activeComp.id, dragState.id, { [ovKey]: { ...(existingOv ?? {}), ...finalResize } } as any);
+            } else {
+              updateShapeElement(activeComp.id, dragState.id, finalResize);
+            }
+          } else {
+            updateShapeElement(activeComp.id, dragState.id, finalResize);
+          }
         }
       } else if (dragState.type === 'group-handle' && dragState.handle && dragState.origGroupBounds && dragState.groupId) {
         const handle = dragState.handle;
@@ -1227,9 +1748,14 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
       return;
     }
 
-    const { selectedShapeIds, selectedPinIds, selectedConnectionId, flashedShapeIds, hoveredShapeIds, groupEditingGroupId } = useCanvasStore.getState();
+    const { selectedShapeIds, selectedPinIds, selectedConnectionId, flashedShapeIds, hoveredShapeIds, groupEditingGroupId, wireStateEditing, wireEditState } = useCanvasStore.getState();
     const matrix = matrices[activeComp.id];
     const connections = matrix?.connections ?? [];
+
+    // 态编辑预览：当处于态编辑模式时，关联形状使用 wireEditState 决定覆盖
+    const previewState = wireStateEditing && selectedConnectionId
+      ? { connectionId: selectedConnectionId, state: wireEditState }
+      : null;
 
     // Precompute which groups are selected
     const selectedGroupIds = new Set<string>();
@@ -1240,7 +1766,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
 
     // Shapes
     for (const el of activeComp.shapeElements) {
-      const resolved = resolveShapeProps(el, matrices, activeComp.id);
+      const resolved = resolveShapeProps(el, matrices, activeComp.id, previewState);
       drawShapeOnCanvas(ctx, resolved);
 
       const isSelected = selectedShapeIds.includes(el.id);
@@ -1366,16 +1892,27 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
       ctx.restore();
     }
 
-    // Pins
-    const pinRadius = isWireMode ? 7 / zoom : 5 / zoom;
-    for (const pin of activeComp.pins) {
-      const isSelected = selectedPinIds.includes(pin.id);
-      drawPin(ctx, pin.position.x, pin.position.y, pin.pinType, pin.label, isSelected, pinRadius);
+    // Pins — 态编辑模式下仅显示选中连线关联的引脚
+    // Compute the set of pin IDs that belong to the selected connection (when in wire state editing)
+    const selConnPinIds = (() => {
+      if (!wireStateEditing || !selectedConnectionId) return null; // null = no filtering needed
+      const selConn = connections.find((c) => c.id === selectedConnectionId);
+      if (!selConn) return new Set<string>();
+      return new Set([selConn.pinAId, selConn.pinBId]);
+    })();
+    {
+      const pinRadius = isWireMode ? 7 / zoom : 5 / zoom;
+      for (const pin of activeComp.pins) {
+        if (selConnPinIds && !selConnPinIds.has(pin.id)) continue; // 态编辑模式下隐藏不相关的引脚
+        const isSelected = selectedPinIds.includes(pin.id);
+        drawPin(ctx, pin.position.x, pin.position.y, pin.pinType, pin.label, isSelected, pinRadius);
+      }
     }
 
-    // Connection lines (on top of shapes and pins)
+    // Connection lines — 态编辑模式下仅显示选中连线
     for (const conn of connections) {
       if (!conn.visible || conn.state === 'none') continue;
+      if (wireStateEditing && selectedConnectionId && conn.id !== selectedConnectionId) continue; // 态编辑模式下隐藏不相关的连线
       const pinA = activeComp.pins.find((p) => p.id === conn.pinAId);
       const pinB = activeComp.pins.find((p) => p.id === conn.pinBId);
       if (!pinA || !pinB) continue;
@@ -1459,8 +1996,8 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
         ctx.arc(from.x, from.y, 14 / zoom, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
-      } else {
-        // Hover highlight on pin or connection under cursor
+      } else if (!wireStateEditing) {
+        // Hover highlight on pin or connection under cursor (only in non-state-editing wire mode)
         const mousePos = mouseWorldPosRef.current;
         const hoverPin = hitTestPin(mousePos.x, mousePos.y);
         if (hoverPin) {
@@ -1477,7 +2014,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
           ctx.stroke();
           ctx.restore();
         } else {
-          // Hover on connection → red highlight (click to delete)
+          // Hover on connection → red highlight + × badge to delete
           const hoverConn = hitTestConnection(mousePos.x, mousePos.y);
           if (hoverConn) {
             const conn = connections.find((c) => c.id === hoverConn);
@@ -1492,16 +2029,38 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
                 ctx.moveTo(pinA.position.x, pinA.position.y);
                 ctx.lineTo(pinB.position.x, pinB.position.y);
                 ctx.stroke();
-                // Small × mark at midpoint
+                // × badge at midpoint
                 const mx = (pinA.position.x + pinB.position.x) / 2;
                 const my = (pinA.position.y + pinB.position.y) / 2;
-                const s = 5 / zoom;
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 2.5 / zoom;
-                ctx.beginPath();
-                ctx.moveTo(mx - s, my - s); ctx.lineTo(mx + s, my + s);
-                ctx.moveTo(mx + s, my - s); ctx.lineTo(mx - s, my + s);
+                const btnW = 22 / zoom;
+                const btnH = 22 / zoom;
+                const btnR = 6 / zoom;
+                const btnX = mx - btnW / 2;
+                const btnY = my - btnH / 2;
+                // White rounded badge with shadow
+                ctx.shadowColor = 'rgba(0,0,0,0.18)';
+                ctx.shadowBlur = 6 / zoom;
+                ctx.shadowOffsetY = 1.5 / zoom;
+                ctx.fillStyle = '#ffffff';
+                roundRect(ctx, btnX, btnY, btnW, btnH, btnR);
+                ctx.fill();
+                ctx.shadowColor = 'transparent';
+                ctx.strokeStyle = '#fecaca';
+                ctx.lineWidth = 1.2 / zoom;
+                roundRect(ctx, btnX, btnY, btnW, btnH, btnR);
                 ctx.stroke();
+                // Red × icon
+                const cx = btnX + btnW / 2;
+                const cy = btnY + btnH / 2;
+                const xs = 5 / zoom;
+                ctx.strokeStyle = '#ef4444';
+                ctx.lineWidth = 2.2 / zoom;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(cx - xs, cy - xs); ctx.lineTo(cx + xs, cy + xs);
+                ctx.moveTo(cx + xs, cy - xs); ctx.lineTo(cx - xs, cy + xs);
+                ctx.stroke();
+                ctx.lineCap = 'butt';
                 ctx.restore();
               }
             }
@@ -1652,6 +2211,249 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
 
         ctx.restore(); // clip
         ctx.restore(); // background
+      }
+    }
+
+    // ---- Wire mode: selected connection toolbar (态编辑工具栏) ----
+    // Re-apply viewport transform (preview section resets to screen space)
+    if (isWireMode && activeComp && wireStateEditing && selectedConnectionId) {
+      ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, dpr * offsetX, dpr * offsetY);
+      const connections = useConnectionStore.getState().matrices[activeComp.id]?.connections ?? [];
+      const selConn = connections.find((c) => c.id === selectedConnectionId);
+      if (selConn) {
+        const pinA = activeComp.pins.find((p) => p.id === selConn.pinAId);
+        const pinB = activeComp.pins.find((p) => p.id === selConn.pinBId);
+        if (pinA && pinB) {
+          const mx = (pinA.position.x + pinB.position.x) / 2;
+          const my = (pinA.position.y + pinB.position.y) / 2;
+
+          // ─── 关联形状选中框 + 手柄 ───
+          for (const shape of activeComp.shapeElements) {
+            if (shape.linkedConnectionId !== selectedConnectionId) continue;
+            const resolved = resolveShapeProps(shape, matrices, activeComp.id, previewState);
+            const isSelected = selectedShapeIds.includes(shape.id);
+            if (isSelected) {
+              const b = getShapeBounds(resolved);
+              ctx.save();
+              ctx.strokeStyle = '#0ea5e9';
+              ctx.lineWidth = 1.5 / zoom;
+              ctx.setLineDash([4 / zoom, 3 / zoom]);
+              ctx.strokeRect(b.left - 4, b.top - 4, b.width + 8, b.height + 8);
+              ctx.setLineDash([]);
+              ctx.restore();
+              for (const h of getResizeHandles(resolved)) {
+                ctx.beginPath();
+                ctx.arc(h.x, h.y, HANDLE_RADIUS / zoom, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+                ctx.strokeStyle = '#0ea5e9';
+                ctx.lineWidth = 1.5 / zoom;
+                ctx.stroke();
+              }
+            } else {
+              // 未选中的关联形状显示淡色边框
+              const b = getShapeBounds(resolved);
+              ctx.save();
+              ctx.strokeStyle = '#3b82f6';
+              ctx.lineWidth = 1.5 / zoom;
+              ctx.setLineDash([4 / zoom, 3 / zoom]);
+              ctx.strokeRect(b.left - 3 / zoom, b.top - 3 / zoom, b.width + 6 / zoom, b.height + 6 / zoom);
+              ctx.setLineDash([]);
+              ctx.restore();
+            }
+          }
+
+          // ─── 关联形状 × 取消关联按钮 ───
+          wireShapeUnlinkRectsRef.current = [];
+          for (const shape of activeComp.shapeElements) {
+            if (shape.linkedConnectionId !== selectedConnectionId) continue;
+            const resolved = resolveShapeProps(shape, matrices, activeComp.id, previewState);
+            const b = getShapeBounds(resolved);
+            const btnW = 22 / zoom;
+            const btnH = 22 / zoom;
+            const btnR = 6 / zoom;
+            const btnX = b.right - 2 / zoom;
+            const btnY = b.top - btnH + 2 / zoom;
+
+            // Hit area: slightly larger than visual
+            const hitR = 14 / zoom;
+            const hitCX = btnX + btnW / 2;
+            const hitCY = btnY + btnH / 2;
+            wireShapeUnlinkRectsRef.current.push({ shapeId: shape.id, cx: hitCX, cy: hitCY, r: hitR });
+
+            // White rounded badge with shadow
+            ctx.save();
+            ctx.shadowColor = 'rgba(0,0,0,0.18)';
+            ctx.shadowBlur = 6 / zoom;
+            ctx.shadowOffsetY = 1.5 / zoom;
+            ctx.fillStyle = '#ffffff';
+            roundRect(ctx, btnX, btnY, btnW, btnH, btnR);
+            ctx.fill();
+            // Shadow off for the rest
+            ctx.shadowColor = 'transparent';
+            // Subtle border
+            ctx.strokeStyle = '#fecaca';
+            ctx.lineWidth = 1.2 / zoom;
+            roundRect(ctx, btnX, btnY, btnW, btnH, btnR);
+            ctx.stroke();
+
+            // Red × icon
+            const cx = btnX + btnW / 2;
+            const cy = btnY + btnH / 2;
+            const s = 5 / zoom;
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 2.2 / zoom;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(cx - s, cy - s); ctx.lineTo(cx + s, cy + s);
+            ctx.moveTo(cx + s, cy - s); ctx.lineTo(cx - s, cy + s);
+            ctx.stroke();
+            ctx.lineCap = 'butt';
+            ctx.restore();
+          }
+
+          // ─── 非关联形状的 hover 高亮（可点击关联） ───
+          const mousePos = mouseWorldPosRef.current;
+          const hoverShapeId = hitTestShape(mousePos.x, mousePos.y);
+          if (hoverShapeId) {
+            const hoverShape = activeComp.shapeElements.find(s => s.id === hoverShapeId);
+            if (hoverShape && hoverShape.linkedConnectionId !== selectedConnectionId) {
+              const bounds = getShapeBounds(hoverShape);
+              if (bounds) {
+                ctx.save();
+                ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2 / zoom;
+                ctx.setLineDash([6 / zoom, 3 / zoom]);
+                const pad2 = 4 / zoom;
+                ctx.strokeRect(bounds.left - pad2, bounds.top - pad2, bounds.width + pad2 * 2, bounds.height + pad2 * 2);
+                ctx.setLineDash([]);
+                ctx.fillStyle = 'rgba(34,197,94,0.06)';
+                ctx.fillRect(bounds.left - pad2, bounds.top - pad2, bounds.width + pad2 * 2, bounds.height + pad2 * 2);
+                ctx.restore();
+              }
+            }
+          }
+
+          // ─── 浮动工具栏（现代风格，可拖拽） ───
+          const tbW = 220 / zoom;
+          const tbH = 40 / zoom;
+          const tbOff = wireToolbarOffsetRef.current;
+          const tbX = mx - tbW / 2 + tbOff.x;
+          const tbY = my - 50 / zoom - tbH + tbOff.y;
+          const tbR = 10 / zoom;
+          const tbPad = 8 / zoom;
+
+          // 工具栏背景（白色圆角 + 柔和阴影）
+          ctx.save();
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowColor = 'rgba(0,0,0,0.1)';
+          ctx.shadowBlur = 12 / zoom;
+          ctx.shadowOffsetY = 2 / zoom;
+          roundRect(ctx, tbX, tbY, tbW, tbH, tbR);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.strokeStyle = '#e2e8f0';
+          ctx.lineWidth = 1 / zoom;
+          ctx.stroke();
+          ctx.restore();
+
+          const btnW = 56 / zoom;
+          const btnH = tbH - tbPad * 2;
+          const btnR = 6 / zoom;
+          const btnY = tbY + tbPad;
+
+          // 闭合态按钮
+          const closedBtnX = tbX + tbPad;
+          ctx.save();
+          ctx.fillStyle = wireEditState === 'closed' ? '#dcfce7' : '#f8fafc';
+          roundRect(ctx, closedBtnX, btnY, btnW, btnH, btnR); ctx.fill();
+          // 左侧色条
+          if (wireEditState === 'closed') {
+            ctx.fillStyle = '#10b981';
+            roundRect(ctx, closedBtnX, btnY, 3 / zoom, btnH, 1.5 / zoom); ctx.fill();
+          }
+          ctx.strokeStyle = wireEditState === 'closed' ? '#86efac' : '#e2e8f0';
+          ctx.lineWidth = 1 / zoom;
+          roundRect(ctx, closedBtnX, btnY, btnW, btnH, btnR); ctx.stroke();
+          ctx.fillStyle = wireEditState === 'closed' ? '#15803d' : '#64748b';
+          ctx.font = `bold ${11 / zoom}px "Microsoft YaHei", sans-serif`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('闭合态', closedBtnX + btnW / 2, btnY + btnH / 2);
+          ctx.restore();
+
+          // 断开态按钮
+          const openBtnX = closedBtnX + btnW + 6 / zoom;
+          ctx.save();
+          ctx.fillStyle = wireEditState === 'open' ? '#fff7ed' : '#f8fafc';
+          roundRect(ctx, openBtnX, btnY, btnW, btnH, btnR); ctx.fill();
+          if (wireEditState === 'open') {
+            ctx.fillStyle = '#f97316';
+            roundRect(ctx, openBtnX, btnY, 3 / zoom, btnH, 1.5 / zoom); ctx.fill();
+          }
+          ctx.strokeStyle = wireEditState === 'open' ? '#fdba74' : '#e2e8f0';
+          ctx.lineWidth = 1 / zoom;
+          roundRect(ctx, openBtnX, btnY, btnW, btnH, btnR); ctx.stroke();
+          ctx.fillStyle = wireEditState === 'open' ? '#c2410c' : '#64748b';
+          ctx.font = `bold ${11 / zoom}px "Microsoft YaHei", sans-serif`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('断开态', openBtnX + btnW / 2, btnY + btnH / 2);
+          ctx.restore();
+
+          // 保存按钮（点击有绿色闪烁反馈）
+          const saveBtnW = 48 / zoom;
+          const saveBtnX = openBtnX + btnW + 8 / zoom;
+          const saveFlashing = Date.now() - wireSaveFlash < 600;
+          ctx.save();
+          if (saveFlashing) {
+            // Green flash glow
+            ctx.shadowColor = 'rgba(34,197,94,0.5)';
+            ctx.shadowBlur = 10 / zoom;
+          }
+          ctx.fillStyle = saveFlashing ? '#dcfce7' : '#eff6ff';
+          roundRect(ctx, saveBtnX, btnY, saveBtnW, btnH, btnR); ctx.fill();
+          ctx.shadowColor = 'transparent';
+          ctx.strokeStyle = saveFlashing ? '#86efac' : '#bfdbfe';
+          ctx.lineWidth = 1 / zoom;
+          roundRect(ctx, saveBtnX, btnY, saveBtnW, btnH, btnR); ctx.stroke();
+          ctx.fillStyle = saveFlashing ? '#15803d' : '#1d4ed8';
+          ctx.font = `${10 / zoom}px "Microsoft YaHei", sans-serif`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(saveFlashing ? '✓ 已保存' : '保存', saveBtnX + saveBtnW / 2, btnY + btnH / 2);
+          ctx.restore();
+
+          // 关闭按钮（右侧圆形）
+          const closeR2 = btnH / 2;
+          const closeCX = tbX + tbW - tbPad - closeR2;
+          const closeCY = btnY + btnH / 2;
+          ctx.save();
+          ctx.fillStyle = '#f1f5f9';
+          ctx.beginPath(); ctx.arc(closeCX, closeCY, closeR2, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1 / zoom;
+          ctx.beginPath(); ctx.arc(closeCX, closeCY, closeR2, 0, Math.PI * 2); ctx.stroke();
+          const xs = 3.5 / zoom;
+          ctx.strokeStyle = '#64748b'; ctx.lineWidth = 2 / zoom;
+          ctx.beginPath(); ctx.moveTo(closeCX - xs, closeCY - xs); ctx.lineTo(closeCX + xs, closeCY + xs);
+          ctx.moveTo(closeCX + xs, closeCY - xs); ctx.lineTo(closeCX - xs, closeCY + xs); ctx.stroke();
+          ctx.restore();
+
+          // 提示文字（无关联形状时）
+          const linkedCount = activeComp.shapeElements.filter(s => s.linkedConnectionId === selectedConnectionId).length;
+          if (linkedCount === 0) {
+            ctx.save(); ctx.fillStyle = '#94a3b8';
+            ctx.font = `${9 / zoom}px "Microsoft YaHei", sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            ctx.fillText('点击形状关联到此连线', mx, tbY + tbH + 6 / zoom);
+            ctx.restore();
+          }
+
+          // 存储工具栏按钮碰撞区域
+          wireToolbarRectsRef.current = {
+            closedBtn: { x: closedBtnX, y: btnY, w: btnW, h: btnH },
+            openBtn: { x: openBtnX, y: btnY, w: btnW, h: btnH },
+            saveBtn: { x: saveBtnX, y: btnY, w: saveBtnW, h: btnH },
+            closeBtn: { cx: closeCX, cy: closeCY, r: closeR2 },
+            fullRect: { x: tbX, y: tbY, w: tbW, h: tbH },
+          };
+        }
       }
     }
 

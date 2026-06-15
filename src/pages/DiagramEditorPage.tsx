@@ -640,11 +640,6 @@ function InstancePropertyPanel({
       </div>
 
       <div className="de-panel-section">
-        <div className="de-panel-section-title">变换</div>
-        <TransformControls instanceId={instance.id} instanceData={instance.instanceData} />
-      </div>
-
-      <div className="de-panel-section">
         <div className="de-panel-section-title">连接 ({connectedEdges.length})</div>
         {connectedEdges.length === 0 && (
           <div className="de-empty-hint">无连接</div>
@@ -789,7 +784,6 @@ function EdgePropertyPanel({
   const source = instances.find((i) => i.id === edge.sourceInstanceId);
   const target = instances.find((i) => i.id === edge.targetInstanceId);
   const diagramId = useDiagramStore((s) => s.diagramId);
-
   return (
     <div className="de-panel-body">
       <div className="de-panel-section">
@@ -1145,6 +1139,10 @@ export default function DiagramEditorPage() {
     persistInstanceLabelMove,
     saveDraft,
     withdrawReview,
+    updateInstanceTransform,
+    updateEdgeLineType,
+    defaultLineType,
+    setDefaultLineType,
   } = useDiagramStore();
 
   const [items, setItems] = useState<DiagramListItem[]>([]);
@@ -1537,6 +1535,118 @@ export default function DiagramEditorPage() {
                 提交审核
               </button>
             )}
+          </div>
+
+          {/* Canvas tools toolbar — centered above canvas */}
+          <div style={{
+            position: 'absolute',
+            top: 44,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 10,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+          }}>
+            {/* Line type selector */}
+            <div style={{
+              background: '#fff',
+              borderRadius: 6,
+              boxShadow: '0 1px 4px rgba(0,0,0,.12)',
+              padding: '3px 8px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}>
+              <span style={{ fontSize: 12, color: '#666', whiteSpace: 'nowrap' }}>线型</span>
+              <select
+                value={(() => {
+                  if (selectedEdgeId) {
+                    const e = edges.find((x) => x.id === selectedEdgeId);
+                    const lt = e?.lineType ?? 'straight';
+                    return lt === 'polyline' ? 'polyline-hvh' : lt;
+                  }
+                  return defaultLineType === 'polyline' ? 'polyline-hvh' : defaultLineType;
+                })()}
+                onChange={(e) => {
+                  const lt = e.target.value as any;
+                  if (selectedEdgeId) {
+                    void updateEdgeLineType(selectedEdgeId, lt);
+                  } else {
+                    setDefaultLineType(lt);
+                  }
+                }}
+                style={{ padding: '2px 4px', borderRadius: 4, border: '1px solid #d1d5db', fontSize: 12 }}
+              >
+                <option value="straight">直线</option>
+                <option value="curve">曲线</option>
+                <option value="polyline-hvh">折线(横竖横)</option>
+                <option value="polyline-vhv">折线(竖横竖)</option>
+              </select>
+            </div>
+
+            <div style={{ width: 1, height: 20, background: '#d1d5db' }} />
+
+            {/* Transform buttons */}
+            <div style={{
+              background: '#fff',
+              borderRadius: 6,
+              boxShadow: '0 1px 4px rgba(0,0,0,.12)',
+              padding: '3px 6px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              opacity: selectedInstanceId ? 1 : 0.5,
+            }}>
+              <button
+                className="btn btn-sm"
+                disabled={!selectedInstanceId}
+                title="左转90°"
+                onClick={() => {
+                  if (!selectedInstanceId) return;
+                  const inst = instances.find((i) => i.id === selectedInstanceId);
+                  if (!inst) return;
+                  const r = ((inst.instanceData as any)?.rotation ?? 0);
+                  updateInstanceTransform(selectedInstanceId, { rotation: (r - 90 + 360) % 360 });
+                }}
+              >↺</button>
+              <button
+                className="btn btn-sm"
+                disabled={!selectedInstanceId}
+                title="右转90°"
+                onClick={() => {
+                  if (!selectedInstanceId) return;
+                  const inst = instances.find((i) => i.id === selectedInstanceId);
+                  if (!inst) return;
+                  const r = ((inst.instanceData as any)?.rotation ?? 0);
+                  updateInstanceTransform(selectedInstanceId, { rotation: (r + 90) % 360 });
+                }}
+              >↻</button>
+              <button
+                className="btn btn-sm"
+                disabled={!selectedInstanceId}
+                title="水平翻转"
+                onClick={() => {
+                  if (!selectedInstanceId) return;
+                  const inst = instances.find((i) => i.id === selectedInstanceId);
+                  if (!inst) return;
+                  const f = !!((inst.instanceData as any)?.flipH);
+                  updateInstanceTransform(selectedInstanceId, { flipH: !f });
+                }}
+              >↔</button>
+              <button
+                className="btn btn-sm"
+                disabled={!selectedInstanceId}
+                title="垂直翻转"
+                onClick={() => {
+                  if (!selectedInstanceId) return;
+                  const inst = instances.find((i) => i.id === selectedInstanceId);
+                  if (!inst) return;
+                  const f = !!((inst.instanceData as any)?.flipV);
+                  updateInstanceTransform(selectedInstanceId, { flipV: !f });
+                }}
+              >↕</button>
+            </div>
           </div>
 
           {loading ? (

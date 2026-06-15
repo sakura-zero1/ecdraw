@@ -114,7 +114,9 @@ export default function ConnectivityMatrixPanel({ component: comp }: Props) {
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-dim)', marginBottom: 6 }}>
                 连接详情
               </div>
-              {connections.filter((c) => c.state !== 'none').map((conn) => (
+              {connections.filter((c) => c.state !== 'none').filter((c, i, arr) =>
+                arr.findIndex(c2 => (c2.pinAId === c.pinAId && c2.pinBId === c.pinBId) || (c2.pinAId === c.pinBId && c2.pinBId === c.pinAId)) === i
+              ).map((conn) => (
                 <ConnectionDetail
                   key={conn.id}
                   comp={comp}

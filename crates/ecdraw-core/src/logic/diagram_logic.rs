@@ -250,9 +250,9 @@ pub async fn duplicate_diagram(pool: &PgPool, user_id: Uuid, id: Uuid) -> Result
         let new_source = id_map.get(&edge.source_instance_id).copied().unwrap_or(edge.source_instance_id);
         let new_target = id_map.get(&edge.target_instance_id).copied().unwrap_or(edge.target_instance_id);
         sqlx::query(
-            "INSERT INTO diagram_edges (diagram_id, source_instance_id, target_instance_id, source_pin_id, target_pin_id) VALUES ($1, $2, $3, $4, $5)"
+            "INSERT INTO diagram_edges (diagram_id, source_instance_id, target_instance_id, source_pin_id, target_pin_id, line_type, polyline_mid_ratio) VALUES ($1, $2, $3, $4, $5, $6, $7)"
         )
-        .bind(dup.id).bind(new_source).bind(new_target).bind(&edge.source_pin_id).bind(&edge.target_pin_id)
+        .bind(dup.id).bind(new_source).bind(new_target).bind(&edge.source_pin_id).bind(&edge.target_pin_id).bind(&edge.line_type).bind(edge.polyline_mid_ratio)
         .execute(&mut *tx).await?;
     }
 
@@ -642,7 +642,8 @@ pub async fn delete_diagram_instance(pool: &PgPool, roles: &[String], user_id: U
 pub async fn create_diagram_edge(
     pool: &PgPool, roles: &[String], user_id: Uuid,
     diagram_id: Uuid, source_instance_id: Uuid, target_instance_id: Uuid,
-    source_pin_id: &str, target_pin_id: &str,
+    source_pin_id: &str, target_pin_id: &str, line_type: Option<&str>,
+    polyline_mid_ratio: Option<f64>,
 ) -> Result<DiagramEdge, AppError> {
     let d = sqlx::query_as::<_, Diagram>("SELECT * FROM diagrams WHERE id = $1")
         .bind(diagram_id).fetch_optional(pool).await?
@@ -664,12 +665,72 @@ pub async fn create_diagram_edge(
     ).bind(target_instance_id).bind(diagram_id).fetch_optional(pool).await?
         .ok_or_else(|| AppError::NotFound("目标实例不存在或不属于该图纸".into()))?;
 
+    let lt = line_type.unwrap_or("straight");
     let edge = sqlx::query_as::<_, DiagramEdge>(
-        "INSERT INTO diagram_edges (diagram_id, source_instance_id, target_instance_id, source_pin_id, target_pin_id) VALUES ($1, $2, $3, $4, $5) RETURNING *"
+        "INSERT INTO diagram_edges (diagram_id, source_instance_id, target_instance_id, source_pin_id, target_pin_id, line_type, polyline_mid_ratio) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *"
     )
     .bind(diagram_id).bind(source_instance_id).bind(target_instance_id)
-    .bind(source_pin_id).bind(target_pin_id)
+    .bind(source_pin_id).bind(target_pin_id).bind(lt).bind(polyline_mid_ratio)
     .fetch_one(pool).await?;
+
+    Ok(edge)
+}
+
+pub async fn update_diagram_edge_line_type(
+    pool: &PgPool, roles: &[String], user_id: Uuid,
+    diagram_id: Uuid, edge_id: Uuid, line_type: &str,
+) -> Result<DiagramEdge, AppError> {
+    let d = sqlx::query_as::<_, Diagram>("SELECT * FROM diagrams WHERE id = $1")
+        .bind(diagram_id).fetch_optional(pool).await?
+        .ok_or_else(|| AppError::NotFound("图纸不存在".into()))?;
+
+    if !can_write_diagram(roles, &d.owner_id, &user_id) {
+        return Err(AppError::Forbidden("无权操作此图纸".into()));
+    }
+    if d.status == "PUBLISHED" {
+        return Err(AppError::BadRequest("已发布的图纸不可编辑".into()));
+    }
+
+    let valid_types = ["straight", "curve", "polyline", "polyline-hvh", "polyline-vhv"];
+    if !valid_types.contains(&line_type) {
+        return Err(AppError::BadRequest("无效的线型".into()));
+    }
+
+    let edge = sqlx::query_as::<_, DiagramEdge>(
+        "UPDATE diagram_edges SET line_type = $1, updated_at = NOW() WHERE id = $2 AND diagram_id = $3 RETURNING *"
+    )
+    .bind(line_type).bind(edge_id).bind(diagram_id)
+    .fetch_optional(pool).await?
+        .ok_or_else(|| AppError::NotFound("连线不存在".into()))?;
+
+    Ok(edge)
+}
+
+pub async fn update_diagram_edge_polyline_mid_ratio(
+    pool: &PgPool, roles: &[String], user_id: Uuid,
+    diagram_id: Uuid, edge_id: Uuid, polyline_mid_ratio: f64,
+) -> Result<DiagramEdge, AppError> {
+    let d = sqlx::query_as::<_, Diagram>("SELECT * FROM diagrams WHERE id = $1")
+        .bind(diagram_id).fetch_optional(pool).await?
+        .ok_or_else(|| AppError::NotFound("图纸不存在".into()))?;
+
+    if !can_write_diagram(roles, &d.owner_id, &user_id) {
+        return Err(AppError::Forbidden("无权操作此图纸".into()));
+    }
+    if d.status == "PUBLISHED" {
+        return Err(AppError::BadRequest("已发布的图纸不可编辑".into()));
+    }
+
+    if polyline_mid_ratio < 0.05 || polyline_mid_ratio > 0.95 {
+        return Err(AppError::BadRequest("折线比率需在 0.05~0.95 之间".into()));
+    }
+
+    let edge = sqlx::query_as::<_, DiagramEdge>(
+        "UPDATE diagram_edges SET polyline_mid_ratio = $1, updated_at = NOW() WHERE id = $2 AND diagram_id = $3 RETURNING *"
+    )
+    .bind(polyline_mid_ratio).bind(edge_id).bind(diagram_id)
+    .fetch_optional(pool).await?
+        .ok_or_else(|| AppError::NotFound("连线不存在".into()))?;
 
     Ok(edge)
 }
@@ -825,6 +886,8 @@ pub async fn get_diagram_version_topology(
         let to_str = sc.get("toInstanceId").or_else(|| sc.get("targetInstanceId")).and_then(|v| v.as_str()).unwrap_or("");
         let spid = sc.get("sourcePinId").or_else(|| sc.get("fromPinId")).and_then(|v| v.as_str()).unwrap_or("").to_string();
         let tpid = sc.get("targetPinId").or_else(|| sc.get("toPinId")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let lt = sc.get("lineType").and_then(|v| v.as_str()).unwrap_or("straight").to_string();
+        let pmr = sc.get("polylineMidRatio").and_then(|v| v.as_f64());
         let s_from: Uuid = from_str.parse().unwrap_or(Uuid::nil());
         let s_to: Uuid = to_str.parse().unwrap_or(Uuid::nil());
         let eid = Uuid::new_v4();
@@ -837,6 +900,8 @@ pub async fn get_diagram_version_topology(
                 target_instance_id: s_to,
                 source_pin_id: spid,
                 target_pin_id: tpid,
+                line_type: lt,
+                polyline_mid_ratio: pmr,
                 created_at: ver.created_at,
                 updated_at: ver.created_at,
             },

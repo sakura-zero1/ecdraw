@@ -154,3 +154,8 @@ export async function updateCategoryVisibility(id: string, visible: boolean): Pr
   await requireAuth();
   return request<CategoryInfo>('update_category_visibility', { id, visible });
 }
+
+export async function renameCategory(id: string, newLabel: string): Promise<CategoryInfo> {
+  await requireAuth();
+  return request<CategoryInfo>('rename_category', { id, newLabel });
+}

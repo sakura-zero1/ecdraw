@@ -148,6 +148,8 @@ pub fn run() {
             commands::diagrams::update_diagram_instance,
             commands::diagrams::delete_diagram_instance,
             commands::diagrams::create_diagram_edge,
+            commands::diagrams::update_diagram_edge_line_type,
+            commands::diagrams::update_diagram_edge_polyline_mid_ratio,
             commands::diagrams::delete_diagram_edge,
             commands::diagrams::list_diagram_versions,
             commands::diagrams::get_diagram_version_topology,
@@ -179,6 +181,7 @@ pub fn run() {
             // Categories
             commands::categories::list_categories,
             commands::categories::create_category,
+            commands::categories::rename_category,
             commands::categories::delete_category,
             commands::categories::update_category_visibility,
             // Seed

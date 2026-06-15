@@ -8,6 +8,12 @@ import {
   getTransformedPinPos,
   getDominantShapeColor,
 } from '../../utils/canvasShape';
+import {
+  computeEdgeCrossings,
+  sampleBezierToSegments,
+  drawPathWithBridges,
+  type CrossingInfo,
+} from '../../utils/geometry';
 
 // ---------- Types ----------
 
@@ -339,39 +345,139 @@ export default function ViewerCanvas({
       return { x: pos.x + size.w / 2, y: pos.y + thumbAreaH / 2 };
     };
 
-    // ---- Edges ----
+    // ---- Edges (with crossing bridge arcs) ----
+    interface ViewEdgeGeo {
+      edge: TopologyEdge;
+      sx: number; sy: number; tx: number; ty: number;
+      lt: string;
+      curveCP?: { cp1x: number; cp1y: number; cp2x: number; cp2y: number };
+      curvePts?: number[][];
+      polyPts?: number[][];
+      edgeColor: string;
+      isCable: boolean;
+      edgeAlpha: number;
+    }
+    const viewEdgeGeos: ViewEdgeGeo[] = [];
+    const viewEdgeSegments: [number, number][][][] = [];
+
     for (const edge of visibleEdges) {
       const s = computeEndpoint(edge.sourceInstanceId, edge.sourcePinId);
       const t = computeEndpoint(edge.targetInstanceId, edge.targetPinId);
-      if (!s || !t) continue;
+      if (!s || !t) { viewEdgeSegments.push([]); continue; }
       const sx = s.x, sy = s.y, tx = t.x, ty = t.y;
-
+      const lt = (edge as any).lineType ?? 'straight';
       const lineData = edge.lineSegmentData;
       let edgeColor = EDGE_COLOR;
-      if (lineData?.wireOwnership === 'user') {
-        edgeColor = 'rgb(85,48,217)';
-      } else if (lineData?.wireOwnership === 'public') {
-        edgeColor = '#000000';
-      }
-
+      if (lineData?.wireOwnership === 'user') edgeColor = 'rgb(85,48,217)';
+      else if (lineData?.wireOwnership === 'public') edgeColor = '#000000';
       const isCable = lineData?.wireType === 'cable';
-      const isMainDisplay = lineData?.isMainDisplay ?? true;
-      const edgeAlpha = isMainDisplay ? 1 : 0.5;
+      const edgeAlpha = (lineData?.isMainDisplay ?? true) ? 1 : 0.5;
 
+      const geo: ViewEdgeGeo = { edge, sx, sy, tx, ty, lt, edgeColor, isCable, edgeAlpha };
+      let segs: [number, number][][] = [];
+
+      if (lt === 'curve') {
+        const dx = tx - sx, dy = ty - sy;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        const offset = len * 0.2;
+        const cp1x = sx + dx * 0.25 + (dy !== 0 ? offset * (dy > 0 ? 1 : -1) * 0.5 : offset);
+        const cp1y = sy + dy * 0.25 - (dx !== 0 ? offset * (dx > 0 ? 1 : -1) * 0.5 : offset * 0.5);
+        const cp2x = sx + dx * 0.75 + (dy !== 0 ? offset * (dy > 0 ? 1 : -1) * 0.3 : offset * 0.5);
+        const cp2y = sy + dy * 0.75 - (dx !== 0 ? offset * (dx > 0 ? 1 : -1) * 0.3 : offset * 0.3);
+        geo.curveCP = { cp1x, cp1y, cp2x, cp2y };
+        segs = sampleBezierToSegments(sx, sy, cp1x, cp1y, cp2x, cp2y, tx, ty, 24);
+        const curvePts: number[][] = [];
+        for (let i = 0; i <= 24; i++) {
+          const t = i / 24;
+          const t2 = 1 - t;
+          curvePts.push([
+            t2*t2*t2*sx + 3*t2*t2*t*cp1x + 3*t2*t*t*cp2x + t*t*t*tx,
+            t2*t2*t2*sy + 3*t2*t2*t*cp1y + 3*t2*t*t*cp2y + t*t*t*ty,
+          ]);
+        }
+        geo.curvePts = curvePts;
+      } else if (lt === 'polyline' || lt === 'polyline-hvh') {
+        const ratio = (edge as any).polylineMidRatio ?? 0.5;
+        const midX = sx + (tx - sx) * ratio;
+        const pts = [[sx, sy], [midX, sy], [midX, ty], [tx, ty]];
+        geo.polyPts = pts;
+        for (let i = 0; i < pts.length - 1; i++) segs.push([[pts[i][0], pts[i][1]], [pts[i + 1][0], pts[i + 1][1]]]);
+      } else if (lt === 'polyline-vhv') {
+        const ratio = (edge as any).polylineMidRatio ?? 0.5;
+        const midY = sy + (ty - sy) * ratio;
+        const pts = [[sx, sy], [sx, midY], [tx, midY], [tx, ty]];
+        geo.polyPts = pts;
+        for (let i = 0; i < pts.length - 1; i++) segs.push([[pts[i][0], pts[i][1]], [pts[i + 1][0], pts[i + 1][1]]]);
+      } else {
+        segs = [[[sx, sy], [tx, ty]]];
+      }
+
+      viewEdgeGeos.push(geo);
+      viewEdgeSegments.push(segs);
+    }
+
+    const viewCrossings = computeEdgeCrossings(viewEdgeSegments);
+
+    for (let ei = 0; ei < viewEdgeGeos.length; ei++) {
+      const g = viewEdgeGeos[ei];
       ctx.save();
-      ctx.globalAlpha = edgeAlpha;
-      ctx.strokeStyle = edgeColor;
+      ctx.globalAlpha = g.edgeAlpha;
+      ctx.strokeStyle = g.edgeColor;
       ctx.lineWidth = 2 / zoom;
-      if (isCable) {
-        ctx.setLineDash([8 / zoom, 4 / zoom]);
-      }
+      if (g.isCable) ctx.setLineDash([8 / zoom, 4 / zoom]);
       ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(tx, ty);
-      ctx.stroke();
-      if (isCable) {
-        ctx.setLineDash([]);
+      const crs = viewCrossings.get(ei);
+      const bridgeR = 8 / zoom;
+
+      if (g.lt === 'curve') {
+        if (crs && crs.length > 0) {
+          const pts = g.curvePts!;
+          const segCrossings = new Map<number, CrossingInfo[]>();
+          for (const c of crs) {
+            let list = segCrossings.get(c.segIdx);
+            if (!list) { list = []; segCrossings.set(c.segIdx, list); }
+            list.push(c);
+          }
+          ctx.moveTo(pts[0][0], pts[0][1]);
+          drawPathWithBridges(ctx, pts, segCrossings, bridgeR);
+        } else {
+          const cp = g.curveCP!;
+          ctx.moveTo(g.sx, g.sy);
+          ctx.bezierCurveTo(cp.cp1x, cp.cp1y, cp.cp2x, cp.cp2y, g.tx, g.ty);
+        }
+        ctx.stroke();
+      } else if (g.polyPts) {
+        ctx.moveTo(g.polyPts[0][0], g.polyPts[0][1]);
+        if (crs && crs.length > 0) {
+          const segCrossings = new Map<number, CrossingInfo[]>();
+          for (const c of crs) {
+            let list = segCrossings.get(c.segIdx);
+            if (!list) { list = []; segCrossings.set(c.segIdx, list); }
+            list.push(c);
+          }
+          drawPathWithBridges(ctx, g.polyPts, segCrossings, bridgeR);
+        } else {
+          for (let i = 1; i < g.polyPts.length; i++) ctx.lineTo(g.polyPts[i][0], g.polyPts[i][1]);
+        }
+        ctx.stroke();
+      } else {
+        if (crs && crs.length > 0) {
+          const pts = [[g.sx, g.sy], [g.tx, g.ty]];
+          const segCrossings = new Map<number, CrossingInfo[]>();
+          for (const c of crs) {
+            let list = segCrossings.get(c.segIdx);
+            if (!list) { list = []; segCrossings.set(c.segIdx, list); }
+            list.push(c);
+          }
+          ctx.moveTo(pts[0][0], pts[0][1]);
+          drawPathWithBridges(ctx, pts, segCrossings, bridgeR);
+        } else {
+          ctx.moveTo(g.sx, g.sy);
+          ctx.lineTo(g.tx, g.ty);
+        }
+        ctx.stroke();
       }
+      if (g.isCable) ctx.setLineDash([]);
       ctx.restore();
     }
 

@@ -16,6 +16,8 @@ interface ConnectionStore {
   removePinConnections: (componentId: string, pinId: string) => void;
   removeComponentMatrix: (componentId: string) => void;
   duplicateComponentMatrix: (sourceComponentId: string, targetComponentId: string, pinIdMap: Record<string, string>) => Record<string, string>;
+  importConnections: (targetComponentId: string, sourceComponentId: string, pinIdMap: Record<string, string>) => Record<string, string>;
+  addConnectionsFromTemplate: (targetComponentId: string, templates: Connection[], pinIdMap: Record<string, string>) => Record<string, string>;
 
   getMatrix: (componentId: string) => ConnectivityMatrix;
   loadMatrices: (matrices: ConnectivityMatrix[]) => void;
@@ -145,6 +147,67 @@ export const useConnectionStore = create<ConnectionStore>()(
               })
               .filter((c): c is Connection => c !== null),
           };
+        });
+        return connectionIdMap;
+      },
+
+      importConnections: (targetComponentId, sourceComponentId, pinIdMap) => {
+        const connectionIdMap: Record<string, string> = {};
+        set((state) => {
+          const source = state.matrices[sourceComponentId];
+          if (!source) return;
+          if (!state.matrices[targetComponentId]) {
+            state.matrices[targetComponentId] = { componentId: targetComponentId, connections: [] };
+          }
+          const target = state.matrices[targetComponentId];
+          for (const conn of source.connections) {
+            const pinAId = pinIdMap[conn.pinAId];
+            const pinBId = pinIdMap[conn.pinBId];
+            if (!pinAId || !pinBId) continue;
+            // Skip if a connection between these two pins already exists
+            const dup = target.connections.find(
+              (c) => (c.pinAId === pinAId && c.pinBId === pinBId) || (c.pinAId === pinBId && c.pinBId === pinAId)
+            );
+            if (dup) { connectionIdMap[conn.id] = dup.id; continue; }
+            const newId = uuid();
+            connectionIdMap[conn.id] = newId;
+            target.connections.push({
+              ...conn,
+              id: newId,
+              componentId: targetComponentId,
+              pinAId,
+              pinBId,
+            });
+          }
+        });
+        return connectionIdMap;
+      },
+
+      addConnectionsFromTemplate: (targetComponentId, templates, pinIdMap) => {
+        const connectionIdMap: Record<string, string> = {};
+        set((state) => {
+          if (!state.matrices[targetComponentId]) {
+            state.matrices[targetComponentId] = { componentId: targetComponentId, connections: [] };
+          }
+          const target = state.matrices[targetComponentId];
+          for (const tmpl of templates) {
+            const pinAId = pinIdMap[tmpl.pinAId];
+            const pinBId = pinIdMap[tmpl.pinBId];
+            if (!pinAId || !pinBId) continue;
+            const dup = target.connections.find(
+              (c) => (c.pinAId === pinAId && c.pinBId === pinBId) || (c.pinAId === pinBId && c.pinBId === pinAId)
+            );
+            if (dup) { connectionIdMap[tmpl.id] = dup.id; continue; }
+            const newId = uuid();
+            connectionIdMap[tmpl.id] = newId;
+            target.connections.push({
+              ...tmpl,
+              id: newId,
+              componentId: targetComponentId,
+              pinAId,
+              pinBId,
+            });
+          }
         });
         return connectionIdMap;
       },

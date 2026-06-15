@@ -51,6 +51,8 @@ pub struct DiagramEdge {
     pub target_instance_id: Uuid,
     pub source_pin_id: String,
     pub target_pin_id: String,
+    pub line_type: String,
+    pub polyline_mid_ratio: Option<f64>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

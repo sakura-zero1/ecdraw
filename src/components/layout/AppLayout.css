@@ -115,6 +115,22 @@
   min-width: 0;
 }
 
+.category-rename-input {
+  flex: 1;
+  min-width: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  font-family: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 0 4px;
+  outline: none;
+  height: 20px;
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.15);
+}
+
 .category-count {
   margin-left: auto;
   min-width: 20px;

@@ -15,6 +15,7 @@ import {
   createCategory,
   deleteCategory,
   updateCategoryVisibility,
+  renameCategory,
 } from '../../services/componentApi';
 import SvgCanvas from '../canvas/ComponentCanvas';
 import PropertyPanel from '../panels/PropertyPanel';
@@ -66,6 +67,9 @@ export default function AppLayout() {
   const [activeTab, setActiveTab] = useState<PanelTab>('property');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
+  const [editingCatId, setEditingCatId] = useState<string | null>(null);
+  const [editingCatLabel, setEditingCatLabel] = useState('');
+  const editingInputRef = useRef<HTMLInputElement>(null);
 
   const lastVersionSignaturesRef = useRef<Record<string, string>>({});
   const lastMetaSignaturesRef = useRef<Record<string, string>>({});
@@ -374,6 +378,34 @@ export default function AppLayout() {
     }
   };
 
+  const handleStartRename = (cat: CategoryInfo) => {
+    setEditingCatId(cat.id);
+    setEditingCatLabel(cat.label);
+    setTimeout(() => editingInputRef.current?.select(), 0);
+  };
+
+  const handleFinishRename = async () => {
+    if (!editingCatId) return;
+    const trimmed = editingCatLabel.trim();
+    if (!trimmed) {
+      setEditingCatId(null);
+      return;
+    }
+    const cat = allCategories.find((c) => c.id === editingCatId);
+    if (cat && trimmed === cat.label) {
+      setEditingCatId(null);
+      return;
+    }
+    try {
+      await renameCategory(editingCatId, trimmed);
+      await loadCategoriesFromApi();
+      showToast(`类别已重命名为「${trimmed}」`);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '重命名失败，名称可能已存在');
+    }
+    setEditingCatId(null);
+  };
+
   // Global mouse-based drag for component import (replaces HTML5 DnD for WebView2 compat)
   const drag = useDragStore();
   useEffect(() => {
@@ -446,19 +478,37 @@ export default function AppLayout() {
               const label = categoryLabelMap[cat] ?? cat;
               const color = categoryColorMap[cat] ?? '#6b7280';
               const catInfo = allCategories.find((c) => c.name === cat);
+              const isEditing = catInfo && editingCatId === catInfo.id;
               return (
                 <div key={cat} className="category-group">
                   <button
                     className="category-header"
                     onClick={() => setCollapsedCategories((prev) => ({ ...prev, [cat]: !prev[cat] }))}
                     title={collapsed ? `展开${label}` : `收起${label}`}
+                    onDoubleClick={(e) => { e.stopPropagation(); if (catInfo) handleStartRename(catInfo); }}
                   >
                     <span className={`category-arrow ${collapsed ? '' : 'open'}`}>▸</span>
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
                       <circle cx="8" cy="8" r="6" fill={color} opacity="0.18" />
                       <circle cx="8" cy="8" r="3" fill={color} />
                     </svg>
-                    <span className="category-title">{label}</span>
+                    {isEditing ? (
+                      <input
+                        ref={editingInputRef}
+                        className="category-rename-input"
+                        value={editingCatLabel}
+                        onChange={(e) => setEditingCatLabel(e.target.value)}
+                        onBlur={() => void handleFinishRename()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); void handleFinishRename(); }
+                          if (e.key === 'Escape') { setEditingCatId(null); }
+                          e.stopPropagation();
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span className="category-title">{label}</span>
+                    )}
                     <span className="category-count">{items.length}</span>
                     {catInfo && (
                       <span

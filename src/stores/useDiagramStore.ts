@@ -6,11 +6,14 @@ import {
   deleteDiagramInstance,
   createDiagramEdge,
   deleteDiagramEdge,
+  updateDiagramEdgeLineType,
+  updateDiagramEdgePolylineMidRatio,
   fetchDiagramForEditor,
   saveDiagram,
   withdrawDiagramReview,
   type DiagramInstance,
   type DiagramEdge,
+  type LineType,
   type DiagramListItem,
 } from '../services/diagramApi';
 import { fetchComponentLibrary } from '../services/componentApi';
@@ -62,6 +65,10 @@ interface DiagramEditorState {
   // Highlight unnamed instances (flashing red border)
   unnamedHighlightIds: string[];
 
+  // Default line type for new edges
+  defaultLineType: LineType;
+  setDefaultLineType: (lt: LineType) => void;
+
   // User settings
   labelFontSize: number;
   setLabelFontSize: (size: number) => void;
@@ -80,6 +87,9 @@ interface DiagramEditorState {
     targetPinId: string,
   ) => Promise<void>;
   removeEdge: (id: string) => Promise<void>;
+  updateEdgeLineType: (id: string, lineType: LineType) => Promise<void>;
+  updateEdgePolylineMidRatio: (id: string, ratio: number) => Promise<void>;
+  _setEdgePolylineMidRatio: (id: string, ratio: number) => void;
   selectInstance: (id: string | null) => void;
   selectEdge: (id: string | null) => void;
   pushUndo: () => void;
@@ -116,6 +126,10 @@ export const useDiagramStore = create<DiagramEditorState>()(
     panY: 0,
     undoStack: [],
     unnamedHighlightIds: [],
+    defaultLineType: 'straight' as LineType,
+    setDefaultLineType: (lt: LineType) => {
+      set((state) => { state.defaultLineType = lt; });
+    },
     labelFontSize: Number(localStorage.getItem('ecdraw-label-font-size')) || 20,
     setLabelFontSize: (size: number) => {
       localStorage.setItem('ecdraw-label-font-size', String(size));
@@ -296,6 +310,7 @@ export const useDiagramStore = create<DiagramEditorState>()(
           targetInstanceId,
           sourcePinId,
           targetPinId,
+          lineType: get().defaultLineType,
         });
         set((state) => {
           state.edges.push(edge);
@@ -328,10 +343,55 @@ export const useDiagramStore = create<DiagramEditorState>()(
       }
     },
 
+    updateEdgeLineType: async (id: string, lineType: LineType) => {
+      const diagramId = get().diagramId;
+      if (!diagramId) return;
+
+      get().pushUndo();
+
+      try {
+        const updated = await updateDiagramEdgeLineType(diagramId, id, lineType);
+        set((state) => {
+          const idx = state.edges.findIndex((e) => e.id === id);
+          if (idx >= 0) state.edges[idx] = updated;
+        });
+      } catch (e) {
+        const message = parseError(e) || '更新线型失败';
+        set((state) => {
+          state.error = message;
+        });
+      }
+    },
+
+    updateEdgePolylineMidRatio: async (id: string, ratio: number) => {
+      const diagramId = get().diagramId;
+      if (!diagramId) return;
+
+      try {
+        const updated = await updateDiagramEdgePolylineMidRatio(diagramId, id, ratio);
+        set((state) => {
+          const idx = state.edges.findIndex((e) => e.id === id);
+          if (idx >= 0) state.edges[idx] = updated;
+        });
+      } catch (e) {
+        const message = parseError(e) || '更新折线位置失败';
+        set((state) => {
+          state.error = message;
+        });
+      }
+    },
+
     selectInstance: (id: string | null) => {
       set((state) => {
         state.selectedInstanceId = id;
         if (id) state.selectedEdgeId = null;
+      });
+    },
+
+    _setEdgePolylineMidRatio: (id: string, ratio: number) => {
+      set((state) => {
+        const idx = state.edges.findIndex((e) => e.id === id);
+        if (idx >= 0) state.edges[idx].polylineMidRatio = ratio;
       });
     },
 
@@ -576,6 +636,8 @@ export const useDiagramStore = create<DiagramEditorState>()(
           toPinId: edge.targetPinId,
           sourcePinId: edge.sourcePinId,
           targetPinId: edge.targetPinId,
+          lineType: edge.lineType ?? 'straight',
+          polylineMidRatio: edge.polylineMidRatio,
         })),
         viewport: { zoom: get().zoom, panX: get().panX, panY: get().panY },
       };

@@ -1,11 +1,26 @@
 import { useState, useCallback, useEffect, useImperativeHandle, useRef, forwardRef } from 'react';
-import type { DiagramInstance, DiagramEdge } from '../../services/diagramApi';
+import type { DiagramInstance, DiagramEdge, LineType } from '../../services/diagramApi';
 import { CATEGORY_LABELS } from '../../constants/categories';
 import type { ComponentCategory, Pin, PinType, ShapeElement } from '../../types';
 import type { ConnectivityMatrix } from '../../types/connection';
 import { getShapeBounds, type Bounds } from '../../utils/alignment';
 import { drawShapeOnCanvas, getDominantShapeColor } from '../../utils/canvasShape';
 import type { LineSegmentData } from '../../services/lineApi';
+import { useDiagramStore } from '../../stores/useDiagramStore';
+import { segIntersect, computeEdgeCrossings, sampleBezierToSegments, drawPathWithBridges, type CrossingInfo } from '../../utils/geometry';
+
+function isPolyline(lt: string) { return lt === 'polyline' || lt === 'polyline-hvh' || lt === 'polyline-vhv'; }
+function isPolylineHVH(lt: string) { return lt === 'polyline' || lt === 'polyline-hvh'; }
+function isPolylineVHV(lt: string) { return lt === 'polyline-vhv'; }
+
+function getPolylinePoints(sx: number, sy: number, tx: number, ty: number, lt: string, midRatio: number): number[][] {
+  if (isPolylineVHV(lt)) {
+    const midY = sy + (ty - sy) * midRatio;
+    return [[sx, sy], [sx, midY], [tx, midY], [tx, ty]];
+  }
+  const midX = sx + (tx - sx) * midRatio;
+  return [[sx, sy], [midX, sy], [midX, ty], [tx, ty]];
+}
 
 // ---------- Constants ----------
 
@@ -143,6 +158,24 @@ function getPinsForInstance(inst: DiagramInstance): Pin[] {
 }
 
 // drawShapeOnCanvas moved to '../../utils/canvasShape' so ViewerCanvas can share it.
+
+function resolveDiagramShape(
+  el: ShapeElement,
+  matrices: Record<string, ConnectivityMatrix>,
+  compId: string,
+): ShapeElement {
+  if (el.linkedConnectionId) {
+    const matrix = matrices[compId];
+    if (matrix) {
+      const conn = matrix.connections.find((c) => c.id === el.linkedConnectionId);
+      if (conn && conn.state !== 'none') {
+        const override = conn.state === 'closed' ? el.stateClosed : el.stateOpen;
+        if (override) return { ...el, ...override };
+      }
+    }
+  }
+  return el;
+}
 
 function computeShapesBounds(shapes: ShapeElement[]): Bounds | null {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -293,6 +326,17 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
     moved: boolean;
   } | null>(null);
 
+  // Polyline segment drag state
+  const polylineDragRef = useRef<{
+    edgeId: string;
+    startRatio: number;
+    startMouseX: number;
+    startMouseY: number;
+    sx: number; tx: number;
+    sy: number; ty: number;
+    axis: 'x' | 'y';
+  } | null>(null);
+
   // Inline label editing state
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
   const [editingLabelText, setEditingLabelText] = useState('');
@@ -418,11 +462,27 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
 
     pushOffsetsRef.current = {}; // Clear any existing offsets
 
-    // ---- Edges ----
+    // ---- Edges (with crossing bridge arcs) ----
+    // Phase 1: collect edge geometries
+    interface EdgeGeo {
+      edge: DiagramEdge;
+      sx: number; sy: number; tx: number; ty: number;
+      lt: string;
+      curveCP?: { cp1x: number; cp1y: number; cp2x: number; cp2y: number };
+      curvePts?: number[][];
+      polyPts?: number[][];
+      isSelected: boolean;
+      edgeColor: string;
+      isCable: boolean;
+      edgeAlpha: number;
+    }
+    const edgeGeos: EdgeGeo[] = [];
+    const allEdgeSegments: [number, number][][][] = []; // segments per edge for crossing detection
+
     for (const edge of edges) {
       const source = instances.find((i) => i.id === edge.sourceInstanceId);
       const target = instances.find((i) => i.id === edge.targetInstanceId);
-      if (!source || !target) continue;
+      if (!source || !target) { allEdgeSegments.push([]); continue; }
 
       const sourceComp = componentMap[source.componentId];
       const targetComp = componentMap[target.componentId];
@@ -451,7 +511,6 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
       const sPosLocal = sourcePin ? getPinNodePos(sourcePin, sVisX, sVisY, sourceBounds, sNw, sNh) : { x: sVisX + sNw / 2, y: sVisY + sThumbH / 2 };
       const tPosLocal = targetPin ? getPinNodePos(targetPin, tVisX, tVisY, targetBounds, tNw, tNh) : { x: tVisX + tNw / 2, y: tVisY + tThumbH / 2 };
 
-      // Apply instance transforms to pin positions
       const sTr = getInstanceTransform(source.instanceData);
       const tTr = getInstanceTransform(target.instanceData);
       const sCx = sVisX + sNw / 2;
@@ -461,44 +520,123 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
       const sPos = transformPoint(sPosLocal.x, sPosLocal.y, sCx, sCy, sTr.rotation, sTr.flipH, sTr.flipV);
       const tPos = transformPoint(tPosLocal.x, tPosLocal.y, tCx, tCy, tTr.rotation, tTr.flipH, tTr.flipV);
 
-      const sx = sPos.x;
-      const sy = sPos.y;
-      const tx = tPos.x;
-      const ty = tPos.y;
-
+      const sx = sPos.x, sy = sPos.y, tx = tPos.x, ty = tPos.y;
+      const lt = edge.lineType ?? 'straight';
       const isSelected = edge.id === selectedEdgeId;
       const lineData = lineDataMap[edge.id];
-
-      // Determine line color based on wire ownership
       let edgeColor = EDGE_COLOR;
-      if (lineData?.wireOwnership === 'user') {
-        edgeColor = 'rgb(85,48,217)';
-      } else if (lineData?.wireOwnership === 'public') {
-        edgeColor = '#000000';
-      }
+      if (lineData?.wireOwnership === 'user') edgeColor = 'rgb(85,48,217)';
+      else if (lineData?.wireOwnership === 'public') edgeColor = '#000000';
       if (isSelected) edgeColor = EDGE_SELECTED_COLOR;
-
-      // Determine line style based on wire type
       const isCable = lineData?.wireType === 'cable';
+      const edgeAlpha = (lineData?.isMainDisplay ?? true) ? 1 : 0.5;
 
-      // Determine opacity based on isMainDisplay
-      const isMainDisplay = lineData?.isMainDisplay ?? true;
-      const edgeAlpha = isMainDisplay ? 1 : 0.5;
+      const geo: EdgeGeo = { edge, sx, sy, tx, ty, lt, isSelected, edgeColor, isCable, edgeAlpha };
+      let segs: [number, number][][] = [];
 
+      if (lt === 'curve') {
+        const dx = tx - sx, dy = ty - sy;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        const offset = len * 0.2;
+        const cp1x = sx + dx * 0.25 + (dy !== 0 ? offset * (dy > 0 ? 1 : -1) * 0.5 : offset);
+        const cp1y = sy + dy * 0.25 - (dx !== 0 ? offset * (dx > 0 ? 1 : -1) * 0.5 : offset * 0.5);
+        const cp2x = sx + dx * 0.75 + (dy !== 0 ? offset * (dy > 0 ? 1 : -1) * 0.3 : offset * 0.5);
+        const cp2y = sy + dy * 0.75 - (dx !== 0 ? offset * (dx > 0 ? 1 : -1) * 0.3 : offset * 0.3);
+        geo.curveCP = { cp1x, cp1y, cp2x, cp2y };
+        segs = sampleBezierToSegments(sx, sy, cp1x, cp1y, cp2x, cp2y, tx, ty, 24);
+        // Store sampled points for drawing (matches segment indices used in crossing detection)
+        const curvePts: number[][] = [];
+        for (let i = 0; i <= 24; i++) {
+          const t = i / 24;
+          const t2 = 1 - t;
+          curvePts.push([
+            t2*t2*t2*sx + 3*t2*t2*t*cp1x + 3*t2*t*t*cp2x + t*t*t*tx,
+            t2*t2*t2*sy + 3*t2*t2*t*cp1y + 3*t2*t*t*cp2y + t*t*t*ty,
+          ]);
+        }
+        geo.curvePts = curvePts;
+      } else if (isPolyline(lt)) {
+        const ratio = edge.polylineMidRatio ?? 0.5;
+        const pts = getPolylinePoints(sx, sy, tx, ty, lt, ratio);
+        geo.polyPts = pts;
+        for (let i = 0; i < pts.length - 1; i++) {
+          segs.push([[pts[i][0], pts[i][1]], [pts[i + 1][0], pts[i + 1][1]]]);
+        }
+      } else {
+        segs = [[[sx, sy], [tx, ty]]];
+      }
+
+      edgeGeos.push(geo);
+      allEdgeSegments.push(segs);
+    }
+
+    // Phase 2: compute crossings
+    const crossingMap = computeEdgeCrossings(allEdgeSegments);
+
+    // Phase 3: draw edges with bridge arcs
+    for (let ei = 0; ei < edgeGeos.length; ei++) {
+      const g = edgeGeos[ei];
       ctx.save();
-      ctx.globalAlpha = edgeAlpha;
-      ctx.strokeStyle = edgeColor;
-      ctx.lineWidth = isSelected ? 3 / zoom : 2 / zoom;
-      if (isCable) {
-        ctx.setLineDash([8 / zoom, 4 / zoom]);
-      }
+      ctx.globalAlpha = g.edgeAlpha;
+      ctx.strokeStyle = g.edgeColor;
+      ctx.lineWidth = g.isSelected ? 3 / zoom : 2 / zoom;
+      if (g.isCable) ctx.setLineDash([8 / zoom, 4 / zoom]);
       ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.lineTo(tx, ty);
-      ctx.stroke();
-      if (isCable) {
-        ctx.setLineDash([]);
+      const crs = crossingMap.get(ei);
+      const bridgeR = 8 / zoom;
+
+      if (g.lt === 'curve') {
+        if (crs && crs.length > 0) {
+          // Reuse pre-sampled points (indices match crossing detection)
+          const pts = g.curvePts!;
+          const segCrossings = new Map<number, CrossingInfo[]>();
+          for (const c of crs) {
+            let list = segCrossings.get(c.segIdx);
+            if (!list) { list = []; segCrossings.set(c.segIdx, list); }
+            list.push(c);
+          }
+          ctx.moveTo(pts[0][0], pts[0][1]);
+          drawPathWithBridges(ctx, pts, segCrossings, bridgeR);
+        } else {
+          const cp = g.curveCP!;
+          ctx.moveTo(g.sx, g.sy);
+          ctx.bezierCurveTo(cp.cp1x, cp.cp1y, cp.cp2x, cp.cp2y, g.tx, g.ty);
+        }
+        ctx.stroke();
+      } else if (g.polyPts) {
+        // Polyline: draw with bridges using shared utility
+        ctx.moveTo(g.polyPts[0][0], g.polyPts[0][1]);
+        if (crs && crs.length > 0) {
+          const segCrossings = new Map<number, CrossingInfo[]>();
+          for (const c of crs) {
+            let list = segCrossings.get(c.segIdx);
+            if (!list) { list = []; segCrossings.set(c.segIdx, list); }
+            list.push(c);
+          }
+          drawPathWithBridges(ctx, g.polyPts, segCrossings, bridgeR);
+        } else {
+          for (let i = 1; i < g.polyPts.length; i++) ctx.lineTo(g.polyPts[i][0], g.polyPts[i][1]);
+        }
+        ctx.stroke();
+      } else {
+        // Straight line
+        if (crs && crs.length > 0) {
+          const pts = [[g.sx, g.sy], [g.tx, g.ty]];
+          const segCrossings = new Map<number, CrossingInfo[]>();
+          for (const c of crs) {
+            let list = segCrossings.get(c.segIdx);
+            if (!list) { list = []; segCrossings.set(c.segIdx, list); }
+            list.push(c);
+          }
+          ctx.moveTo(pts[0][0], pts[0][1]);
+          drawPathWithBridges(ctx, pts, segCrossings, bridgeR);
+        } else {
+          ctx.moveTo(g.sx, g.sy);
+          ctx.lineTo(g.tx, g.ty);
+        }
+        ctx.stroke();
       }
+      if (g.isCable) ctx.setLineDash([]);
       ctx.restore();
     }
 
@@ -558,7 +696,8 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
           ctx.translate(-bounds.left, -bounds.top);
 
           for (const s of shapes) {
-            drawShapeOnCanvas(ctx, s);
+            const resolved = resolveDiagramShape(s, componentConnections, inst.componentId);
+            drawShapeOnCanvas(ctx, resolved);
           }
 
           ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -822,8 +961,21 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
           const sPos = getTransformedPinPos(sourcePin, source.positionX + sPo.dx, source.positionY + sPo.dy, sourceComp?.displayWidth ?? NODE_WIDTH, sourceComp?.displayHeight ?? NODE_HEIGHT, sourceBounds, source.instanceData);
           const tPos = getTransformedPinPos(targetPin, target.positionX + tPo.dx, target.positionY + tPo.dy, targetComp?.displayWidth ?? NODE_WIDTH, targetComp?.displayHeight ?? NODE_HEIGHT, targetBounds, target.instanceData);
 
-          const midX = (sPos.x + tPos.x) / 2;
-          const midY = (sPos.y + tPos.y) / 2;
+          const lt = hoveredEdge.lineType ?? 'straight';
+          let midX: number, midY: number;
+          if (isPolyline(lt)) {
+            const ratio = hoveredEdge.polylineMidRatio ?? 0.5;
+            const pts = getPolylinePoints(sPos.x, sPos.y, tPos.x, tPos.y, lt, ratio);
+            midX = pts[1][0];
+            midY = pts[1][1];
+          } else if (lt === 'curve') {
+            const mid = getEdgeMidpoint(hoveredEdgeId);
+            midX = mid!.x;
+            midY = mid!.y;
+          } else {
+            midX = (sPos.x + tPos.x) / 2;
+            midY = (sPos.y + tPos.y) / 2;
+          }
           const btnR = 10 / zoom;
 
           // Circle background
@@ -1156,19 +1308,59 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
         const tx = tPos.x;
         const ty = tPos.y;
 
-        // Distance from point to line segment
-        const dx = tx - sx;
-        const dy = ty - sy;
-        const lenSq = dx * dx + dy * dy;
-        if (lenSq === 0) continue;
+        const lt = edge.lineType ?? 'straight';
+        let minDist = Infinity;
 
-        let t = ((worldX - sx) * dx + (worldY - sy) * dy) / lenSq;
-        t = Math.max(0, Math.min(1, t));
-        const closestX = sx + t * dx;
-        const closestY = sy + t * dy;
-        const dist = Math.sqrt((worldX - closestX) ** 2 + (worldY - closestY) ** 2);
+        if (lt === 'curve') {
+          // Sample bezier curve points
+          const dx = tx - sx;
+          const dy = ty - sy;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          const offset = len * 0.2;
+          const cp1x = sx + dx * 0.25 + (dy !== 0 ? offset * (dy > 0 ? 1 : -1) * 0.5 : offset);
+          const cp1y = sy + dy * 0.25 - (dx !== 0 ? offset * (dx > 0 ? 1 : -1) * 0.5 : offset * 0.5);
+          const cp2x = sx + dx * 0.75 + (dy !== 0 ? offset * (dy > 0 ? 1 : -1) * 0.3 : offset * 0.5);
+          const cp2y = sy + dy * 0.75 - (dx !== 0 ? offset * (dx > 0 ? 1 : -1) * 0.3 : offset * 0.3);
+          for (let i = 0; i <= 20; i++) {
+            const t2 = i / 20;
+            const mt = 1 - t2;
+            const px = mt*mt*mt*sx + 3*mt*mt*t2*cp1x + 3*mt*t2*t2*cp2x + t2*t2*t2*tx;
+            const py = mt*mt*mt*sy + 3*mt*mt*t2*cp1y + 3*mt*t2*t2*cp2y + t2*t2*t2*ty;
+            const d = Math.sqrt((worldX - px) ** 2 + (worldY - py) ** 2);
+            if (d < minDist) minDist = d;
+          }
+        } else if (isPolyline(lt)) {
+          const ratio = edge.polylineMidRatio ?? 0.5;
+          const pts = getPolylinePoints(sx, sy, tx, ty, lt, ratio);
+          for (let i = 0; i < pts.length - 1; i++) {
+            const [ax, ay] = pts[i];
+            const [bx, by] = pts[i + 1];
+            const ddx = bx - ax;
+            const ddy = by - ay;
+            const lenSq2 = ddx * ddx + ddy * ddy;
+            if (lenSq2 === 0) continue;
+            let tt = ((worldX - ax) * ddx + (worldY - ay) * ddy) / lenSq2;
+            tt = Math.max(0, Math.min(1, tt));
+            const cx = ax + tt * ddx;
+            const cy = ay + tt * ddy;
+            const d = Math.sqrt((worldX - cx) ** 2 + (worldY - cy) ** 2);
+            if (d < minDist) minDist = d;
+          }
+        } else {
+          // Straight line
+          const ddx = tx - sx;
+          const ddy = ty - sy;
+          const lenSq2 = ddx * ddx + ddy * ddy;
+          if (lenSq2 > 0) {
+            let tt = ((worldX - sx) * ddx + (worldY - sy) * ddy) / lenSq2;
+            tt = Math.max(0, Math.min(1, tt));
+            const cx = sx + tt * ddx;
+            const cy = sy + tt * ddy;
+            minDist = Math.sqrt((worldX - cx) ** 2 + (worldY - cy) ** 2);
+          }
+        }
 
-        if (dist < threshold) {
+        if (minDist < threshold) {
           return edge.id;
         }
       }
@@ -1241,7 +1433,26 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
       const tPo = pushOffsetsRef.current[target.id] ?? { dx: 0, dy: 0 };
       const sPos = getTransformedPinPos(sourcePin, source.positionX + sPo.dx, source.positionY + sPo.dy, sourceComp?.displayWidth ?? NODE_WIDTH, sourceComp?.displayHeight ?? NODE_HEIGHT, sourceBounds, source.instanceData);
       const tPos = getTransformedPinPos(targetPin, target.positionX + tPo.dx, target.positionY + tPo.dy, targetComp?.displayWidth ?? NODE_WIDTH, targetComp?.displayHeight ?? NODE_HEIGHT, targetBounds, target.instanceData);
-      return { x: (sPos.x + tPos.x) / 2, y: (sPos.y + tPos.y) / 2 };
+      const sx = sPos.x, sy = sPos.y, tx = tPos.x, ty = tPos.y;
+      const lt = edge.lineType ?? 'straight';
+      if (lt === 'curve') {
+        const dx = tx - sx, dy = ty - sy;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        const offset = len * 0.2;
+        const cp1x = sx + dx * 0.25 + (dy !== 0 ? offset * (dy > 0 ? 1 : -1) * 0.5 : offset);
+        const cp1y = sy + dy * 0.25 - (dx !== 0 ? offset * (dx > 0 ? 1 : -1) * 0.5 : offset * 0.5);
+        const cp2x = sx + dx * 0.75 + (dy !== 0 ? offset * (dy > 0 ? 1 : -1) * 0.3 : offset * 0.5);
+        const cp2y = sy + dy * 0.75 - (dx !== 0 ? offset * (dx > 0 ? 1 : -1) * 0.3 : offset * 0.3);
+        const mt = 0.5, t2 = 0.5;
+        const mx = mt*mt*mt*sx + 3*mt*mt*t2*cp1x + 3*mt*t2*t2*cp2x + t2*t2*t2*tx;
+        const my = mt*mt*mt*sy + 3*mt*mt*t2*cp1y + 3*mt*t2*t2*cp2y + t2*t2*t2*ty;
+        return { x: mx, y: my };
+      } else if (isPolyline(lt)) {
+        const ratio = edge.polylineMidRatio ?? 0.5;
+        const pts = getPolylinePoints(sx, sy, tx, ty, lt, ratio);
+        return { x: pts[1][0], y: pts[1][1] };
+      }
+      return { x: (sx + tx) / 2, y: (sy + ty) / 2 };
     },
     [edges, instances, componentMap],
   );
@@ -1280,6 +1491,50 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
             onRemoveEdge(hoveredEdgeId);
             setHoveredEdgeId(null);
             return;
+          }
+        }
+      }
+
+      // Check polyline segment drag start
+      if (hoveredEdgeId) {
+        const edge = edges.find((e) => e.id === hoveredEdgeId);
+        if (edge && isPolyline(edge.lineType ?? 'straight')) {
+          const source = instances.find((i) => i.id === edge.sourceInstanceId);
+          const target = instances.find((i) => i.id === edge.targetInstanceId);
+          if (source && target) {
+            const sourceComp = componentMap[source.componentId];
+            const targetComp = componentMap[target.componentId];
+            const sourceBounds = sourceComp?.shapeElements?.length ? computeShapesBounds(sourceComp.shapeElements) : null;
+            const targetBounds = targetComp?.shapeElements?.length ? computeShapesBounds(targetComp.shapeElements) : null;
+            const sourcePin = getPinsForInstance(source).find(p => p.id === edge.sourcePinId) || sourceComp?.pins?.find(p => p.id === edge.sourcePinId);
+            const targetPin = getPinsForInstance(target).find(p => p.id === edge.targetPinId) || targetComp?.pins?.find(p => p.id === edge.targetPinId);
+            const sPo = pushOffsetsRef.current[source.id] ?? { dx: 0, dy: 0 };
+            const tPo = pushOffsetsRef.current[target.id] ?? { dx: 0, dy: 0 };
+            const sPos = getTransformedPinPos(sourcePin, source.positionX + sPo.dx, source.positionY + sPo.dy, sourceComp?.displayWidth ?? NODE_WIDTH, sourceComp?.displayHeight ?? NODE_HEIGHT, sourceBounds, source.instanceData);
+            const tPos = getTransformedPinPos(targetPin, target.positionX + tPo.dx, target.positionY + tPo.dy, targetComp?.displayWidth ?? NODE_WIDTH, targetComp?.displayHeight ?? NODE_HEIGHT, targetBounds, target.instanceData);
+            const ssx = sPos.x, ssy = sPos.y, ttx = tPos.x, tty = tPos.y;
+            const lt = edge.lineType ?? 'straight';
+            const ratio = edge.polylineMidRatio ?? 0.5;
+            const pts = getPolylinePoints(ssx, ssy, ttx, tty, lt, ratio);
+            // Middle segment: pts[1] → pts[2]
+            const midSegA = pts[1], midSegB = pts[2];
+            if (isPolylineHVH(lt)) {
+              // Vertical middle segment — detect by x proximity
+              const distToSeg = Math.abs(world.x - midSegA[0]);
+              if (distToSeg < 8 / zoom && world.y >= Math.min(midSegA[1], midSegB[1]) - 4 / zoom && world.y <= Math.max(midSegA[1], midSegB[1]) + 4 / zoom) {
+                polylineDragRef.current = { edgeId: edge.id, startRatio: ratio, startMouseX: world.x, startMouseY: world.y, sx: ssx, tx: ttx, sy: ssy, ty: tty, axis: 'x' };
+                setCursorMode('col-resize');
+                return;
+              }
+            } else {
+              // Horizontal middle segment — detect by y proximity
+              const distToSeg = Math.abs(world.y - midSegA[1]);
+              if (distToSeg < 8 / zoom && world.x >= Math.min(midSegA[0], midSegB[0]) - 4 / zoom && world.x <= Math.max(midSegA[0], midSegB[0]) + 4 / zoom) {
+                polylineDragRef.current = { edgeId: edge.id, startRatio: ratio, startMouseX: world.x, startMouseY: world.y, sx: ssx, tx: ttx, sy: ssy, ty: tty, axis: 'y' };
+                setCursorMode('row-resize');
+                return;
+              }
+            }
           }
         }
       }
@@ -1426,11 +1681,79 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
         requestDraw();
       }
 
+      // Polyline segment drag
+      if (polylineDragRef.current) {
+        const pd = polylineDragRef.current;
+        if (pd.axis === 'x') {
+          const dx = world.x - pd.startMouseX;
+          const totalW = pd.tx - pd.sx;
+          if (Math.abs(totalW) > 1) {
+            let newRatio = pd.startRatio + dx / totalW;
+            newRatio = Math.max(0.05, Math.min(0.95, newRatio));
+            const store = useDiagramStore.getState();
+            store._setEdgePolylineMidRatio(pd.edgeId, newRatio);
+          }
+        } else {
+          const dy = world.y - pd.startMouseY;
+          const totalH = pd.ty - pd.sy;
+          if (Math.abs(totalH) > 1) {
+            let newRatio = pd.startRatio + dy / totalH;
+            newRatio = Math.max(0.05, Math.min(0.95, newRatio));
+            const store = useDiagramStore.getState();
+            store._setEdgePolylineMidRatio(pd.edgeId, newRatio);
+          }
+        }
+        requestDraw();
+        return;
+      }
+
       // Hover edge detection for delete button
-      if (!connectingFromPinRef.current && !panRef.current && !dragRef.current) {
+      if (!connectingFromPinRef.current && !panRef.current && !dragRef.current && !polylineDragRef.current) {
         const hitEdge = hitTestEdge(world.x, world.y);
         if (hitEdge !== hoveredEdgeId) {
           setHoveredEdgeId(hitEdge);
+        }
+        // Check if hovering over a polyline middle segment
+        if (hitEdge) {
+          const edge = edges.find((e) => e.id === hitEdge);
+          const lt = edge?.lineType ?? 'straight';
+          if (edge && isPolyline(lt)) {
+            const source = instances.find((i) => i.id === edge.sourceInstanceId);
+            const target = instances.find((i) => i.id === edge.targetInstanceId);
+            if (source && target) {
+              const sourceComp = componentMap[source.componentId];
+              const targetComp = componentMap[target.componentId];
+              const sourceBounds = sourceComp?.shapeElements?.length ? computeShapesBounds(sourceComp.shapeElements) : null;
+              const targetBounds = targetComp?.shapeElements?.length ? computeShapesBounds(targetComp.shapeElements) : null;
+              const sourcePin = getPinsForInstance(source).find(p => p.id === edge.sourcePinId) || sourceComp?.pins?.find(p => p.id === edge.sourcePinId);
+              const targetPin = getPinsForInstance(target).find(p => p.id === edge.targetPinId) || targetComp?.pins?.find(p => p.id === edge.targetPinId);
+              const sPo = pushOffsetsRef.current[source.id] ?? { dx: 0, dy: 0 };
+              const tPo = pushOffsetsRef.current[target.id] ?? { dx: 0, dy: 0 };
+              const sPos = getTransformedPinPos(sourcePin, source.positionX + sPo.dx, source.positionY + sPo.dy, sourceComp?.displayWidth ?? NODE_WIDTH, sourceComp?.displayHeight ?? NODE_HEIGHT, sourceBounds, source.instanceData);
+              const tPos = getTransformedPinPos(targetPin, target.positionX + tPo.dx, target.positionY + tPo.dy, targetComp?.displayWidth ?? NODE_WIDTH, targetComp?.displayHeight ?? NODE_HEIGHT, targetBounds, target.instanceData);
+              const ratio = edge.polylineMidRatio ?? 0.5;
+              const pts = getPolylinePoints(sPos.x, sPos.y, tPos.x, tPos.y, lt, ratio);
+              // pts[1] and pts[2] form the middle segment
+              const mx1 = pts[1][0], my1 = pts[1][1], mx2 = pts[2][0], my2 = pts[2][1];
+              if (isPolylineHVH(lt)) {
+                // Vertical middle segment: check X proximity
+                if (Math.abs(world.x - mx1) < 8 / zoom && world.y >= Math.min(my1, my2) - 4 / zoom && world.y <= Math.max(my1, my2) + 4 / zoom) {
+                  setCursorMode('col-resize');
+                } else if (cursorMode === 'col-resize' || cursorMode === 'row-resize') {
+                  setCursorMode('default');
+                }
+              } else {
+                // Horizontal middle segment: check Y proximity
+                if (Math.abs(world.y - my1) < 8 / zoom && world.x >= Math.min(mx1, mx2) - 4 / zoom && world.x <= Math.max(mx1, mx2) + 4 / zoom) {
+                  setCursorMode('row-resize');
+                } else if (cursorMode === 'col-resize' || cursorMode === 'row-resize') {
+                  setCursorMode('default');
+                }
+              }
+            }
+          }
+        } else if (cursorMode === 'col-resize' || cursorMode === 'row-resize') {
+          setCursorMode('default');
         }
       }
 
@@ -1579,6 +1902,20 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
       if (panRef.current) {
         panRef.current = null;
         setCursorMode('default');
+        return;
+      }
+
+      // End polyline drag — persist final ratio
+      if (polylineDragRef.current) {
+        const pd = polylineDragRef.current;
+        const store = useDiagramStore.getState();
+        const edge = store.edges.find((e) => e.id === pd.edgeId);
+        if (edge && edge.polylineMidRatio != null) {
+          store.updateEdgePolylineMidRatio(pd.edgeId, edge.polylineMidRatio);
+        }
+        polylineDragRef.current = null;
+        setCursorMode('default');
+        requestDraw();
         return;
       }
 

@@ -1,6 +1,6 @@
 ﻿import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import type { ToolMode, Viewport, ShapeElement, Pin } from '../types';
+import type { ToolMode, Viewport, ShapeElement, Pin, Connection } from '../types';
 
 interface CanvasStore {
   viewport: Viewport;
@@ -8,6 +8,9 @@ interface CanvasStore {
   selectedPinId: string | null;
   selectedPinIds: string[];
   selectedConnectionId: string | null;
+  wireEditState: 'closed' | 'open';
+  wireEditingShapeId: string | null;
+  wireStateEditing: boolean;
   selectedShapeIds: string[];
   flashedShapeIds: string[];
   flashNonce: number;
@@ -15,7 +18,7 @@ interface CanvasStore {
   groupEditingGroupId: string | null;
 
   // Clipboard
-  clipboard: { shapes: ShapeElement[]; pins: Pin[] };
+  clipboard: { shapes: ShapeElement[]; pins: Pin[]; connections: Connection[] };
 
   // Drawing defaults
   defaultFill: string;
@@ -29,10 +32,14 @@ interface CanvasStore {
   setActiveTool: (tool: ToolMode) => void;
   selectPin: (id: string | null, multi?: boolean) => void;
   selectConnection: (id: string | null) => void;
+  setWireEditState: (s: 'closed' | 'open') => void;
+  setWireEditingShapeId: (id: string | null) => void;
+  enterWireStateEditing: () => void;
+  exitWireStateEditing: () => void;
   selectShape: (id: string | null, multi?: boolean) => void;
   selectMany: (shapeIds: string[], pinIds: string[]) => void;
   clearSelection: () => void;
-  setClipboard: (clip: { shapes: ShapeElement[]; pins: Pin[] }) => void;
+  setClipboard: (clip: { shapes: ShapeElement[]; pins: Pin[]; connections: Connection[] }) => void;
   setDefaultFill: (color: string) => void;
   setDefaultStroke: (color: string) => void;
   setDefaultStrokeWidth: (w: number) => void;
@@ -57,12 +64,15 @@ export const useCanvasStore = create<CanvasStore>()(
     selectedPinId: null,
     selectedPinIds: [],
     selectedConnectionId: null,
+    wireEditState: 'closed' as const,
+    wireEditingShapeId: null,
+    wireStateEditing: false,
     selectedShapeIds: [],
     flashedShapeIds: [],
     flashNonce: 0,
     hoveredShapeIds: [],
     groupEditingGroupId: null,
-    clipboard: { shapes: [], pins: [] },
+    clipboard: { shapes: [], pins: [], connections: [] },
     defaultFill: 'transparent',
     defaultStroke: '#000000',
     defaultStrokeWidth: 5,
@@ -98,6 +108,12 @@ export const useCanvasStore = create<CanvasStore>()(
         state.selectedPinIds = [];
         state.selectedPinId = null;
         state.groupEditingGroupId = null;
+        if (tool !== 'wire') {
+          state.selectedConnectionId = null;
+          state.wireEditState = 'closed';
+          state.wireEditingShapeId = null;
+          state.wireStateEditing = false;
+        }
       });
     },
 
@@ -127,6 +143,43 @@ export const useCanvasStore = create<CanvasStore>()(
     selectConnection: (id) => {
       set((state) => {
         state.selectedConnectionId = id;
+        if (!id) { state.wireEditState = 'closed'; state.wireEditingShapeId = null; }
+      });
+    },
+
+    setWireEditState: (s) => {
+      set((state) => { state.wireEditState = s; });
+    },
+
+    setWireEditingShapeId: (id) => {
+      set((state) => {
+        state.wireEditingShapeId = id;
+        // Sync to selectedShapeIds so PropertyPanel shows shape properties
+        if (id) {
+          state.selectedShapeIds = [id];
+        } else if (state.activeTool === 'wire') {
+          // In wire mode, clear shape selection when exiting shape edit
+          state.selectedShapeIds = [];
+        }
+      });
+    },
+
+    enterWireStateEditing: () => {
+      set((state) => {
+        state.wireStateEditing = true;
+        state.wireEditState = 'closed';
+        state.selectedShapeIds = [];
+        state.wireEditingShapeId = null;
+      });
+    },
+
+    exitWireStateEditing: () => {
+      set((state) => {
+        state.wireStateEditing = false;
+        state.selectedConnectionId = null;
+        state.wireEditState = 'closed';
+        state.wireEditingShapeId = null;
+        state.selectedShapeIds = [];
       });
     },
 

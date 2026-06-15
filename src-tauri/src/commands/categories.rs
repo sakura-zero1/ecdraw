@@ -95,6 +95,21 @@ pub async fn delete_category(
     Ok(())
 }
 
+/// PATCH /api/categories/:id/rename
+#[tauri::command]
+pub async fn rename_category(
+    state: State<'_, AppState>,
+    token: String,
+    id: String,
+    new_label: String,
+) -> Result<ComponentCategory, AppError> {
+    let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
+    middleware::require_role(&claims, &["ADMIN", "COMPONENT_EDITOR", "DIAGRAM_EDITOR"])?;
+
+    let cat = ecdraw_core::logic::category_logic::rename_category(&state.pool, &id, &new_label).await?;
+    Ok(cat)
+}
+
 /// PATCH /api/categories/:id/visibility
 #[tauri::command]
 pub async fn update_category_visibility(

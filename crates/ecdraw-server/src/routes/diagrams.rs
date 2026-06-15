@@ -61,6 +61,22 @@ pub struct CreateEdgeBody {
     source_pin_id: String,
     #[serde(alias = "targetPinId")]
     target_pin_id: String,
+    #[serde(default)]
+    line_type: Option<String>,
+    #[serde(alias = "polylineMidRatio")]
+    polyline_mid_ratio: Option<f64>,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateEdgeLineTypeBody {
+    #[serde(alias = "lineType")]
+    line_type: String,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateEdgePolylineMidRatioBody {
+    #[serde(alias = "polylineMidRatio")]
+    polyline_mid_ratio: f64,
 }
 
 fn to_uuid(s: &str, label: &str) -> Result<Uuid, ecdraw_core::error::AppError> {
@@ -201,7 +217,25 @@ async fn create_edge(State(state): State<AppState>, AuthClaims(claims): AuthClai
     let diagram_id = to_uuid(&id, "图纸ID")?;
     let source_id = to_uuid(&body.source_instance_id, "源实例ID")?;
     let target_id = to_uuid(&body.target_instance_id, "目标实例ID")?;
-    let result = diagram_logic::create_diagram_edge(&state.pool, &claims.roles, user_id, diagram_id, source_id, target_id, &body.source_pin_id, &body.target_pin_id).await?;
+    let result = diagram_logic::create_diagram_edge(&state.pool, &claims.roles, user_id, diagram_id, source_id, target_id, &body.source_pin_id, &body.target_pin_id, body.line_type.as_deref(), body.polyline_mid_ratio).await?;
+    Ok(Json(result))
+}
+
+async fn update_edge_polyline_mid_ratio(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path((diagram_id, edge_id)): Path<(String, String)>, Json(body): Json<UpdateEdgePolylineMidRatioBody>) -> Result<Json<DiagramEdge>, ecdraw_core::error::AppError> {
+    middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
+    let user_id: Uuid = claims.sub.parse().unwrap();
+    let did = to_uuid(&diagram_id, "图纸ID")?;
+    let eid = to_uuid(&edge_id, "边ID")?;
+    let result = diagram_logic::update_diagram_edge_polyline_mid_ratio(&state.pool, &claims.roles, user_id, did, eid, body.polyline_mid_ratio).await?;
+    Ok(Json(result))
+}
+
+async fn update_edge_line_type(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path((diagram_id, edge_id)): Path<(String, String)>, Json(body): Json<UpdateEdgeLineTypeBody>) -> Result<Json<DiagramEdge>, ecdraw_core::error::AppError> {
+    middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
+    let user_id: Uuid = claims.sub.parse().unwrap();
+    let did = to_uuid(&diagram_id, "图纸ID")?;
+    let eid = to_uuid(&edge_id, "边ID")?;
+    let result = diagram_logic::update_diagram_edge_line_type(&state.pool, &claims.roles, user_id, did, eid, &body.line_type).await?;
     Ok(Json(result))
 }
 
@@ -263,7 +297,8 @@ pub fn routes() -> Router<AppState> {
         .route("/{id}/instances", post(create_instance))
         .route("/{id}/instances/{instanceId}", patch(update_instance).delete(delete_instance))
         .route("/{id}/edges", post(create_edge))
-        .route("/{id}/edges/{edgeId}", delete(delete_edge))
+        .route("/{id}/edges/{edgeId}", delete(delete_edge).patch(update_edge_line_type))
+        .route("/{id}/edges/{edgeId}/polyline-mid-ratio", patch(update_edge_polyline_mid_ratio))
         .route("/{id}/versions", get(list_versions))
         .route("/{id}/versions/{versionId}/topology", get(get_version_topology))
         .route("/{id}/versions/{versionId}", delete(delete_version))

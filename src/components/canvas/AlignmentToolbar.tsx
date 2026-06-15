@@ -16,7 +16,7 @@ const ALIGN_BUTTONS: { mode: AlignMode; icon: string; label: string }[] = [
 export default function AlignmentToolbar() {
   const selectedShapeIds = useCanvasStore((s) => s.selectedShapeIds);
   const groupEditingGroupId = useCanvasStore((s) => s.groupEditingGroupId);
-  const { activeComponentId, getComponent, updateShapeElement, pushUndo } = useComponentStore();
+  const { activeComponentId, getComponent, updateShapeElement, updatePin, pushUndo } = useComponentStore();
 
   if (!activeComponentId) return null;
 
@@ -31,9 +31,19 @@ export default function AlignmentToolbar() {
 
   const handleAlign = (mode: AlignMode) => {
     pushUndo();
-    const updates = computeAlignmentByGroup(selectedShapes, mode);
-    for (const [id, partial] of updates) {
+    const { shapeUpdates, groupOffsets } = computeAlignmentByGroup(selectedShapes, mode);
+    for (const [id, partial] of shapeUpdates) {
       updateShapeElement(activeComponentId, id, partial);
+    }
+    // Move pins that belong to the aligned groups
+    for (const pin of comp.pins) {
+      if (!pin.groupId) continue;
+      const offset = groupOffsets.get(pin.groupId);
+      if (offset) {
+        updatePin(activeComponentId, pin.id, {
+          position: { x: pin.position.x + offset.dx, y: pin.position.y + offset.dy },
+        });
+      }
     }
   };
 

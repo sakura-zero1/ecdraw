@@ -18,9 +18,13 @@ pnpm tauri dev                 # Tauri 开发模式（启动 Rust 后端 + Vite 
 pnpm tauri build               # Tauri 生产构建（打包桌面应用）
 pnpm build                     # 仅前端构建 (tsc -b && vite build)
 pnpm lint                      # ESLint
-cargo check                    # 仅检查 Rust 编译（在 src-tauri/ 目录下）
-cargo build                    # 编译 Rust（在 src-tauri/ 目录下）
+cargo check --workspace        # 检查全部 Rust crate 编译（工作区根目录）
+cargo check -p ecdraw          # 仅检查 Tauri 侧
+cargo check -p ecdraw-server   # 仅检查 HTTP Server 侧
+cargo build                    # 编译 Rust（工作区根目录）
 ```
+
+> Cargo 工作区含 3 个成员：`crates/ecdraw-core`、`crates/ecdraw-server`、`src-tauri`（见 `Cargo.toml`）。
 
 ## 技术栈
 
@@ -32,16 +36,35 @@ cargo build                    # 编译 Rust（在 src-tauri/ 目录下）
 
 ## 架构
 
-### Rust 后端 (`src-tauri/src/`)
+项目是一个 Cargo 工作区，分为 3 个 crate。**业务逻辑、模型、认证基础设施全部集中在 `ecdraw-core`**，Tauri 与 HTTP Server 仅作薄封装（详见文末「双模式联动规则」）。
+
+### 核心库 `crates/ecdraw-core/src/`（唯一真相源）
+
+| 文件/目录 | 职责 |
+|---|---|
+| `lib.rs` | 导出各模块 + 定义共享 `AppState`（Tauri 与 axum 共用） |
+| `db.rs` | 数据库连接池 + 自动建库 + `sqlx::migrate!("./migrations")`（迁移文件在本 crate） |
+| `auth.rs` | JWT 签发/验证 + bcrypt 密码哈希 |
+| `error.rs` | AppError 统一错误类型（Auth/NotFound/Forbidden/BadRequest/Conflict/Database/Jwt/Bcrypt） |
+| `middleware.rs` | 认证守卫 `verify_auth()` + 角色检查 `require_role()` |
+| `logic/` | 13 个 `xxx_logic.rs` 纯业务函数（不含认证检查） |
+| `models/` | 数据模型（见下文） |
+
+### Tauri 应用 `src-tauri/src/`
 
 | 文件 | 职责 |
 |---|---|
 | `main.rs` | 桌面入口（Windows 隐藏控制台） |
-| `lib.rs` | App 构建器、命令注册（49 个命令）、启动时自动 seed admin |
-| `db.rs` | 数据库连接池 + SQLx 迁移 |
-| `auth.rs` | JWT 签发/验证 + bcrypt 密码哈希 |
-| `error.rs` | AppError 统一错误类型（Auth/NotFound/Forbidden/BadRequest/Conflict/Database/Jwt/Bcrypt） |
-| `middleware.rs` | 认证守卫 `verify_auth()` + 角色检查 `require_role()` |
+| `lib.rs` | App 构建器、命令注册（60 个命令，含 `exit_app`）、自动 seed admin、系统托盘、关闭即最小化到托盘 |
+| `commands/` | 各 `#[tauri::command]` 薄封装，调用 `ecdraw-core::logic` |
+
+### HTTP Server `crates/ecdraw-server/src/`
+
+| 文件 | 职责 |
+|---|---|
+| `main.rs` | axum 服务入口 |
+| `routes/` | 13 个路由模块薄封装（`/api/*`），调用 `ecdraw-core::logic` |
+| `extractors.rs` | `AuthClaims` 提取器（从 `Authorization` 头解析 JWT） |
 
 ### Rust 命令模块 (`src-tauri/src/commands/`)
 
@@ -50,7 +73,7 @@ cargo build                    # 编译 Rust（在 src-tauri/ 目录下）
 | `auth.rs` | `login`, `refresh_token` | 登录/刷新令牌 |
 | `users.rs` | `list_users`, `create_user`, `update_user` | 用户管理（ADMIN） |
 | `components.rs` | `list_components`, `get_component`, `create_component`, `update_component`, `delete_component`, `duplicate_component`, `list_component_versions`, `get_component_version`, `create_component_version` | 元件 CRUD + 版本管理 |
-| `diagrams.rs` | `list_diagrams`, `get_diagram`, `create_diagram`, `update_diagram`, `delete_diagram`, `duplicate_diagram`, `get_diagram_editor`, `get_diagram_topology`, `save_diagram`, `submit_diagram_review`, `withdraw_diagram_review`, `request_delete_diagram`, `create_diagram_instance`, `update_diagram_instance`, `delete_diagram_instance`, `create_diagram_edge`, `delete_diagram_edge` | 图纸 CRUD + 实例/边管理 + 审核流程 |
+| `diagrams.rs` | `list_diagrams`, `get_diagram`, `create_diagram`, `update_diagram`, `delete_diagram`, `duplicate_diagram`, `get_diagram_editor`, `get_diagram_topology`, `save_diagram`, `submit_diagram_review`, `withdraw_diagram_review`, `request_delete_diagram`, `create_diagram_instance`, `update_diagram_instance`, `delete_diagram_instance`, `create_diagram_edge`, `update_diagram_edge_line_type`, `update_diagram_edge_polyline_mid_ratio`, `delete_diagram_edge`, `list_diagram_versions`, `get_diagram_version_topology`, `delete_diagram_version` | 图纸 CRUD + 实例/边管理（含连线线型、折线中点比例）+ 审核流程 + 版本时间线 |
 | `districts.rs` | `list_districts_by_diagram`, `upsert_district`, `batch_upsert_districts` | 台区数据 |
 | `lines.rs` | `list_lines_by_diagram`, `upsert_line`, `batch_upsert_lines` | 线路台账 |
 | `gis.rs` | `list_gis_by_diagram`, `upsert_gis`, `batch_upsert_gis` | 地理信息 |
@@ -58,24 +81,35 @@ cargo build                    # 编译 Rust（在 src-tauri/ 目录下）
 | `audit.rs` | `list_audits` | 审计日志 |
 | `analysis.rs` | `outage_simulate`, `power_flow`(stub), `fault_analysis`(stub) | 停电模拟(BFS) + 潮流计算 |
 | `admin.rs` | `dashboard_stats` | 管理仪表盘 |
-| `categories.rs` | `list_categories`, `create_category`, `delete_category` | 元件分类 |
+| `categories.rs` | `list_categories`, `create_category`, `rename_category`, `delete_category`, `update_category_visibility` | 元件分类（增删改 + 可见性控制） |
 | `seed.rs` | `seed_admin` | 手动种子管理员 |
 
-### 数据模型 (`src-tauri/src/models/`)
+### 数据模型 (`crates/ecdraw-core/src/models/`)
 
-12 个模型（`src-tauri/migrations/20260507000001_initial_schema.sql`）：
-User, Component, ComponentVersion, Diagram, DiagramVersion, DiagramInstance, DiagramEdge, DistrictData, LineSegmentData, GisData, ReviewRequest, ComponentCategory, AuditLog
+13 个模型表：
+User, Component, ComponentVersion, ComponentCategory, Diagram, DiagramVersion, DiagramInstance, DiagramEdge, DistrictData, LineSegmentData, GisData, ReviewRequest, AuditLog
+（另有 `AuthUser` 等辅助 struct，非数据库表）
 
 所有 struct 均有 `#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]` 和 `#[serde(rename_all = "camelCase")]`。
 
+**迁移文件**位于 `crates/ecdraw-core/migrations/`（`db.rs` 的 `migrate!("./migrations")` 读取此目录），按时间顺序：
+1. `20260507000001_initial_schema.sql` — 初始 13 表
+2. `20260510000001_add_version_status.sql` — 版本状态字段
+3. `20260516000001_add_category_visible.sql` — 分类可见性
+4. `20260522000001_add_edge_line_type.sql` — 连线线型
+5. `20260522000002_add_polyline_mid_ratio.sql` — 折线中点比例
+
+> ⚠️ `src-tauri/migrations/` 是迁移前的过时残留（仅 3 个旧文件），**不再被使用**，勿在此添加迁移。
+
 ### 前端通信层
 
-- **`src/services/tauriClient.ts`** — 新的通信层，替代 `apiClient.ts`
-  - `tauriRequest<T>(command, args)` — 通用 invoke 封装
-  - 自动附加 token、401 自动刷新
+- **`src/services/unifiedClient.ts`** — 通信层入口（**业务代码统一从这里 import**）
+  - 根据 `VITE_API_MODE`（默认 `tauri`）在编译期切换底层实现，导出统一的 `request` / `login` / `logout` / `restoreSession` / `ensureAuth`
+- **`src/services/tauriClient.ts`** — Tauri invoke 实现
+  - `tauriRequest<T>(command, args)` — 通用 invoke 封装；自动附加 token、401 自动刷新
   - `ensureTauriAuth()` — 支持 `VITE_API_AUTO_LOGIN` 开发模式
-- **`src/services/apiClient.ts`** — 旧版 HTTP 通信层（已废弃，保留作参考）
-- 10 个 service 文件已全部适配 Tauri invoke
+- **`src/services/apiClient.ts`** — HTTP fetch 实现（`http` 模式下由 `unifiedClient` 选用）
+- 10 个领域 service 文件（`componentApi` / `diagramApi` / … ）封装各自命令调用
 
 ### 角色体系
 
@@ -90,7 +124,7 @@ User, Component, ComponentVersion, Diagram, DiagramVersion, DiagramInstance, Dia
 | GIS_EDITOR | `ROLE_GIS_EDITOR` | 地理信息维护 |
 | VIEWER | `ROLE_VIEWER` | 查询浏览 |
 
-### AppState 结构（Rust side）
+### AppState 结构（定义于 `crates/ecdraw-core/src/lib.rs`，Tauri 与 axum 共用）
 
 ```rust
 pub struct AppState {
@@ -136,7 +170,7 @@ pub struct AppState {
 - [x] Phase 1: 项目脚手架
 - [x] Phase 2: 数据层（SQLx 迁移 + 模型）
 - [x] Phase 3: 认证系统（JWT + bcrypt + 守卫）
-- [x] Phase 4: Rust 命令处理器（~49 个命令）
+- [x] Phase 4: Rust 命令处理器（60 个命令，含 `exit_app`）
 - [x] Phase 5: 前端适配（fetch → invoke）
 - [x] Phase 6: Tauri 集成配置
 - [x] 序列化对齐（camelCase）

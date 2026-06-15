@@ -4,6 +4,7 @@ import { fetchComponentLibrary, fetchCategories } from '../../services/component
 import { CATEGORIES, CATEGORY_LABELS } from '../../constants/categories';
 import type { ElectricalComponent, CategoryInfo } from '../../types';
 import ComponentThumbnail, { ComponentPreviewSvg } from '../panels/ComponentThumbnail';
+import { useConnectionStore } from '../../stores/useConnectionStore';
 
 // ---------- Category icon (simple SVG) ----------
 
@@ -35,6 +36,7 @@ export default function ComponentLibraryPanel(_props: ComponentLibraryPanelProps
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [previewComp, setPreviewComp] = useState<ElectricalComponent | null>(null);
   const [previewPos, setPreviewPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const matrices = useConnectionStore((s) => s.matrices);
   const popupRef = useRef<HTMLDivElement>(null);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -255,7 +257,7 @@ export default function ComponentLibraryPanel(_props: ComponentLibraryPanelProps
                       onMouseEnter={(e) => handleItemMouseEnter(e, comp)}
                       onMouseLeave={handleItemMouseLeave}
                     >
-                      <ComponentThumbnail component={comp} />
+                      <ComponentThumbnail component={comp} matrix={matrices[comp.id]} />
                       <span className="de-lib-item-name">{comp.name}</span>
                     </div>
                   ))}
@@ -278,7 +280,7 @@ export default function ComponentLibraryPanel(_props: ComponentLibraryPanelProps
           }}
         >
           <div className="de-lib-preview-label">{previewComp.name}</div>
-          <ComponentPreviewSvg component={previewComp} />
+          <ComponentPreviewSvg component={previewComp} matrix={matrices[previewComp.id]} />
         </div>,
         document.body,
       )}
@@ -290,7 +292,7 @@ export default function ComponentLibraryPanel(_props: ComponentLibraryPanelProps
             className="drag-ghost"
             style={{ position: 'fixed', left: ghostPos.x - 30, top: ghostPos.y - 20, zIndex: 10000, pointerEvents: 'none' }}
           >
-            <ComponentThumbnail component={comp} />
+            <ComponentThumbnail component={comp} matrix={matrices[comp.id]} />
           </div>
         );
       })()}

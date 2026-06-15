@@ -47,6 +47,8 @@ export interface SnapshotConnection {
   label: string;
 }
 
+export type LineType = 'straight' | 'curve' | 'polyline' | 'polyline-hvh' | 'polyline-vhv';
+
 export interface DiagramEdge {
   id: string;
   diagramId: string;
@@ -54,6 +56,8 @@ export interface DiagramEdge {
   targetInstanceId: string;
   sourcePinId: string;
   targetPinId: string;
+  lineType: LineType;
+  polylineMidRatio?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -160,6 +164,7 @@ export async function fetchDiagramReadonlySnapshot(diagramId: string) {
         fromPinId: edge.sourcePinId ?? '',
         toInstanceId: edge.targetInstanceId,
         toPinId: edge.targetPinId ?? '',
+        lineType: (edge as any).lineType ?? 'straight',
         state: 'closed' as const,
         visible: true,
         label: '',
@@ -213,7 +218,7 @@ export async function deleteDiagramInstance(diagramId: string, instanceId: strin
 
 export async function createDiagramEdge(
   diagramId: string,
-  data: { sourceInstanceId: string; targetInstanceId: string; sourcePinId: string; targetPinId: string },
+  data: { sourceInstanceId: string; targetInstanceId: string; sourcePinId: string; targetPinId: string; lineType?: LineType; polylineMidRatio?: number },
 ) {
   await requireAuth();
   return request<DiagramEdge>('create_diagram_edge', {
@@ -222,6 +227,26 @@ export async function createDiagramEdge(
     target_instance_id: data.targetInstanceId,
     source_pin_id: data.sourcePinId,
     target_pin_id: data.targetPinId,
+    line_type: data.lineType,
+    polyline_mid_ratio: data.polylineMidRatio,
+  });
+}
+
+export async function updateDiagramEdgeLineType(diagramId: string, edgeId: string, lineType: LineType) {
+  await requireAuth();
+  return request<DiagramEdge>('update_diagram_edge_line_type', {
+    diagram_id: diagramId,
+    edge_id: edgeId,
+    line_type: lineType,
+  });
+}
+
+export async function updateDiagramEdgePolylineMidRatio(diagramId: string, edgeId: string, polylineMidRatio: number) {
+  await requireAuth();
+  return request<DiagramEdge>('update_diagram_edge_polyline_mid_ratio', {
+    diagram_id: diagramId,
+    edge_id: edgeId,
+    polyline_mid_ratio: polylineMidRatio,
   });
 }
 
@@ -267,6 +292,8 @@ export async function fetchDiagramForEditor(diagramId: string): Promise<DiagramE
     targetInstanceId: edge.targetInstanceId,
     sourcePinId: edge.sourcePinId ?? '',
     targetPinId: edge.targetPinId ?? '',
+    lineType: edge.lineType ?? 'straight',
+    polylineMidRatio: edge.polylineMidRatio ?? undefined,
     createdAt: edge.createdAt ?? new Date().toISOString(),
     updatedAt: edge.updatedAt ?? new Date().toISOString(),
   }));

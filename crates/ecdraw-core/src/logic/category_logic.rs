@@ -69,6 +69,69 @@ pub async fn delete_category(pool: &PgPool, id: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+pub async fn rename_category(
+    pool: &PgPool,
+    id: &str,
+    new_label: &str,
+) -> Result<ComponentCategory, AppError> {
+    let uid: Uuid = id.parse().map_err(|_| AppError::BadRequest("无效的分类ID".into()))?;
+
+    let cat = sqlx::query_as::<_, ComponentCategory>(
+        "SELECT * FROM component_categories WHERE id = $1"
+    )
+    .bind(uid)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("分类不存在".into()))?;
+
+    // Check for duplicate label (excluding self)
+    let dup = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM component_categories WHERE label = $1 AND id != $2"
+    )
+    .bind(new_label)
+    .bind(uid)
+    .fetch_one(pool)
+    .await?;
+    if dup > 0 {
+        return Err(AppError::Conflict("类别名称已存在".into()));
+    }
+
+    let updated = sqlx::query_as::<_, ComponentCategory>(
+        "UPDATE component_categories SET label = $1 WHERE id = $2 RETURNING *"
+    )
+    .bind(new_label)
+    .bind(uid)
+    .fetch_one(pool)
+    .await?;
+
+    // Also update the `name` column for non-built-in categories
+    if !cat.built_in {
+        sqlx::query("UPDATE component_categories SET name = $1 WHERE id = $2")
+            .bind(new_label)
+            .bind(uid)
+            .execute(pool)
+            .await?;
+
+        // Update all components referencing the old category name
+        sqlx::query("UPDATE components SET category = $1 WHERE category = $2")
+            .bind(new_label)
+            .bind(&cat.name)
+            .execute(pool)
+            .await?;
+
+        // Re-fetch to get updated name
+        let updated = sqlx::query_as::<_, ComponentCategory>(
+            "SELECT * FROM component_categories WHERE id = $1"
+        )
+        .bind(uid)
+        .fetch_one(pool)
+        .await?;
+        return Ok(updated);
+    }
+
+    Ok(updated)
+}
+
 pub async fn update_category_visibility(
     pool: &PgPool,
     id: &str,

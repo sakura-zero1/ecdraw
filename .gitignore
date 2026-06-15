@@ -1,6 +1,9 @@
 node_modules/
 dist/
 src-tauri/target/
+/target/
 .DS_Store
 *.log
 .env
+.claude/
+.playwright-mcp/

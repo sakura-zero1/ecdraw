@@ -16,7 +16,8 @@ const TOOLS: { mode: ToolMode; icon: string; label: string }[] = [
 
 export default function ShapeToolbar() {
   const { activeTool, setActiveTool, defaultFill, defaultStroke, defaultStrokeWidth,
-    setDefaultFill, setDefaultStroke, setDefaultStrokeWidth, selectedShapeIds, selectedPinIds } = useCanvasStore();
+    setDefaultFill, setDefaultStroke, setDefaultStrokeWidth, selectedShapeIds, selectedPinIds,
+    wireStateEditing, wireEditState } = useCanvasStore();
   const {
     activeComponentId,
     removeMany,
@@ -31,20 +32,40 @@ export default function ShapeToolbar() {
   const selectedShape = activeComponentId && selectedShapeId
     ? getComponent(activeComponentId)?.shapeElements.find(e => e.id === selectedShapeId)
     : null;
+
+  // 态编辑模式下，显示覆盖后的颜色值
+  const ovKey = wireEditState === 'closed' ? 'stateClosed' : 'stateOpen';
+  const effectiveFill = wireStateEditing && selectedShape
+    ? ((selectedShape as any)[ovKey] as Record<string, unknown> | undefined)?.fill ?? selectedShape.fill
+    : selectedShape?.fill;
+  const effectiveStroke = wireStateEditing && selectedShape
+    ? ((selectedShape as any)[ovKey] as Record<string, unknown> | undefined)?.stroke ?? selectedShape.stroke
+    : selectedShape?.stroke;
+
   const currentFillColor =
-    selectedShape?.fill && selectedShape.fill !== 'transparent' && selectedShape.fill !== 'none'
-      ? selectedShape.fill
+    effectiveFill && effectiveFill !== 'transparent' && effectiveFill !== 'none'
+      ? effectiveFill as string
       : defaultFill !== 'transparent' && defaultFill !== 'none'
         ? defaultFill
         : '#ffffff';
 
-  const isFillTransparent = (selectedShape?.fill === 'transparent' || selectedShape?.fill === 'none')
+  const isFillTransparent = (effectiveFill === 'transparent' || effectiveFill === 'none')
     || (!selectedShape && (defaultFill === 'transparent' || defaultFill === 'none'));
 
   const applyToSelected = (updates: Record<string, unknown>) => {
     if (!activeComponentId || selectedShapeIds.length === 0) return;
-    for (const sid of selectedShapeIds) {
-      updateShapeElement(activeComponentId, sid, updates);
+    if (wireStateEditing) {
+      // 态编辑模式：写入覆盖属性
+      const ovKeyInner = wireEditState === 'closed' ? 'stateClosed' : 'stateOpen';
+      for (const sid of selectedShapeIds) {
+        const shape = getComponent(activeComponentId)?.shapeElements.find(e => e.id === sid);
+        const existingOv = shape ? (shape as any)[ovKeyInner] as Record<string, unknown> | undefined : undefined;
+        updateShapeElement(activeComponentId, sid, { [ovKeyInner]: { ...(existingOv ?? {}), ...updates } } as any);
+      }
+    } else {
+      for (const sid of selectedShapeIds) {
+        updateShapeElement(activeComponentId, sid, updates);
+      }
     }
   };
 
@@ -138,6 +159,10 @@ export default function ShapeToolbar() {
     applyToSelected({ strokeWidth: w });
   };
 
+  const effectiveStrokeWidth = wireStateEditing && selectedShape
+    ? (((selectedShape as any)[ovKey] as Record<string, unknown> | undefined)?.strokeWidth as number | undefined) ?? selectedShape.strokeWidth
+    : selectedShape?.strokeWidth;
+
   const handleFillInput = (value: string) => {
     applyFill(value);
   };
@@ -180,7 +205,7 @@ export default function ShapeToolbar() {
           <span className="color-label">描边</span>
           <input
             type="color"
-            value={selectedShape?.stroke ?? defaultStroke}
+            value={(effectiveStroke as string) ?? defaultStroke}
             onInput={(e) => handleStrokeInput((e.target as HTMLInputElement).value)}
             onChange={(e) => handleStrokeInput(e.target.value)}
           />
@@ -190,7 +215,7 @@ export default function ShapeToolbar() {
           <input
             type="number"
             min={1} max={20}
-            value={selectedShape?.strokeWidth ?? defaultStrokeWidth}
+            value={effectiveStrokeWidth ?? defaultStrokeWidth}
             onChange={(e) => applyStrokeWidth(Number(e.target.value))}
             style={{ width: 48 }}
           />
@@ -199,11 +224,11 @@ export default function ShapeToolbar() {
 
       <div className="tool-divider" />
       <div className="tool-group">
-        <button className="tool-btn" onClick={handleGroup} disabled={selectedShapeIds.length < 2} title="组合 (Ctrl/Cmd+G)">
+        <button className="tool-btn" onClick={handleGroup} disabled={wireStateEditing || selectedShapeIds.length < 2} title="组合 (Ctrl/Cmd+G)">
           <span className="tool-icon">⊞</span>
           <span className="tool-label">组合</span>
         </button>
-        <button className="tool-btn" onClick={handleUngroup} disabled={selectedShapeIds.length === 0} title="解组 (Shift+Ctrl/Cmd+G)">
+        <button className="tool-btn" onClick={handleUngroup} disabled={wireStateEditing || selectedShapeIds.length === 0} title="解组 (Shift+Ctrl/Cmd+G)">
           <span className="tool-icon">⊟</span>
           <span className="tool-label">解组</span>
         </button>
@@ -211,19 +236,19 @@ export default function ShapeToolbar() {
 
       <div className="tool-divider" />
       <div className="tool-group">
-        <button className="tool-btn" onClick={handleRotateCCW} disabled={!isSingleGroup} title="逆时针旋转 90°">
+        <button className="tool-btn" onClick={handleRotateCCW} disabled={wireStateEditing || !isSingleGroup} title="逆时针旋转 90°">
           <span className="tool-icon">↺</span>
           <span className="tool-label">逆旋</span>
         </button>
-        <button className="tool-btn" onClick={handleRotateCW} disabled={!isSingleGroup} title="顺时针旋转 90°">
+        <button className="tool-btn" onClick={handleRotateCW} disabled={wireStateEditing || !isSingleGroup} title="顺时针旋转 90°">
           <span className="tool-icon">↻</span>
           <span className="tool-label">顺旋</span>
         </button>
-        <button className="tool-btn" onClick={handleFlipH} disabled={!isSingleGroup} title="水平翻转">
+        <button className="tool-btn" onClick={handleFlipH} disabled={wireStateEditing || !isSingleGroup} title="水平翻转">
           <span className="tool-icon">⇔</span>
           <span className="tool-label">水平翻转</span>
         </button>
-        <button className="tool-btn" onClick={handleFlipV} disabled={!isSingleGroup} title="垂直翻转">
+        <button className="tool-btn" onClick={handleFlipV} disabled={wireStateEditing || !isSingleGroup} title="垂直翻转">
           <span className="tool-icon">⇕</span>
           <span className="tool-label">垂直翻转</span>
         </button>
@@ -231,7 +256,7 @@ export default function ShapeToolbar() {
 
       <div className="tool-divider" />
       <div className="tool-group">
-        <button className="tool-btn btn-danger" onClick={handleDelete} disabled={selectedShapeIds.length === 0 && selectedPinIds.length === 0} title="删除选中图形/引脚">
+        <button className="tool-btn btn-danger" onClick={handleDelete} disabled={wireStateEditing || (selectedShapeIds.length === 0 && selectedPinIds.length === 0)} title="删除选中图形/引脚">
           <span className="tool-icon">✕</span>
           <span className="tool-label">删除</span>
         </button>
