@@ -630,6 +630,83 @@ pub async fn request_delete_diagram(pool: &PgPool, roles: &[String], user_id: Uu
     Ok(())
 }
 
+/// 发起/进入修订：确保存在一个可编辑的修订草稿，返回图纸。
+/// - 最新版本 ONLINE → 基于其快照创建新 DRAFT 版本（图纸保持 PUBLISHED）。
+/// - 最新版本 DRAFT/REJECTED（已有修订草稿）→ 直接返回，进入编辑现有草稿。
+/// - 最新版本 REVIEWING → 报错（审核中）。
+pub async fn revise_diagram(pool: &PgPool, roles: &[String], user_id: Uuid, id: Uuid) -> Result<Diagram, AppError> {
+    let d = sqlx::query_as::<_, Diagram>("SELECT * FROM diagrams WHERE id = $1")
+        .bind(id).fetch_optional(pool).await?
+        .ok_or_else(|| AppError::NotFound("图纸不存在".into()))?;
+
+    if !can_write_diagram(roles, &d.owner_id, &user_id) {
+        return Err(AppError::Forbidden("无权修订此图纸".into()));
+    }
+
+    let latest = sqlx::query_as::<_, DiagramVersion>(
+        "SELECT * FROM diagram_versions WHERE diagram_id = $1 ORDER BY version_no DESC LIMIT 1"
+    ).bind(id).fetch_optional(pool).await?
+        .ok_or_else(|| AppError::BadRequest("图纸无版本".into()))?;
+
+    match latest.status.as_str() {
+        "DRAFT" | "REJECTED" => {
+            // 已有进行中修订草稿，直接进入编辑
+            Ok(d)
+        }
+        "REVIEWING" => Err(AppError::BadRequest("修订正在审核中，请先撤回或等待审核".into())),
+        "ONLINE" => {
+            // 基于 ONLINE 快照创建新 DRAFT 修订版本，图纸保持 PUBLISHED
+            let mut tx = pool.begin().await?;
+            let next_no = sqlx::query_scalar::<_, i32>(
+                "SELECT COALESCE(MAX(version_no), 0) FROM diagram_versions WHERE diagram_id = $1"
+            ).bind(id).fetch_one(&mut *tx).await? + 1;
+            sqlx::query(
+                "INSERT INTO diagram_versions (diagram_id, version_no, snapshot, created_by, status) VALUES ($1, $2, $3, $4, 'DRAFT')"
+            )
+            .bind(id).bind(next_no).bind(&latest.snapshot).bind(user_id)
+            .execute(&mut *tx).await?;
+            sqlx::query("UPDATE diagrams SET updated_at = NOW() WHERE id = $1").bind(id).execute(&mut *tx).await?;
+            tx.commit().await?;
+            Ok(d)
+        }
+        _ => Err(AppError::BadRequest("当前状态不可修订".into())),
+    }
+}
+
+/// 放弃修订：删除进行中的修订草稿版本，并把实时表恢复为 ONLINE 快照。
+pub async fn discard_revision(pool: &PgPool, roles: &[String], user_id: Uuid, id: Uuid) -> Result<Diagram, AppError> {
+    let d = sqlx::query_as::<_, Diagram>("SELECT * FROM diagrams WHERE id = $1")
+        .bind(id).fetch_optional(pool).await?
+        .ok_or_else(|| AppError::NotFound("图纸不存在".into()))?;
+
+    if !can_write_diagram(roles, &d.owner_id, &user_id) {
+        return Err(AppError::Forbidden("无权操作此图纸".into()));
+    }
+
+    let latest = sqlx::query_as::<_, DiagramVersion>(
+        "SELECT * FROM diagram_versions WHERE diagram_id = $1 ORDER BY version_no DESC LIMIT 1"
+    ).bind(id).fetch_optional(pool).await?
+        .ok_or_else(|| AppError::BadRequest("图纸无版本".into()))?;
+
+    // 必须是修订草稿（DRAFT/REJECTED）且存在 ONLINE 版本
+    if !matches!(latest.status.as_str(), "DRAFT" | "REJECTED") {
+        return Err(AppError::BadRequest("当前没有可放弃的修订草稿".into()));
+    }
+    let online = sqlx::query_as::<_, DiagramVersion>(
+        "SELECT * FROM diagram_versions WHERE diagram_id = $1 AND status = 'ONLINE' ORDER BY version_no DESC LIMIT 1"
+    ).bind(id).fetch_optional(pool).await?
+        .ok_or_else(|| AppError::BadRequest("图纸未发布，无修订可放弃".into()))?;
+
+    let mut tx = pool.begin().await?;
+    // 删除整条修订链（version_no 高于 ONLINE 的所有草稿/驳回版本），避免「驳回后再 save 生成新 DRAFT」造成残留
+    sqlx::query("DELETE FROM diagram_versions WHERE diagram_id = $1 AND version_no > $2")
+        .bind(id).bind(online.version_no).execute(&mut *tx).await?;
+    hydrate_realtime_from_snapshot(&mut tx, id, &online.snapshot).await?;
+    sqlx::query("UPDATE diagrams SET updated_at = NOW() WHERE id = $1").bind(id).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(d)
+}
+
 // ========== Instance CRUD ==========
 
 pub async fn create_diagram_instance(
