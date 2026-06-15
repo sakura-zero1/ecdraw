@@ -66,7 +66,7 @@ pub async fn upsert_line(
 ) -> Result<LineSegmentData, AppError> {
     let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR", "LINE_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| AppError::Auth("无效的用户标识".into()))?;
     let eid: Uuid = edge_id.parse().map_err(|_| AppError::BadRequest("无效的边ID".into()))?;
 
     let _edge = sqlx::query_scalar::<_, Uuid>("SELECT id FROM diagram_edges WHERE id = $1")
@@ -100,7 +100,7 @@ pub async fn batch_upsert_lines(
 ) -> Result<i32, AppError> {
     let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR", "LINE_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| AppError::Auth("无效的用户标识".into()))?;
 
     if items.len() > 500 {
         return Err(AppError::BadRequest("单次最多导入500条".into()));

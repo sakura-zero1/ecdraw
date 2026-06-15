@@ -28,14 +28,14 @@ async fn list_users(State(state): State<AppState>, AuthClaims(claims): AuthClaim
 
 async fn create_user(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Json(body): Json<CreateUserBody>) -> Result<Json<UserResponse>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN"])?;
-    let caller_id: uuid::Uuid = claims.sub.parse().unwrap();
+    let caller_id: uuid::Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let user = user_logic::create_user(&state.pool, caller_id, &body.username, &body.password, body.roles, body.status).await?;
     Ok(Json(user))
 }
 
 async fn update_user(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>, Json(body): Json<UpdateUserBody>) -> Result<Json<UserResponse>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN"])?;
-    let caller_id: uuid::Uuid = claims.sub.parse().unwrap();
+    let caller_id: uuid::Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let user = user_logic::update_user(&state.pool, caller_id, &id, body.roles, body.status, body.password).await?;
     Ok(Json(user))
 }

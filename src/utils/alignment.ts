@@ -36,6 +36,25 @@ export function getShapeBounds(el: ShapeElement): Bounds {
       const b = getTextBounds(el);
       return { left: b.x, top: b.y, right: b.x + b.width, bottom: b.y + b.height, width: b.width, height: b.height, cx: b.x + b.width / 2, cy: b.y + b.height / 2 };
     }
+    case 'path': {
+      // 从 d 中提取坐标数字，按 (x,y) 配对估算包围盒（与 useComponentStore 偏移 d 的方式一致）。
+      // 对曲线控制点/H/V/A 为近似，但足以支持框选与对齐，远胜于退化成 (0,0)。
+      const nums = el.d?.match(/[+-]?\d*\.?\d+/g)?.map(Number) ?? [];
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (let i = 0; i + 1 < nums.length; i += 2) {
+        const x = nums[i], y = nums[i + 1];
+        if (!isFinite(x) || !isFinite(y)) continue;
+        minX = Math.min(minX, x); minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+      }
+      if (!isFinite(minX)) return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, cx: 0, cy: 0 };
+      return {
+        left: minX - halfStroke, top: minY - halfStroke,
+        right: maxX + halfStroke, bottom: maxY + halfStroke,
+        width: (maxX - minX) + halfStroke * 2, height: (maxY - minY) + halfStroke * 2,
+        cx: (minX + maxX) / 2, cy: (minY + maxY) / 2,
+      };
+    }
     default:
       return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, cx: 0, cy: 0 };
   }

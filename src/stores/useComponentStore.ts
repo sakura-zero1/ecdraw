@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { v4 as uuid } from 'uuid';
-import type { ElectricalComponent, Pin, PinType, ComponentCategory, ShapeElement } from '../types';
+import type { ElectricalComponent, Pin, PinType, ComponentCategory, ShapeElement, ShapeStateOverride } from '../types';
 import { useConnectionStore } from './useConnectionStore';
 import { useCanvasStore } from './useCanvasStore';
 import { getGroupBounds, scaleShapeInGroup } from '../utils/alignment';
@@ -46,7 +46,7 @@ interface ComponentStore {
 
 const MAX_UNDO = 50;
 
-function offsetOverride(ov: Record<string, unknown>, dx: number, dy: number): Record<string, unknown> {
+function offsetOverride(ov: ShapeStateOverride, dx: number, dy: number): ShapeStateOverride {
   const result: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(ov)) {
     if (typeof v !== 'number') { result[k] = v; continue; }
@@ -54,7 +54,7 @@ function offsetOverride(ov: Record<string, unknown>, dx: number, dy: number): Re
     else if (k.includes('y') || k === 'cy') result[k] = v + dy;
     else result[k] = v;
   }
-  return result;
+  return result as ShapeStateOverride;
 }
 
 export const useComponentStore = create<ComponentStore>()(
@@ -478,19 +478,8 @@ export const useComponentStore = create<ComponentStore>()(
         comp.updatedAt = new Date().toISOString();
       });
 
-      // Copy connectivity matrix: map connections to new pin IDs
-      const sourceMatrix = useConnectionStore.getState().matrices[sourceComp.id];
-      if (sourceMatrix && sourceMatrix.connections.length > 0) {
-        const connStore = useConnectionStore.getState();
-        for (const conn of sourceMatrix.connections) {
-          const pinAId = pinIdMap[conn.pinAId];
-          const pinBId = pinIdMap[conn.pinBId];
-          if (!pinAId || !pinBId) continue;
-          const connId = connStore.addConnection(targetId, pinAId, pinBId);
-          if (conn.state !== 'closed') connStore.setConnectionState(targetId, connId, conn.state);
-          if (!conn.visible) connStore.toggleConnectionVisible(targetId, connId);
-        }
-      }
+      // 连接矩阵已由上方 importConnections 完整拷贝（含去重、保留 state/visible），
+      // 这里不再重复 addConnection，否则会产生重复连线。
 
       return newShapeIds;
     },

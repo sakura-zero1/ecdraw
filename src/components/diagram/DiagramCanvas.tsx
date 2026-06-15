@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useImperativeHandle, useRef, forwardRef } from 'react';
-import type { DiagramInstance, DiagramEdge, LineType } from '../../services/diagramApi';
+import type { DiagramInstance, DiagramEdge } from '../../services/diagramApi';
 import { CATEGORY_LABELS } from '../../constants/categories';
 import type { ComponentCategory, Pin, PinType, ShapeElement } from '../../types';
 import type { ConnectivityMatrix } from '../../types/connection';
@@ -7,7 +7,7 @@ import { getShapeBounds, type Bounds } from '../../utils/alignment';
 import { drawShapeOnCanvas, getDominantShapeColor } from '../../utils/canvasShape';
 import type { LineSegmentData } from '../../services/lineApi';
 import { useDiagramStore } from '../../stores/useDiagramStore';
-import { segIntersect, computeEdgeCrossings, sampleBezierToSegments, drawPathWithBridges, type CrossingInfo } from '../../utils/geometry';
+import { computeEdgeCrossings, sampleBezierToSegments, drawPathWithBridges, type CrossingInfo } from '../../utils/geometry';
 
 function isPolyline(lt: string) { return lt === 'polyline' || lt === 'polyline-hvh' || lt === 'polyline-vhv'; }
 function isPolylineHVH(lt: string) { return lt === 'polyline' || lt === 'polyline-hvh'; }
@@ -352,7 +352,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
 
   // Hovered edge for delete button
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
-  const [cursorMode, setCursorMode] = useState<'default' | 'crosshair' | 'grabbing'>('default');
+  const [cursorMode, setCursorMode] = useState<'default' | 'crosshair' | 'grabbing' | 'col-resize' | 'row-resize'>('default');
 
   // Ref to latest hitTestPin to avoid circular deps in draw
   const hitTestPinRef = useRef<(wx: number, wy: number) => { instanceId: string; pinId: string } | null>(() => null);
@@ -1044,6 +1044,14 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
   useEffect(() => {
     requestDraw();
   }, [requestDraw]);
+
+  // 未命名实例的红框闪烁依赖 Date.now()，但 draw 是事件驱动的，
+  // 需在高亮存在时定时触发重绘，否则红框停在某一相位、几乎不闪。
+  useEffect(() => {
+    if (unnamedHighlightIds.length === 0) return;
+    const timer = setInterval(() => requestDraw(), 200);
+    return () => clearInterval(timer);
+  }, [unnamedHighlightIds, requestDraw]);
 
   // ---------- Resize observer ----------
 

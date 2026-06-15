@@ -30,7 +30,7 @@ pub async fn list_components(
         .fetch_all(&state.pool)
         .await?
     } else {
-        let user_id: Uuid = claims.sub.parse().unwrap();
+        let user_id: Uuid = claims.sub.parse().map_err(|_| AppError::Auth("无效的用户标识".into()))?;
         sqlx::query_as::<_, Component>(
             "SELECT * FROM components WHERE owner_id = $1 ORDER BY updated_at DESC"
         )
@@ -69,7 +69,7 @@ pub async fn get_component(
         .await?
         .ok_or_else(|| AppError::NotFound("元件不存在".into()))?;
 
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| AppError::Auth("无效的用户标识".into()))?;
     if !claims.roles.contains(&"ADMIN".to_string()) && c.owner_id != user_id {
         return Err(AppError::Forbidden("无权访问此元件".into()));
     }
@@ -100,7 +100,7 @@ pub async fn create_component(
         return Err(AppError::BadRequest("名称和分类不能为空".into()));
     }
 
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| AppError::Auth("无效的用户标识".into()))?;
     let component = sqlx::query_as::<_, Component>(
         "INSERT INTO components (name, category, description, owner_id) VALUES ($1, $2, $3, $4) RETURNING *"
     )
@@ -158,7 +158,7 @@ pub async fn update_component(
         .await?
         .ok_or_else(|| AppError::NotFound("元件不存在".into()))?;
 
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| AppError::Auth("无效的用户标识".into()))?;
     if !claims.roles.contains(&"ADMIN".to_string()) && c.owner_id != user_id {
         return Err(AppError::Forbidden("无权修改此元件".into()));
     }
@@ -210,7 +210,7 @@ pub async fn delete_component(
         .await?
         .ok_or_else(|| AppError::NotFound("元件不存在".into()))?;
 
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| AppError::Auth("无效的用户标识".into()))?;
     if !claims.roles.contains(&"ADMIN".to_string()) && c.owner_id != user_id {
         return Err(AppError::Forbidden("无权删除此元件".into()));
     }
@@ -253,7 +253,7 @@ pub async fn duplicate_component(
         .await?
         .ok_or_else(|| AppError::NotFound("元件不存在".into()))?;
 
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| AppError::Auth("无效的用户标识".into()))?;
 
     let latest_ver = sqlx::query_as::<_, ComponentVersion>(
         "SELECT * FROM component_versions WHERE component_id = $1 ORDER BY version_no DESC LIMIT 1"
@@ -333,7 +333,7 @@ pub async fn list_component_versions(
         .await?
         .ok_or_else(|| AppError::NotFound("元件不存在".into()))?;
 
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| AppError::Auth("无效的用户标识".into()))?;
     if !claims.roles.contains(&"ADMIN".to_string()) && c.owner_id != user_id {
         return Err(AppError::Forbidden("无权访问此元件".into()));
     }
@@ -365,7 +365,7 @@ pub async fn get_component_version(
         .await?
         .ok_or_else(|| AppError::NotFound("元件不存在".into()))?;
 
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| AppError::Auth("无效的用户标识".into()))?;
     if !claims.roles.contains(&"ADMIN".to_string()) && c.owner_id != user_id {
         return Err(AppError::Forbidden("无权访问此元件".into()));
     }
@@ -404,7 +404,7 @@ pub async fn create_component_version(
         .await?
         .ok_or_else(|| AppError::NotFound("元件不存在".into()))?;
 
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| AppError::Auth("无效的用户标识".into()))?;
     if !claims.roles.contains(&"ADMIN".to_string()) && c.owner_id != user_id {
         return Err(AppError::Forbidden("无权修改此元件".into()));
     }

@@ -850,7 +850,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
           if (comp) {
             const els = selectedShapeIds.map((sid) => comp.shapeElements.find((s) => s.id === sid)).filter(Boolean) as ShapeElement[];
             const pins = cvs.selectedPinIds.map((pid) => comp.pins.find((p) => p.id === pid)).filter(Boolean) as Pin[];
-            cvs.setClipboard({ shapes: els, pins });
+            cvs.setClipboard({ shapes: els, pins, connections: [] });
           }
         }
         return;
@@ -896,7 +896,7 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
           if (comp) {
             const els = selectedShapeIds.map((sid) => comp.shapeElements.find((s) => s.id === sid)).filter(Boolean) as ShapeElement[];
             const pins = cvs.selectedPinIds.map((pid) => comp.pins.find((p) => p.id === pid)).filter(Boolean) as Pin[];
-            cvs.setClipboard({ shapes: els, pins });
+            cvs.setClipboard({ shapes: els, pins, connections: [] });
           }
           store.removeMany(compId, selectedShapeIds, cvs.selectedPinIds);
           cvs.clearSelection();

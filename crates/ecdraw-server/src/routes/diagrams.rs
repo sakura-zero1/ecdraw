@@ -86,13 +86,13 @@ fn to_uuid(s: &str, label: &str) -> Result<Uuid, ecdraw_core::error::AppError> {
 // ========== Diagram CRUD ==========
 
 async fn list_diagrams(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<Vec<Diagram>>, ecdraw_core::error::AppError> {
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let diagrams = diagram_logic::list_diagrams(&state.pool, &claims.roles, user_id).await?;
     Ok(Json(diagrams))
 }
 
 async fn get_diagram(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<Json<Diagram>, ecdraw_core::error::AppError> {
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = to_uuid(&id, "图纸ID")?;
     let diagram = diagram_logic::get_diagram(&state.pool, &claims.roles, user_id, did).await?;
     Ok(Json(diagram))
@@ -100,14 +100,14 @@ async fn get_diagram(State(state): State<AppState>, AuthClaims(claims): AuthClai
 
 async fn create_diagram(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Json(body): Json<CreateDiagramBody>) -> Result<Json<Diagram>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let diagram = diagram_logic::create_diagram(&state.pool, user_id, &body.name, body.description.as_deref(), body.snapshot).await?;
     Ok(Json(diagram))
 }
 
 async fn update_diagram(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>, Json(body): Json<UpdateDiagramBody>) -> Result<Json<Diagram>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = to_uuid(&id, "图纸ID")?;
     let diagram = diagram_logic::update_diagram(&state.pool, &claims.roles, user_id, did, body.name, body.description).await?;
     Ok(Json(diagram))
@@ -115,7 +115,7 @@ async fn update_diagram(State(state): State<AppState>, AuthClaims(claims): AuthC
 
 async fn delete_diagram(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<(), ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = to_uuid(&id, "图纸ID")?;
     diagram_logic::delete_diagram(&state.pool, &claims.roles, user_id, did).await?;
     Ok(())
@@ -123,23 +123,23 @@ async fn delete_diagram(State(state): State<AppState>, AuthClaims(claims): AuthC
 
 async fn duplicate_diagram(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<Json<Diagram>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = to_uuid(&id, "图纸ID")?;
-    let diagram = diagram_logic::duplicate_diagram(&state.pool, user_id, did).await?;
+    let diagram = diagram_logic::duplicate_diagram(&state.pool, &claims.roles, user_id, did).await?;
     Ok(Json(diagram))
 }
 
 // ========== Editor ==========
 
 async fn get_diagram_editor(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<Json<serde_json::Value>, ecdraw_core::error::AppError> {
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = to_uuid(&id, "图纸ID")?;
     let result = diagram_logic::get_diagram_editor(&state.pool, &claims.roles, user_id, did).await?;
     Ok(Json(result))
 }
 
 async fn get_diagram_topology(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<Json<TopologyResponse>, ecdraw_core::error::AppError> {
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = to_uuid(&id, "图纸ID")?;
     let result = diagram_logic::get_diagram_topology(&state.pool, &claims.roles, user_id, did).await?;
     Ok(Json(result))
@@ -147,7 +147,7 @@ async fn get_diagram_topology(State(state): State<AppState>, AuthClaims(claims):
 
 async fn save_diagram(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>, Json(body): Json<SaveDiagramBody>) -> Result<Json<Diagram>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = to_uuid(&id, "图纸ID")?;
     let diagram = diagram_logic::save_diagram(&state.pool, &claims.roles, user_id, did, body.snapshot).await?;
     Ok(Json(diagram))
@@ -157,7 +157,7 @@ async fn save_diagram(State(state): State<AppState>, AuthClaims(claims): AuthCla
 
 async fn submit_review(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<(), ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = to_uuid(&id, "图纸ID")?;
     diagram_logic::submit_diagram_review(&state.pool, &claims.roles, user_id, did).await?;
     Ok(())
@@ -165,7 +165,7 @@ async fn submit_review(State(state): State<AppState>, AuthClaims(claims): AuthCl
 
 async fn withdraw_review(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<(), ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = to_uuid(&id, "图纸ID")?;
     diagram_logic::withdraw_diagram_review(&state.pool, &claims.roles, user_id, did).await?;
     Ok(())
@@ -173,7 +173,7 @@ async fn withdraw_review(State(state): State<AppState>, AuthClaims(claims): Auth
 
 async fn request_delete(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>) -> Result<(), ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = to_uuid(&id, "图纸ID")?;
     diagram_logic::request_delete_diagram(&state.pool, &claims.roles, user_id, did).await?;
     Ok(())
@@ -183,7 +183,7 @@ async fn request_delete(State(state): State<AppState>, AuthClaims(claims): AuthC
 
 async fn create_instance(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>, Json(body): Json<CreateInstanceBody>) -> Result<Json<DiagramInstance>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let diagram_id = to_uuid(&id, "图纸ID")?;
     let component_id = to_uuid(&body.component_id, "元件ID")?;
     let result = diagram_logic::create_diagram_instance(&state.pool, &claims.roles, user_id, diagram_id, component_id, body.label, body.position_x, body.position_y, body.instance_data).await?;
@@ -192,7 +192,7 @@ async fn create_instance(State(state): State<AppState>, AuthClaims(claims): Auth
 
 async fn update_instance(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path((diagram_id, instance_id)): Path<(String, String)>, Json(body): Json<UpdateInstanceBody>) -> Result<Json<DiagramInstance>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = to_uuid(&diagram_id, "图纸ID")?;
     let iid = to_uuid(&instance_id, "实例ID")?;
     let cid = body.component_id.as_ref().map(|s| to_uuid(s, "元件ID")).transpose()?;
@@ -202,7 +202,7 @@ async fn update_instance(State(state): State<AppState>, AuthClaims(claims): Auth
 
 async fn delete_instance(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path((diagram_id, instance_id)): Path<(String, String)>) -> Result<(), ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = to_uuid(&diagram_id, "图纸ID")?;
     let iid = to_uuid(&instance_id, "实例ID")?;
     diagram_logic::delete_diagram_instance(&state.pool, &claims.roles, user_id, did, iid).await?;
@@ -213,7 +213,7 @@ async fn delete_instance(State(state): State<AppState>, AuthClaims(claims): Auth
 
 async fn create_edge(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>, Json(body): Json<CreateEdgeBody>) -> Result<Json<DiagramEdge>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let diagram_id = to_uuid(&id, "图纸ID")?;
     let source_id = to_uuid(&body.source_instance_id, "源实例ID")?;
     let target_id = to_uuid(&body.target_instance_id, "目标实例ID")?;
@@ -223,7 +223,7 @@ async fn create_edge(State(state): State<AppState>, AuthClaims(claims): AuthClai
 
 async fn update_edge_polyline_mid_ratio(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path((diagram_id, edge_id)): Path<(String, String)>, Json(body): Json<UpdateEdgePolylineMidRatioBody>) -> Result<Json<DiagramEdge>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = to_uuid(&diagram_id, "图纸ID")?;
     let eid = to_uuid(&edge_id, "边ID")?;
     let result = diagram_logic::update_diagram_edge_polyline_mid_ratio(&state.pool, &claims.roles, user_id, did, eid, body.polyline_mid_ratio).await?;
@@ -232,7 +232,7 @@ async fn update_edge_polyline_mid_ratio(State(state): State<AppState>, AuthClaim
 
 async fn update_edge_line_type(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path((diagram_id, edge_id)): Path<(String, String)>, Json(body): Json<UpdateEdgeLineTypeBody>) -> Result<Json<DiagramEdge>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = to_uuid(&diagram_id, "图纸ID")?;
     let eid = to_uuid(&edge_id, "边ID")?;
     let result = diagram_logic::update_diagram_edge_line_type(&state.pool, &claims.roles, user_id, did, eid, &body.line_type).await?;
@@ -241,7 +241,7 @@ async fn update_edge_line_type(State(state): State<AppState>, AuthClaims(claims)
 
 async fn delete_edge(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path((diagram_id, edge_id)): Path<(String, String)>) -> Result<(), ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = to_uuid(&diagram_id, "图纸ID")?;
     let eid = to_uuid(&edge_id, "边ID")?;
     diagram_logic::delete_diagram_edge(&state.pool, &claims.roles, user_id, did, eid).await?;
@@ -253,7 +253,7 @@ async fn list_versions(
     AuthClaims(claims): AuthClaims,
     Path(id): Path<String>,
 ) -> Result<Json<Vec<VersionSummary>>, ecdraw_core::error::AppError> {
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的图纸ID".into()))?;
     let result = diagram_logic::list_diagram_versions(&state.pool, &claims.roles, user_id, did).await?;
     Ok(Json(result))
@@ -264,7 +264,7 @@ async fn get_version_topology(
     AuthClaims(claims): AuthClaims,
     Path((id, version_id)): Path<(String, String)>,
 ) -> Result<Json<TopologyResponse>, ecdraw_core::error::AppError> {
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的图纸ID".into()))?;
     let vid = version_id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的版本ID".into()))?;
     let result = diagram_logic::get_diagram_version_topology(&state.pool, &claims.roles, user_id, did, vid).await?;
@@ -276,7 +276,7 @@ async fn delete_version(
     AuthClaims(claims): AuthClaims,
     Path((id, version_id)): Path<(String, String)>,
 ) -> Result<StatusCode, ecdraw_core::error::AppError> {
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let did = id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的图纸ID".into()))?;
     let vid = version_id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的版本ID".into()))?;
     diagram_logic::delete_diagram_version(&state.pool, &claims.roles, user_id, did, vid).await?;

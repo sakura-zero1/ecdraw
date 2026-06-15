@@ -17,7 +17,7 @@ pub async fn list_reviews(
 ) -> Result<serde_json::Value, AppError> {
     let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "REVIEWER"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| AppError::Auth("无效的用户标识".into()))?;
 
     let page = page.unwrap_or(1).max(1);
     let page_size = page_size.unwrap_or(20).min(100).max(1);
@@ -86,7 +86,7 @@ pub async fn approve_review(
 ) -> Result<(), AppError> {
     let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "REVIEWER"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| AppError::Auth("无效的用户标识".into()))?;
     let rid: Uuid = id.parse().map_err(|_| AppError::BadRequest("无效的审核ID".into()))?;
 
     let review = sqlx::query_as::<_, ReviewRequest>("SELECT * FROM review_requests WHERE id = $1")
@@ -147,7 +147,7 @@ pub async fn reject_review(
 ) -> Result<(), AppError> {
     let claims = middleware::verify_auth(&token, &state.jwt_access_secret)?;
     middleware::require_role(&claims, &["ADMIN", "REVIEWER"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| AppError::Auth("无效的用户标识".into()))?;
     let rid: Uuid = id.parse().map_err(|_| AppError::BadRequest("无效的审核ID".into()))?;
 
     let review = sqlx::query_as::<_, ReviewRequest>("SELECT * FROM review_requests WHERE id = $1")

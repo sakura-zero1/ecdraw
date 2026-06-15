@@ -50,7 +50,7 @@ async fn list_by_diagram(State(state): State<AppState>, AuthClaims(_claims): Aut
 
 async fn upsert_line(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Json(body): Json<UpsertLineBody>) -> Result<Json<LineSegmentData>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR", "LINE_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let eid: Uuid = body.edge_id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的边ID".into()))?;
     let is_main = body.is_main_display.unwrap_or(true);
     let result = line_logic::upsert_line(&state.pool, user_id, eid, body.length, body.wire_model, body.wire_ownership, body.wire_type, is_main).await?;
@@ -59,7 +59,7 @@ async fn upsert_line(State(state): State<AppState>, AuthClaims(claims): AuthClai
 
 async fn batch_upsert(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Json(body): Json<BatchBody>) -> Result<Json<i32>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR", "LINE_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let items: Result<Vec<_>, ecdraw_core::error::AppError> = body.items.iter().map(|item| {
         let eid: Uuid = item.diagram_edge_id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的边ID".into()))?;
         let is_main = item.is_main_display.unwrap_or(true);

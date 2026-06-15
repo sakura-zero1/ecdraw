@@ -48,7 +48,7 @@ async fn list_by_diagram(State(state): State<AppState>, AuthClaims(_claims): Aut
 
 async fn upsert_district(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Json(body): Json<UpsertDistrictBody>) -> Result<Json<DistrictData>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR", "DISTRICT_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let iid: Uuid = body.instance_id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的实例ID".into()))?;
     let result = district_logic::upsert_district(&state.pool, user_id, iid, body.transformer_capacity, body.supply_range, body.supply_area, body.household_count).await?;
     Ok(Json(result))
@@ -56,7 +56,7 @@ async fn upsert_district(State(state): State<AppState>, AuthClaims(claims): Auth
 
 async fn batch_upsert(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Json(body): Json<BatchBody>) -> Result<Json<i32>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "DIAGRAM_EDITOR", "DISTRICT_EDITOR"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let items: Result<Vec<_>, ecdraw_core::error::AppError> = body.items.iter().map(|item| {
         let iid: Uuid = item.diagram_instance_id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的实例ID".into()))?;
         Ok((iid, item.transformer_capacity, item.supply_range.clone(), item.supply_area.clone(), item.household_count))

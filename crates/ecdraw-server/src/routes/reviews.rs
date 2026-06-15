@@ -21,7 +21,7 @@ pub struct ReviewActionBody {
 
 async fn list_reviews(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Query(q): Query<ListReviewsQuery>) -> Result<Json<serde_json::Value>, ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "REVIEWER"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let is_admin = claims.roles.contains(&"ADMIN".to_string());
     let page = q.page.unwrap_or(1).max(1);
     let page_size = q.page_size.unwrap_or(20).min(100).max(1);
@@ -31,7 +31,7 @@ async fn list_reviews(State(state): State<AppState>, AuthClaims(claims): AuthCla
 
 async fn approve_review(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>, Json(body): Json<ReviewActionBody>) -> Result<(), ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "REVIEWER"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let rid: Uuid = id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的审核ID".into()))?;
     review_logic::approve_review(&state.pool, user_id, rid, body.comment).await?;
     Ok(())
@@ -39,7 +39,7 @@ async fn approve_review(State(state): State<AppState>, AuthClaims(claims): AuthC
 
 async fn reject_review(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<String>, Json(body): Json<ReviewActionBody>) -> Result<(), ecdraw_core::error::AppError> {
     middleware::require_role(&claims, &["ADMIN", "REVIEWER"])?;
-    let user_id: Uuid = claims.sub.parse().unwrap();
+    let user_id: Uuid = claims.sub.parse().map_err(|_| ecdraw_core::error::AppError::Auth("无效的用户标识".into()))?;
     let rid: Uuid = id.parse().map_err(|_| ecdraw_core::error::AppError::BadRequest("无效的审核ID".into()))?;
     review_logic::reject_review(&state.pool, user_id, rid, body.comment).await?;
     Ok(())

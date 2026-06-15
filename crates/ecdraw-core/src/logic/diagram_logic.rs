@@ -92,6 +92,12 @@ pub fn can_write_diagram(roles: &[String], owner_id: &Uuid, user_id: &Uuid) -> b
     roles.contains(&"ADMIN".to_string()) || owner_id == user_id
 }
 
+/// 仅 DRAFT / REJECTED 状态的图纸可编辑。
+/// PENDING_REVIEW（审核中）、PENDING_DELETE（待删除）、PUBLISHED（已发布）均锁定。
+pub fn is_diagram_editable(status: &str) -> bool {
+    status == "DRAFT" || status == "REJECTED"
+}
+
 // ========== Diagram CRUD ==========
 
 pub async fn list_diagrams(pool: &PgPool, roles: &[String], user_id: Uuid) -> Result<Vec<Diagram>, AppError> {
@@ -190,10 +196,15 @@ pub async fn delete_diagram(pool: &PgPool, roles: &[String], user_id: Uuid, id: 
     Ok(())
 }
 
-pub async fn duplicate_diagram(pool: &PgPool, user_id: Uuid, id: Uuid) -> Result<Diagram, AppError> {
+pub async fn duplicate_diagram(pool: &PgPool, roles: &[String], user_id: Uuid, id: Uuid) -> Result<Diagram, AppError> {
     let source = sqlx::query_as::<_, Diagram>("SELECT * FROM diagrams WHERE id = $1")
         .bind(id).fetch_optional(pool).await?
         .ok_or_else(|| AppError::NotFound("图纸不存在".into()))?;
+
+    // 与其它图纸命令一致：复制前校验读权限，防止越权复制他人草稿
+    if !can_read_diagram(roles, &source.owner_id, &source.status, &user_id) {
+        return Err(AppError::Forbidden("无权复制此图纸".into()));
+    }
 
     let mut new_name = format!("{}副本", source.name);
     let mut suffix = 2;
@@ -410,8 +421,8 @@ pub async fn save_diagram(pool: &PgPool, roles: &[String], user_id: Uuid, id: Uu
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权保存此图纸".into()));
     }
-    if d.status == "PUBLISHED" {
-        return Err(AppError::BadRequest("已发布的图纸不可保存".into()));
+    if !is_diagram_editable(&d.status) {
+        return Err(AppError::BadRequest("当前状态的图纸不可保存".into()));
     }
 
     if !snapshot.is_object() || snapshot.is_array() {
@@ -463,7 +474,7 @@ pub async fn submit_diagram_review(pool: &PgPool, roles: &[String], user_id: Uui
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if d.status == "PUBLISHED" || d.status == "PENDING_REVIEW" {
+    if !is_diagram_editable(&d.status) {
         return Err(AppError::BadRequest("图纸状态不允许提交审核".into()));
     }
 
@@ -557,8 +568,8 @@ pub async fn create_diagram_instance(
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if d.status == "PUBLISHED" {
-        return Err(AppError::BadRequest("已发布的图纸不可编辑".into()));
+    if !is_diagram_editable(&d.status) {
+        return Err(AppError::BadRequest("当前状态的图纸不可编辑".into()));
     }
 
     let comp = sqlx::query_as::<_, Component>("SELECT * FROM components WHERE id = $1")
@@ -590,8 +601,8 @@ pub async fn update_diagram_instance(
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if d.status == "PUBLISHED" {
-        return Err(AppError::BadRequest("已发布的图纸不可编辑".into()));
+    if !is_diagram_editable(&d.status) {
+        return Err(AppError::BadRequest("当前状态的图纸不可编辑".into()));
     }
 
     let inst = sqlx::query_as::<_, DiagramInstance>(
@@ -627,8 +638,8 @@ pub async fn delete_diagram_instance(pool: &PgPool, roles: &[String], user_id: U
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if d.status == "PUBLISHED" {
-        return Err(AppError::BadRequest("已发布的图纸不可编辑".into()));
+    if !is_diagram_editable(&d.status) {
+        return Err(AppError::BadRequest("当前状态的图纸不可编辑".into()));
     }
 
     sqlx::query("DELETE FROM diagram_instances WHERE id = $1 AND diagram_id = $2")
@@ -652,8 +663,8 @@ pub async fn create_diagram_edge(
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if d.status == "PUBLISHED" {
-        return Err(AppError::BadRequest("已发布的图纸不可编辑".into()));
+    if !is_diagram_editable(&d.status) {
+        return Err(AppError::BadRequest("当前状态的图纸不可编辑".into()));
     }
 
     let _s = sqlx::query_as::<_, DiagramInstance>(
@@ -687,8 +698,8 @@ pub async fn update_diagram_edge_line_type(
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if d.status == "PUBLISHED" {
-        return Err(AppError::BadRequest("已发布的图纸不可编辑".into()));
+    if !is_diagram_editable(&d.status) {
+        return Err(AppError::BadRequest("当前状态的图纸不可编辑".into()));
     }
 
     let valid_types = ["straight", "curve", "polyline", "polyline-hvh", "polyline-vhv"];
@@ -717,8 +728,8 @@ pub async fn update_diagram_edge_polyline_mid_ratio(
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if d.status == "PUBLISHED" {
-        return Err(AppError::BadRequest("已发布的图纸不可编辑".into()));
+    if !is_diagram_editable(&d.status) {
+        return Err(AppError::BadRequest("当前状态的图纸不可编辑".into()));
     }
 
     if polyline_mid_ratio < 0.05 || polyline_mid_ratio > 0.95 {
@@ -743,8 +754,8 @@ pub async fn delete_diagram_edge(pool: &PgPool, roles: &[String], user_id: Uuid,
     if !can_write_diagram(roles, &d.owner_id, &user_id) {
         return Err(AppError::Forbidden("无权操作此图纸".into()));
     }
-    if d.status == "PUBLISHED" {
-        return Err(AppError::BadRequest("已发布的图纸不可编辑".into()));
+    if !is_diagram_editable(&d.status) {
+        return Err(AppError::BadRequest("当前状态的图纸不可编辑".into()));
     }
 
     sqlx::query("DELETE FROM diagram_edges WHERE id = $1 AND diagram_id = $2")
