@@ -112,6 +112,16 @@ export async function withdrawDiagramReview(diagramId: string) {
   return request('withdraw_diagram_review', { id: diagramId });
 }
 
+export async function reviseDiagram(diagramId: string) {
+  await requireAuth();
+  return request<DiagramListItem>('revise_diagram', { id: diagramId });
+}
+
+export async function discardRevision(diagramId: string) {
+  await requireAuth();
+  return request<DiagramListItem>('discard_revision', { id: diagramId });
+}
+
 export async function updateDiagram(diagramId: string, data: { name?: string; description?: string }) {
   await requireAuth();
   return request<DiagramListItem>('update_diagram', { id: diagramId, ...data });
@@ -261,6 +271,7 @@ export interface DiagramEditorData {
   diagram: DiagramListItem;
   instances: DiagramInstance[];
   edges: DiagramEdge[];
+  latestVersionStatus: VersionStatus | null;
 }
 
 export async function fetchDiagramForEditor(diagramId: string): Promise<DiagramEditorData> {
@@ -270,7 +281,7 @@ export async function fetchDiagramForEditor(diagramId: string): Promise<DiagramE
     diagram: DiagramListItem;
     instances: DiagramInstance[];
     edges: DiagramEdge[];
-    latestVersion: { id: string; versionNo: number; snapshot: DiagramSnapshot } | null;
+    latestVersion: { id: string; versionNo: number; status: VersionStatus; snapshot: DiagramSnapshot } | null;
   }>('get_diagram_editor', { id: diagramId });
 
   const instances: DiagramInstance[] = (response.instances ?? []).map((inst) => ({
@@ -298,7 +309,12 @@ export async function fetchDiagramForEditor(diagramId: string): Promise<DiagramE
     updatedAt: edge.updatedAt ?? new Date().toISOString(),
   }));
 
-  return { diagram: response.diagram, instances, edges };
+  return {
+    diagram: response.diagram,
+    instances,
+    edges,
+    latestVersionStatus: response.latestVersion?.status ?? null,
+  };
 }
 
 // ===================== Topology =====================

@@ -11,10 +11,13 @@ import {
   fetchDiagramForEditor,
   saveDiagram,
   withdrawDiagramReview,
+  reviseDiagram as reviseDiagramApi,
+  discardRevision as discardRevisionApi,
   type DiagramInstance,
   type DiagramEdge,
   type LineType,
   type DiagramListItem,
+  type VersionStatus,
 } from '../services/diagramApi';
 import { fetchComponentLibrary } from '../services/componentApi';
 import { parseError } from '../utils/parseError';
@@ -43,6 +46,7 @@ interface DiagramEditorState {
   // Current diagram
   diagramId: string | null;
   diagramInfo: DiagramListItem | null;
+  latestVersionStatus: VersionStatus | null;
   instances: DiagramInstance[];
   edges: DiagramEdge[];
   componentMap: Record<string, ComponentMeta>;
@@ -107,12 +111,15 @@ interface DiagramEditorState {
   persistInstanceLabelMove: (id: string) => Promise<void>;
   saveDraft: () => Promise<void>;
   withdrawReview: () => Promise<void>;
+  reviseDiagram: (diagramId: string) => Promise<void>;
+  discardRevision: () => Promise<void>;
 }
 
 export const useDiagramStore = create<DiagramEditorState>()(
   immer((set, get) => ({
     diagramId: null,
     diagramInfo: null,
+    latestVersionStatus: null,
     instances: [],
     edges: [],
     componentMap: {},
@@ -168,6 +175,7 @@ export const useDiagramStore = create<DiagramEditorState>()(
         set((state) => {
           state.diagramId = diagramId;
           state.diagramInfo = data.diagram;
+          state.latestVersionStatus = data.latestVersionStatus;
           state.instances = data.instances;
           state.edges = data.edges;
           state.componentMap = compMap;
@@ -445,6 +453,7 @@ export const useDiagramStore = create<DiagramEditorState>()(
       set((state) => {
         state.diagramId = null;
         state.diagramInfo = null;
+        state.latestVersionStatus = null;
         state.instances = [];
         state.edges = [];
         state.selectedInstanceId = null;
@@ -674,6 +683,18 @@ export const useDiagramStore = create<DiagramEditorState>()(
         });
         throw e;
       }
+    },
+
+    reviseDiagram: async (diagramId: string) => {
+      await reviseDiagramApi(diagramId);
+      await get().loadDiagram(diagramId);
+    },
+
+    discardRevision: async () => {
+      const id = get().diagramInfo?.id;
+      if (!id) return;
+      await discardRevisionApi(id);
+      await get().loadDiagram(id);
     },
   })),
 );
