@@ -152,7 +152,7 @@
   margin-left: 2px;
 }
 .category-delete-btn:hover {
-  color: var(--red-500, #ef4444);
+  color: var(--danger);
 }
 
 .category-vis-btn {
@@ -195,6 +195,26 @@
   background: var(--accent-soft);
   border-color: var(--accent);
   box-shadow: var(--shadow);
+}
+
+/* 选中卡片的角标，提供更明确的当前选中反馈 */
+.component-item.active::after {
+  content: '✓';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+  z-index: 1;
+  pointer-events: none;
 }
 
 .component-item[draggable="true"] {
@@ -242,9 +262,9 @@
 .card-action-btn {
   width: 18px;
   height: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.8);
+  border: 1px solid var(--gray-200);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--surface-overlay);
   color: var(--gray-700);
   font-size: 10px;
   line-height: 1;
@@ -253,6 +273,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(2px);
 }
 
 .card-action-btn:hover {
@@ -277,6 +299,26 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--gray-700);
+}
+
+/* 搜索命中关键词高亮 */
+.search-hl {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 700;
+}
+
+/* 键盘焦点环（鼠标点击不触发，仅键盘 Tab 导航时显示） */
+.btn:focus-visible,
+.tab-btn:focus-visible,
+.icon-btn:focus-visible,
+.card-action-btn:focus-visible,
+.category-header:focus-visible,
+.component-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .category-group {
@@ -344,6 +386,12 @@
   font-weight: 600;
   padding: 6px 10px;
   cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.tab-btn:hover:not(.active) {
+  background: var(--gray-50);
+  border-color: var(--gray-300);
 }
 
 .tab-btn.active {

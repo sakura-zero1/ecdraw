@@ -36,6 +36,20 @@ function matrixListToMap(list: ConnectivityMatrix[]) {
 
 const PRESET_COLORS = ['#22c55e', '#3b82f6', '#6b7280', '#f97316', '#ef4444', '#a855f7', '#14b8a6', '#eab308', '#ec4899'];
 
+/** 在文本中高亮命中的搜索关键词（大小写不敏感，仅高亮首个匹配段）。 */
+function highlightMatch(text: string, keyword: string) {
+  if (!keyword) return text;
+  const idx = text.toLowerCase().indexOf(keyword.toLowerCase());
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="search-hl">{text.slice(idx, idx + keyword.length)}</mark>
+      {text.slice(idx + keyword.length)}
+    </>
+  );
+}
+
 export default function AppLayout() {
   const { components, activeComponentId, addComponent, setActiveComponent, duplicateComponent, loadComponents } =
     useComponentStore();
@@ -66,10 +80,18 @@ export default function AppLayout() {
 
   const [activeTab, setActiveTab] = useState<PanelTab>('property');
   const [searchKeyword, setSearchKeyword] = useState('');
-  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem('ce-collapsed-categories');
+      return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    } catch {
+      return {};
+    }
+  });
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
   const [editingCatLabel, setEditingCatLabel] = useState('');
   const editingInputRef = useRef<HTMLInputElement>(null);
+  const activeItemRef = useRef<HTMLDivElement>(null);
 
   const lastVersionSignaturesRef = useRef<Record<string, string>>({});
   const lastMetaSignaturesRef = useRef<Record<string, string>>({});
@@ -99,7 +121,22 @@ export default function AppLayout() {
     return m;
   }, [allCategories]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem('ce-collapsed-categories', JSON.stringify(collapsedCategories));
+    } catch {
+      // 忽略 localStorage 写入失败（隐私模式等）
+    }
+  }, [collapsedCategories]);
+
+  // 选中元件变化时，将其卡片滚动到列表可视区
+  useEffect(() => {
+    if (!activeComponentId) return;
+    activeItemRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [activeComponentId]);
+
   const normalizedKeyword = searchKeyword.trim().toLowerCase();
+  const isSearching = normalizedKeyword.length > 0;
   const visibleComponents = useMemo(
     () =>
       normalizedKeyword
@@ -474,7 +511,10 @@ export default function AppLayout() {
 
             {categoryOrder.map((cat) => {
               const items = groupedComponents[cat] ?? [];
-              const collapsed = collapsedCategories[cat];
+              // 搜索时隐藏无命中的空分类，避免列表被空标题占满
+              if (isSearching && items.length === 0) return null;
+              // 搜索时强制展开，确保命中项不会被折叠状态藏起来
+              const collapsed = isSearching ? false : collapsedCategories[cat];
               const label = categoryLabelMap[cat] ?? cat;
               const color = categoryColorMap[cat] ?? '#6b7280';
               const catInfo = allCategories.find((c) => c.name === cat);
@@ -533,6 +573,7 @@ export default function AppLayout() {
                     {items.map((comp) => (
                       <div
                         key={comp.id}
+                        ref={comp.id === activeComponentId ? activeItemRef : undefined}
                         className={`component-item ${comp.id === activeComponentId ? 'active' : ''} ${drag.active && drag.draggingId === comp.id ? 'dragging' : ''}`}
                         onClick={() => { if (!drag.active) setActiveComponent(comp.id); }}
                         onMouseDown={(e) => {
@@ -568,7 +609,7 @@ export default function AppLayout() {
                           </div>
                         </div>
                         <span className="comp-card-name" title={comp.name}>
-                          {comp.name}
+                          {highlightMatch(comp.name, normalizedKeyword)}
                         </span>
                       </div>
                     ))}
