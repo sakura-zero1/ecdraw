@@ -98,6 +98,67 @@ pub fn is_diagram_editable(status: &str) -> bool {
     status == "DRAFT" || status == "REJECTED"
 }
 
+/// 最新版本（MAX version_no）是否可编辑 = 其 status 为 DRAFT 或 REJECTED。
+/// 这取代了基于图纸 status 的可编辑判断，统一首发与修订场景。
+pub async fn latest_version_editable(pool: &PgPool, diagram_id: Uuid) -> Result<bool, AppError> {
+    let st = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM diagram_versions WHERE diagram_id = $1 ORDER BY version_no DESC LIMIT 1"
+    ).bind(diagram_id).fetch_optional(pool).await?;
+    Ok(matches!(st.as_deref(), Some("DRAFT") | Some("REJECTED")))
+}
+
+/// 该图是否存在 ONLINE 版本（用于区分首发 vs 修订）。
+pub async fn has_online_version(pool: &PgPool, diagram_id: Uuid) -> Result<bool, AppError> {
+    let c = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM diagram_versions WHERE diagram_id = $1 AND status = 'ONLINE'"
+    ).bind(diagram_id).fetch_one(pool).await?;
+    Ok(c > 0)
+}
+
+/// 用快照内容重建实时表 diagram_instances/diagram_edges（先清空再插入）。
+/// 字段解析与 get_diagram_version_topology 保持一致（兼容 positionX|x、fromInstanceId|sourceInstanceId 等）。
+async fn hydrate_realtime_from_snapshot(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    diagram_id: Uuid,
+    snapshot: &serde_json::Value,
+) -> Result<(), AppError> {
+    sqlx::query("DELETE FROM diagram_edges WHERE diagram_id = $1").bind(diagram_id).execute(&mut **tx).await?;
+    sqlx::query("DELETE FROM diagram_instances WHERE diagram_id = $1").bind(diagram_id).execute(&mut **tx).await?;
+
+    let insts = snapshot.get("instances").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    for si in &insts {
+        let id_str = si.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        let iid: Uuid = match id_str.parse() { Ok(u) => u, Err(_) => continue };
+        let comp_id: Uuid = si.get("componentId").and_then(|v| v.as_str()).unwrap_or("").parse().unwrap_or(Uuid::nil());
+        let label = si.get("label").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let x = si.get("positionX").or_else(|| si.get("x")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let y = si.get("positionY").or_else(|| si.get("y")).and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let idata = si.get("instanceData").cloned().unwrap_or(json!({}));
+        sqlx::query(
+            "INSERT INTO diagram_instances (id, diagram_id, component_id, label, position_x, position_y, instance_data) VALUES ($1,$2,$3,$4,$5,$6,$7)"
+        )
+        .bind(iid).bind(diagram_id).bind(comp_id).bind(&label).bind(x).bind(y).bind(&idata)
+        .execute(&mut **tx).await?;
+    }
+
+    let conns = snapshot.get("connections").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    for sc in &conns {
+        let from: Uuid = sc.get("fromInstanceId").or_else(|| sc.get("sourceInstanceId")).and_then(|v| v.as_str()).unwrap_or("").parse().unwrap_or(Uuid::nil());
+        let to: Uuid = sc.get("toInstanceId").or_else(|| sc.get("targetInstanceId")).and_then(|v| v.as_str()).unwrap_or("").parse().unwrap_or(Uuid::nil());
+        if from.is_nil() || to.is_nil() { continue; }
+        let spid = sc.get("sourcePinId").or_else(|| sc.get("fromPinId")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let tpid = sc.get("targetPinId").or_else(|| sc.get("toPinId")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let lt = sc.get("lineType").and_then(|v| v.as_str()).unwrap_or("straight").to_string();
+        let pmr = sc.get("polylineMidRatio").and_then(|v| v.as_f64());
+        sqlx::query(
+            "INSERT INTO diagram_edges (diagram_id, source_instance_id, target_instance_id, source_pin_id, target_pin_id, line_type, polyline_mid_ratio) VALUES ($1,$2,$3,$4,$5,$6,$7)"
+        )
+        .bind(diagram_id).bind(from).bind(to).bind(&spid).bind(&tpid).bind(&lt).bind(pmr)
+        .execute(&mut **tx).await?;
+    }
+    Ok(())
+}
+
 // ========== Diagram CRUD ==========
 
 pub async fn list_diagrams(pool: &PgPool, roles: &[String], user_id: Uuid) -> Result<Vec<Diagram>, AppError> {
