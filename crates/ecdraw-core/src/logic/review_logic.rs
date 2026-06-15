@@ -145,8 +145,17 @@ pub async fn reject_review(
         sqlx::query("UPDATE diagrams SET status = 'DRAFT', updated_at = NOW() WHERE id = $1")
             .bind(review.diagram_id).execute(&mut *tx).await?;
     } else {
-        sqlx::query("UPDATE diagrams SET status = 'REJECTED', updated_at = NOW() WHERE id = $1")
-            .bind(review.diagram_id).execute(&mut *tx).await?;
+        // 修订驳回（仍有 ONLINE 版本）→ 保持 PUBLISHED，线上不中断；首发驳回 → REJECTED
+        let online_cnt = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM diagram_versions WHERE diagram_id = $1 AND status = 'ONLINE'"
+        ).bind(review.diagram_id).fetch_one(&mut *tx).await?;
+        if online_cnt > 0 {
+            sqlx::query("UPDATE diagrams SET updated_at = NOW() WHERE id = $1")
+                .bind(review.diagram_id).execute(&mut *tx).await?;
+        } else {
+            sqlx::query("UPDATE diagrams SET status = 'REJECTED', updated_at = NOW() WHERE id = $1")
+                .bind(review.diagram_id).execute(&mut *tx).await?;
+        }
     }
 
     sqlx::query(
