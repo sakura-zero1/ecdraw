@@ -643,20 +643,24 @@ pub async fn revise_diagram(pool: &PgPool, roles: &[String], user_id: Uuid, id: 
         return Err(AppError::Forbidden("无权修订此图纸".into()));
     }
 
+    // 在事务内锁定图纸行，串行化并发修订，防止 check-then-insert 竞态创建多个草稿
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT id FROM diagrams WHERE id = $1 FOR UPDATE").bind(id).execute(&mut *tx).await?;
+
     let latest = sqlx::query_as::<_, DiagramVersion>(
         "SELECT * FROM diagram_versions WHERE diagram_id = $1 ORDER BY version_no DESC LIMIT 1"
-    ).bind(id).fetch_optional(pool).await?
+    ).bind(id).fetch_optional(&mut *tx).await?
         .ok_or_else(|| AppError::BadRequest("图纸无版本".into()))?;
 
     match latest.status.as_str() {
         "DRAFT" | "REJECTED" => {
             // 已有进行中修订草稿，直接进入编辑
+            tx.commit().await?;
             Ok(d)
         }
         "REVIEWING" => Err(AppError::BadRequest("修订正在审核中，请先撤回或等待审核".into())),
         "ONLINE" => {
             // 基于 ONLINE 快照创建新 DRAFT 修订版本，图纸保持 PUBLISHED
-            let mut tx = pool.begin().await?;
             let next_no = sqlx::query_scalar::<_, i32>(
                 "SELECT COALESCE(MAX(version_no), 0) FROM diagram_versions WHERE diagram_id = $1"
             ).bind(id).fetch_one(&mut *tx).await? + 1;

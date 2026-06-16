@@ -217,7 +217,7 @@ export default function DiagramViewerPage() {
       const verList = await fetchDiagramVersions(selectedDiagramId);
       setVersions(verList);
       if (versionId === selectedVersionId) {
-        const latest = verList[0];
+        const latest = verList.find((v) => v.status === 'ONLINE') ?? verList[0];
         if (latest) {
           setSelectedVersionId(latest.id);
           const data = await fetchDiagramVersionTopology(selectedDiagramId, latest.id);

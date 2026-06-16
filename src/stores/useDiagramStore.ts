@@ -671,11 +671,8 @@ export const useDiagramStore = create<DiagramEditorState>()(
 
       try {
         await withdrawDiagramReview(diagramId);
-        set((state) => {
-          if (state.diagramInfo) {
-            state.diagramInfo.status = 'DRAFT';
-          }
-        });
+        // 重新加载以反映后端真实状态（修订场景图纸保持 PUBLISHED，latestVersionStatus 变 DRAFT）
+        await get().loadDiagram(diagramId);
       } catch (e) {
         const message = parseError(e) || '撤回审核失败';
         set((state) => {
