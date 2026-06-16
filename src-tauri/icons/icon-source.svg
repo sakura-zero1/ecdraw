@@ -1,0 +1,80 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- 背景对角渐变：深色 → 亮色（玫红暖调） -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1C0712"/>
+      <stop offset="0.42" stop-color="#9F1239"/>
+      <stop offset="0.74" stop-color="#E11D48"/>
+      <stop offset="1" stop-color="#FB923C"/>
+    </linearGradient>
+
+    <!-- 顶部玻璃高光 -->
+    <radialGradient id="gloss" cx="0.3" cy="0.12" r="0.9">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.30"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 闪电主体渐变（白 → 暖浅玫） -->
+    <linearGradient id="bolt" x1="360" y1="150" x2="700" y2="880" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.55" stop-color="#FFF1F2"/>
+      <stop offset="1" stop-color="#FFD9C2"/>
+    </linearGradient>
+
+    <!-- 节点环渐变 -->
+    <linearGradient id="node" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FDA4AF"/>
+    </linearGradient>
+
+    <!-- 闪电柔光（玫红） -->
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="22" result="b"/>
+      <feColorMatrix in="b" type="matrix"
+        values="0 0 0 0 0.98  0 0 0 0 0.44  0 0 0 0 0.52  0 0 0 0.85 0"/>
+    </filter>
+
+    <!-- squircle 裁剪 -->
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="1024" height="1024" rx="232" ry="232"/>
+    </clipPath>
+
+    <!-- 配网拓扑：节点 + 连线（可复用，主体与柔光共用） -->
+    <g id="net" fill="none">
+      <!-- 主节点光环 -->
+      <circle cx="512" cy="262" r="96" stroke="#FFFFFF" stroke-opacity="0.20" stroke-width="8"/>
+      <!-- 连线 -->
+      <path d="M512 262 L292 512 M512 262 L732 512 M292 512 L512 762 M732 512 L512 762"
+            stroke="#FFF1F2" stroke-width="28" stroke-linecap="round"/>
+      <!-- 次级节点（环形） -->
+      <circle cx="292" cy="512" r="50" fill="#1C0712"/>
+      <circle cx="292" cy="512" r="50" stroke="url(#node)" stroke-width="20"/>
+      <circle cx="732" cy="512" r="50" fill="#1C0712"/>
+      <circle cx="732" cy="512" r="50" stroke="url(#node)" stroke-width="20"/>
+      <circle cx="512" cy="762" r="50" fill="#1C0712"/>
+      <circle cx="512" cy="762" r="50" stroke="url(#node)" stroke-width="20"/>
+      <!-- 主节点（高亮实心） -->
+      <circle cx="512" cy="262" r="68" fill="url(#bolt)"/>
+      <circle cx="512" cy="262" r="68" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="6"/>
+    </g>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <!-- 背景 -->
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#bg)"/>
+    <!-- 斜向光带 -->
+    <polygon points="0,1024 460,1024 1024,460 1024,260" fill="#FFFFFF" opacity="0.05"/>
+    <!-- 玻璃高光 -->
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#gloss)"/>
+
+    <!-- 拓扑网络柔光层 -->
+    <use href="#net" filter="url(#glow)"/>
+    <!-- 拓扑网络主体 -->
+    <use href="#net"/>
+
+    <!-- 内描边提升质感 -->
+    <rect x="3" y="3" width="1018" height="1018" rx="229" ry="229"
+          fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="6"/>
+  </g>
+</svg>
