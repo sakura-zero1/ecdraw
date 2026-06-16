@@ -4,7 +4,6 @@ import ViewerCanvas, { type ViewMode, type TopologyInstance, type TopologyEdge }
 import VersionTimeline from '../components/diagram/VersionTimeline';
 import {
   fetchDiagrams,
-  fetchDiagramTopology,
   fetchDiagramVersions,
   deleteDiagramVersion,
   fetchDiagramVersionTopology,
@@ -110,23 +109,16 @@ export default function DiagramViewerPage() {
         if (cancelled) return;
         setVersions(verList);
 
-        // Default: load latest version's topology
-        const latest = verList[0];
-        if (!latest) {
+        // Default: show the ONLINE (published) version so in-progress revisions never leak to viewers
+        const online = verList.find((v) => v.status === 'ONLINE');
+        const target = online ?? verList[0];
+        if (!target) {
           setTopologyData(null);
           setLoading(false);
           return;
         }
-        setSelectedVersionId(latest.id);
-
-        // If latest is the current online version, use the live topology endpoint
-        // Otherwise use version-specific endpoint
-        let data: TopologyResponse;
-        if (latest.status === 'ONLINE') {
-          data = await fetchDiagramTopology(selectedDiagramId);
-        } else {
-          data = await fetchDiagramVersionTopology(selectedDiagramId, latest.id);
-        }
+        setSelectedVersionId(target.id);
+        const data = await fetchDiagramVersionTopology(selectedDiagramId, target.id);
         if (cancelled) return;
         setTopologyData(data);
       } catch (e) {
@@ -228,9 +220,7 @@ export default function DiagramViewerPage() {
         const latest = verList[0];
         if (latest) {
           setSelectedVersionId(latest.id);
-          const data = latest.status === 'ONLINE'
-            ? await fetchDiagramTopology(selectedDiagramId)
-            : await fetchDiagramVersionTopology(selectedDiagramId, latest.id);
+          const data = await fetchDiagramVersionTopology(selectedDiagramId, latest.id);
           setTopologyData(data);
         } else {
           setSelectedVersionId(null);
