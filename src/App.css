@@ -841,6 +841,7 @@ a.shell-overflow-item {
 .viewer-timeline-tooltip {
   position: fixed;
   z-index: 1000;
+  transform: translateY(-50%);
   background: var(--gray-900);
   color: #fff;
   padding: 8px 12px;
@@ -863,6 +864,25 @@ a.shell-overflow-item {
 .viewer-timeline-tooltip .tt-time {
   color: rgba(255,255,255,0.5);
   font-size: 11px;
+}
+/* 当前在线版本：版本号绿色加粗，一眼可辨 */
+.viewer-timeline-node.online .viewer-timeline-label {
+  color: var(--success);
+  font-weight: 700;
+}
+/* 已退运版本整体淡化，hover 时恢复 */
+.viewer-timeline-node.decommissioned { opacity: 0.5; }
+.viewer-timeline-node.decommissioned:hover { opacity: 1; }
+/* 选中态左侧高亮条 */
+.viewer-timeline-node.selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
 }
 
 /* Decommissioned diagram in list */
