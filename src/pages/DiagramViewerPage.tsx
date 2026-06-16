@@ -54,6 +54,8 @@ export default function DiagramViewerPage() {
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
 
   const canvasContainerRef = useRef<HTMLDivElement>(null);
+  // 拓扑加载请求序号：旧请求返回时若序号已过期则丢弃，避免快速切换导致 stale 覆盖
+  const topoSeqRef = useRef(0);
 
   const canSeeAll = user && (hasRole(user, 'ADMIN') || hasRole(user, 'DIAGRAM_EDITOR') || hasRole(user, 'REVIEWER'));
   const currentOnlineVersionId = versions.find((v) => v.status === 'ONLINE')?.id ?? null;
@@ -95,6 +97,7 @@ export default function DiagramViewerPage() {
       return;
     }
     let cancelled = false;
+    const seq = ++topoSeqRef.current;
     setLoading(true);
     setError('');
     setSimResult(null);
@@ -119,7 +122,7 @@ export default function DiagramViewerPage() {
         }
         setSelectedVersionId(target.id);
         const data = await fetchDiagramVersionTopology(selectedDiagramId, target.id);
-        if (cancelled) return;
+        if (cancelled || seq !== topoSeqRef.current) return;
         setTopologyData(data);
       } catch (e) {
         if (!cancelled) setError(parseApiError(e));
@@ -133,16 +136,18 @@ export default function DiagramViewerPage() {
   // ---- Load topology when version selection changes ----
   const handleSelectVersion = useCallback(async (versionId: string) => {
     if (versionId === selectedVersionId) return;
+    const seq = ++topoSeqRef.current;
     setSelectedVersionId(versionId);
     setLoading(true);
     setError('');
     try {
       const data = await fetchDiagramVersionTopology(selectedDiagramId, versionId);
+      if (seq !== topoSeqRef.current) return;
       setTopologyData(data);
     } catch (e) {
-      setError(parseApiError(e));
+      if (seq === topoSeqRef.current) setError(parseApiError(e));
     } finally {
-      setLoading(false);
+      if (seq === topoSeqRef.current) setLoading(false);
     }
   }, [selectedDiagramId, selectedVersionId]);
 
@@ -219,8 +224,10 @@ export default function DiagramViewerPage() {
       if (versionId === selectedVersionId) {
         const latest = verList.find((v) => v.status === 'ONLINE') ?? verList[0];
         if (latest) {
+          const seq = ++topoSeqRef.current;
           setSelectedVersionId(latest.id);
           const data = await fetchDiagramVersionTopology(selectedDiagramId, latest.id);
+          if (seq !== topoSeqRef.current) return;
           setTopologyData(data);
         } else {
           setSelectedVersionId(null);
