@@ -923,7 +923,7 @@ pub async fn delete_diagram_edge(pool: &PgPool, roles: &[String], user_id: Uuid,
 
 // ========== Version Timeline ==========
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct VersionSummary {
     pub id: Uuid,
@@ -953,20 +953,18 @@ pub async fn list_diagram_versions(
         || roles.contains(&"REVIEWER".to_string());
 
     let versions = if can_see_all {
-        sqlx::query_as::<_, (Uuid, i32, String, Uuid, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>)>(
+        sqlx::query_as::<_, VersionSummary>(
             "SELECT id, version_no, status, created_by, created_at, published_at FROM diagram_versions WHERE diagram_id = $1 ORDER BY version_no DESC"
         )
         .bind(diagram_id).fetch_all(pool).await?
     } else {
-        sqlx::query_as::<_, (Uuid, i32, String, Uuid, chrono::DateTime<chrono::Utc>, Option<chrono::DateTime<chrono::Utc>>)>(
+        sqlx::query_as::<_, VersionSummary>(
             "SELECT id, version_no, status, created_by, created_at, published_at FROM diagram_versions WHERE diagram_id = $1 AND status = 'ONLINE' ORDER BY version_no DESC"
         )
         .bind(diagram_id).fetch_all(pool).await?
     };
 
-    Ok(versions.into_iter().map(|(id, version_no, status, created_by, created_at, published_at)| {
-        VersionSummary { id, version_no, status, created_by, created_at, published_at }
-    }).collect())
+    Ok(versions)
 }
 
 pub async fn get_diagram_version_topology(
@@ -1114,6 +1112,9 @@ pub async fn delete_diagram_version(
     }
     if ver.status == "REVIEWING" {
         return Err(AppError::BadRequest("不能删除审核中的版本".into()));
+    }
+    if ver.status == "DRAFT" {
+        return Err(AppError::BadRequest("修订草稿请通过\"放弃修订\"撤销，不在此删除".into()));
     }
 
     let version_count: i64 = sqlx::query_scalar(
