@@ -772,6 +772,7 @@ function DiagramCard({
   onOpen,
   onSubmitReview,
   onWithdrawReview,
+  onRevise,
   onRename,
   onDuplicate,
   onDelete,
@@ -780,6 +781,7 @@ function DiagramCard({
   onOpen: (id: string) => void;
   onSubmitReview: (id: string) => void;
   onWithdrawReview: (id: string) => void;
+  onRevise: (id: string) => void;
   onRename: (id: string, name: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
@@ -812,6 +814,7 @@ function DiagramCard({
   const canEdit = item.status === 'DRAFT' || item.status === 'REJECTED';
   const canSubmitReview = item.status === 'DRAFT' || item.status === 'REJECTED';
   const canWithdrawReview = item.status === 'PENDING_REVIEW';
+  const canRevise = item.status === 'PUBLISHED';
   const canDelete = item.status !== 'PENDING_DELETE' && item.status !== 'PENDING_REVIEW';
   const canDuplicate = true;
 
@@ -903,6 +906,14 @@ function DiagramCard({
             提交审核
           </button>
         )}
+        {canRevise && (
+          <button
+            className="dg-card-review-btn"
+            onClick={() => onRevise(item.id)}
+          >
+            修订
+          </button>
+        )}
       </div>
     </div>
   );
@@ -920,6 +931,7 @@ function DiagramList({
   onOpen,
   onSubmitReview,
   onWithdrawReview,
+  onRevise,
   onReload,
   setError,
 }: {
@@ -932,6 +944,7 @@ function DiagramList({
   onOpen: (id: string) => void;
   onSubmitReview: (id: string) => void;
   onWithdrawReview: (id: string) => void;
+  onRevise: (id: string) => void;
   onReload: () => void;
   setError: (v: string) => void;
 }) {
@@ -1013,6 +1026,7 @@ function DiagramList({
               onOpen={onOpen}
               onSubmitReview={onSubmitReview}
               onWithdrawReview={onWithdrawReview}
+              onRevise={onRevise}
               onRename={handleRename}
               onDuplicate={handleDuplicate}
               onDelete={handleDelete}
@@ -1066,6 +1080,9 @@ export default function DiagramEditorPage() {
     persistInstanceLabelMove,
     saveDraft,
     withdrawReview,
+    reviseDiagram,
+    discardRevision,
+    latestVersionStatus,
     updateInstanceTransform,
     updateEdgeLineType,
     defaultLineType,
@@ -1282,6 +1299,15 @@ export default function DiagramEditorPage() {
     }
   };
 
+  const handleRevise = async (id: string) => {
+    try {
+      // Store action revises then loads the diagram (opens the editor).
+      await reviseDiagram(id);
+    } catch (e) {
+      setListError(parseApiError(e));
+    }
+  };
+
   // ---------- Keyboard shortcuts ----------
 
   useEffect(() => {
@@ -1438,7 +1464,7 @@ export default function DiagramEditorPage() {
             </span>
             <span className="de-zoom-label">{Math.round(zoom * 100)}%</span>
             <button className="btn btn-sm" onClick={undo}>撤销</button>
-            {(diagramInfo?.status === 'DRAFT' || diagramInfo?.status === 'REJECTED') && (
+            {(latestVersionStatus === 'DRAFT' || latestVersionStatus === 'REJECTED') && (
               <button
                 className="btn btn-sm"
                 onClick={() => void handleSaveDraft()}
@@ -1446,7 +1472,7 @@ export default function DiagramEditorPage() {
                 保存草稿
               </button>
             )}
-            {diagramInfo?.status === 'PENDING_REVIEW' && (
+            {latestVersionStatus === 'REVIEWING' && (
               <button
                 className="btn btn-sm"
                 onClick={() => void handleWithdrawReview()}
@@ -1454,7 +1480,17 @@ export default function DiagramEditorPage() {
                 撤回审核
               </button>
             )}
-            {(diagramInfo?.status === 'DRAFT' || diagramInfo?.status === 'REJECTED') && (
+            {(latestVersionStatus === 'DRAFT' || latestVersionStatus === 'REJECTED') && diagramInfo?.status === 'PUBLISHED' && (
+              <button
+                className="btn btn-sm btn-danger"
+                onClick={() => {
+                  if (window.confirm('放弃本次修订将丢弃草稿改动，确定？')) void discardRevision();
+                }}
+              >
+                放弃修订
+              </button>
+            )}
+            {(latestVersionStatus === 'DRAFT' || latestVersionStatus === 'REJECTED') && (
               <button
                 className="btn btn-sm btn-primary"
                 onClick={() => void handleSubmitReview(diagramId)}
@@ -1665,6 +1701,7 @@ export default function DiagramEditorPage() {
       onOpen={handleOpenDiagram}
       onSubmitReview={handleSubmitReview}
       onWithdrawReview={handleWithdrawReview}
+      onRevise={handleRevise}
       onReload={loadList}
       setError={setListError}
     />
