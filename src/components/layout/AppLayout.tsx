@@ -18,6 +18,9 @@ import {
   renameCategory,
 } from '../../services/componentApi';
 import SvgCanvas from '../canvas/ComponentCanvas';
+import ComposeWizardDialog, { type ComposeWizardInput } from '../panels/ComposeWizardDialog';
+import { composeBayComponent, composeCabinetComponent, type ComposeSource } from '../../utils/composeComponent';
+import { v4 as uuid } from 'uuid';
 import PropertyPanel from '../panels/PropertyPanel';
 import PinListPanel from '../panels/PinListPanel';
 import ConnectivityMatrixPanel from '../panels/ConnectivityMatrixPanel';
@@ -63,6 +66,7 @@ export default function AppLayout() {
   const [deleteCatTarget, setDeleteCatTarget] = useState<CategoryInfo | null>(null);
 
   const [showCategoryDialog, setShowCategoryDialog] = useState(false);
+  const [showComposeDialog, setShowComposeDialog] = useState(false);
   const [catLabel, setCatLabel] = useState('');
   const [catColor, setCatColor] = useState('#6b7280');
   const [categoryList, setCategoryList] = useState<CategoryInfo[]>([]);
@@ -377,6 +381,53 @@ export default function AppLayout() {
     }
   };
 
+  // 组合生成元件（间隔组合 / 柜体组合）
+  const handleCompose = async (input: ComposeWizardInput) => {
+    // 展开组合项 → 源元件（含各自连接矩阵）
+    const sources: ComposeSource[] = [];
+    for (const item of input.items) {
+      const comp = components.find((c) => c.id === item.componentId);
+      if (!comp) continue;
+      for (let k = 0; k < item.count; k++) {
+        sources.push({ comp, matrix: matrices[comp.id] ?? { componentId: comp.id, connections: [] } });
+      }
+    }
+    if (sources.length === 0) {
+      showToast('请先添加组合项');
+      return;
+    }
+
+    // 目标元件 ID：API 模式由服务器分配，本地模式自生成
+    let targetId: string;
+    if (storageMode === 'api') {
+      try {
+        const created = await createComponentByApi(input.name, input.category);
+        targetId = created.id;
+        lastMetaSignaturesRef.current[created.id] = JSON.stringify({
+          name: created.name,
+          category: created.category,
+          description: created.description,
+        });
+      } catch {
+        showToast('云端创建失败，请检查网络或重新登录');
+        return;
+      }
+    } else {
+      targetId = uuid();
+    }
+
+    const result = input.mode === 'bay'
+      ? composeBayComponent({ targetId, name: input.name, category: input.category, devices: sources })
+      : composeCabinetComponent({ targetId, name: input.name, category: input.category, bays: sources });
+
+    // 注入本地 store；API 模式下自动同步 effect 会随后推送版本快照
+    loadComponents([...components, result.component]);
+    loadMatrices([...Object.values(matrices), result.matrix]);
+    setActiveComponent(targetId);
+    setShowComposeDialog(false);
+    showToast(`已生成「${input.name}」，可继续手工微调`);
+  };
+
   const handleCreateCategory = async () => {
     const label = catLabel.trim();
     if (!label) return;
@@ -476,6 +527,7 @@ export default function AppLayout() {
             />
             <button className="btn btn-sm" onClick={() => setShowNewDialog(true)} style={{ marginLeft: 6, whiteSpace: 'nowrap' }}>+ 新建</button>
             <button className="btn btn-sm" onClick={() => setShowCategoryDialog(true)} style={{ marginLeft: 4, whiteSpace: 'nowrap' }} title="新建类别">+ 类别</button>
+            <button className="btn btn-sm" onClick={() => setShowComposeDialog(true)} style={{ marginLeft: 4, whiteSpace: 'nowrap' }} title="组合生成（间隔/环网柜/高配室）">⊞ 组合</button>
           </div>
           <div className="sidebar-actions">
             <button
@@ -699,6 +751,16 @@ export default function AppLayout() {
             </div>
           </div>
         </div>
+      )}
+
+      {showComposeDialog && (
+        <ComposeWizardDialog
+          components={components}
+          categories={allCategories.filter((c) => c.visible).map((c) => ({ name: c.name, label: c.label }))}
+          categoryLabelMap={categoryLabelMap}
+          onClose={() => setShowComposeDialog(false)}
+          onCompose={(input) => void handleCompose(input)}
+        />
       )}
 
       {showCategoryDialog && (

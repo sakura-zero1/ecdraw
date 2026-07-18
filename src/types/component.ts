@@ -14,7 +14,7 @@ export interface Position {
   y: number;
 }
 
-export type ShapeType = 'rect' | 'circle' | 'ellipse' | 'line' | 'path' | 'text';
+export type ShapeType = 'rect' | 'circle' | 'ellipse' | 'line' | 'path' | 'text' | 'polygon';
 
 export interface ShapeStateOverride {
   fill?: string;
@@ -61,12 +61,20 @@ export interface ShapeElement {
   x2?: number;
   y2?: number;
   d?: string;
+  // polygon shape: closed vertex list [[x,y], ...]
+  points?: number[][];
   // text shape properties
   text?: string;
   fontSize?: number;
   fontFamily?: string;
   fontWeight?: string;
   textAlign?: CanvasTextAlign;
+}
+
+/** 元件电气语义（与展示分类解耦）：role 决定停电模拟/台区等行为 */
+export interface ElectricalMeta {
+  role?: 'source' | 'switch' | 'junction' | 'load';
+  breakable?: boolean;
 }
 
 export interface ElectricalComponent {
@@ -80,6 +88,8 @@ export interface ElectricalComponent {
   displayHeight?: number;
   shapeElements: ShapeElement[];
   pins: Pin[];
+  /** 可选电气语义声明（如国标种子库元件）；缺省时按 category 判断 */
+  electrical?: ElectricalMeta;
   createdAt: string;
   updatedAt: string;
 }

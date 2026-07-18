@@ -13,11 +13,17 @@ pub async fn outage_simulate(
         id: Uuid,
         label: String,
         component_category: String,
+        /// 元件快照中声明的电气角色（electrical.role），语义与分类解耦
+        elec_role: Option<String>,
         district: Option<(Option<f64>, Option<String>, Option<String>, Option<i32>)>,
     }
 
-    let rows = sqlx::query_as::<_, (Uuid, String, String)>(
-        r#"SELECT di.id, di.label, c.category
+    let rows = sqlx::query_as::<_, (Uuid, String, String, Option<String>)>(
+        r#"SELECT di.id, di.label, c.category,
+                  (SELECT cv.snapshot->'electrical'->>'role'
+                     FROM component_versions cv
+                    WHERE cv.component_id = c.id
+                    ORDER BY cv.version_no DESC LIMIT 1)
            FROM diagram_instances di
            JOIN components c ON di.component_id = c.id
            WHERE di.diagram_id = $1"#
@@ -27,20 +33,21 @@ pub async fn outage_simulate(
     .await?;
 
     let mut instances: HashMap<Uuid, InstanceInfo> = HashMap::new();
-    for (id, label, cat) in rows {
+    for (id, label, cat, elec_role) in rows {
         let dd = sqlx::query_as::<_, (Option<f64>, Option<String>, Option<String>, Option<i32>)>(
             "SELECT transformer_capacity, supply_range, supply_area, household_count FROM district_data WHERE diagram_instance_id = $1"
         )
         .bind(id).fetch_optional(pool).await?;
 
         instances.insert(id, InstanceInfo {
-            id, label, component_category: cat,
+            id, label, component_category: cat, elec_role,
             district: dd,
         });
     }
 
     let dc = instances.get(&disconnect_instance_id).ok_or_else(|| AppError::NotFound("断开实例不存在".into()))?;
-    if dc.component_category != "switchPoint" {
+    let is_switch = dc.component_category == "switchPoint" || dc.elec_role.as_deref() == Some("switch");
+    if !is_switch {
         return Err(AppError::BadRequest("断开点必须是开关类元件".into()));
     }
 
@@ -62,7 +69,7 @@ pub async fn outage_simulate(
     adj.remove(&disconnect_instance_id);
 
     let power_sources: Vec<Uuid> = instances.iter()
-        .filter(|(_, v)| v.component_category == "powerPoint")
+        .filter(|(_, v)| v.component_category == "powerPoint" || v.elec_role.as_deref() == Some("source"))
         .map(|(k, _)| *k)
         .collect();
 

@@ -487,7 +487,7 @@ function InstancePropertyPanel({
 }: {
   instance: DiagramInstance;
   edges: DiagramEdge[];
-  componentMap: Record<string, { name: string; category: string; pins?: Pin[] }>;
+  componentMap: Record<string, { name: string; category: string; pins?: Pin[]; electrical?: { role?: string; breakable?: boolean } }>;
   componentConnections: Record<string, ConnectivityMatrix>;
   allInstances: DiagramInstance[];
   onUpdateLabel: (id: string, label: string) => void;
@@ -497,6 +497,8 @@ function InstancePropertyPanel({
 }) {
   const comp = componentMap[instance.componentId];
   const category = comp?.category || 'junctionPoint';
+  // 台区判定：分类 OR 电气语义声明（国标种子库元件分类为 gbSeed，语义在 electrical.role）
+  const isLoadPoint = category === 'loadPoint' || comp?.electrical?.role === 'load';
   const categoryName = CATEGORY_LABELS[category as keyof typeof CATEGORY_LABELS] || '未知';
 
   const connectedEdges = edges.filter(
@@ -600,7 +602,7 @@ function InstancePropertyPanel({
       />
 
       {/* Additional data: District for loadPoint */}
-      {diagramId && category === 'loadPoint' && (
+      {diagramId && isLoadPoint && (
         <div className="de-panel-section">
           <DistrictDataPanel instanceId={instance.id} diagramId={diagramId} />
         </div>
@@ -1289,6 +1291,8 @@ export default function DiagramEditorPage() {
     if (!confirmed) return;
 
     try {
+      // 注：提交后服务端会从实时表重建该版本快照（submit_diagram_review），
+      // 故此处无需先手动 saveDraft，元件命名/位置等改动都会被带入送审快照。
       await submitDiagramReview(id);
       if (diagramId === id) {
         clearDiagram();

@@ -7,6 +7,7 @@ import {
   type DiagramSnapshot,
 } from '../services/diagramApi';
 import { fetchDistrictsByDiagram, upsertDistrict, batchUpsertDistricts, type DistrictData } from '../services/districtApi';
+import { fetchComponentLibrary } from '../services/componentApi';
 import { parseError } from '../utils/parseError';
 
 function parseApiError(error: unknown) {
@@ -18,6 +19,10 @@ export default function DistrictPage() {
   const [selectedId, setSelectedId] = useState('');
   const [snapshot, setSnapshot] = useState<DiagramSnapshot | null>(null);
   const [districtMap, setDistrictMap] = useState<Record<string, DistrictData>>({});
+  // componentId → category，用于筛出「台区=负荷点」实例
+  const [categoryMap, setCategoryMap] = useState<Record<string, string>>({});
+  // componentId → electrical.role（国标种子库元件的语义声明）
+  const [roleMap, setRoleMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -45,6 +50,28 @@ export default function DistrictPage() {
         if (!cancelled) setError(parseApiError(e));
       } finally {
         if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Load component library once → build componentId→category map（台区只取负荷点元件）
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { components } = await fetchComponentLibrary();
+        if (cancelled) return;
+        const map: Record<string, string> = {};
+        const roles: Record<string, string> = {};
+        for (const c of components) {
+          map[c.id] = c.category;
+          if (c.electrical?.role) roles[c.id] = c.electrical.role;
+        }
+        setCategoryMap(map);
+        setRoleMap(roles);
+      } catch {
+        // 分类映射拉取失败不阻断页面
       }
     })();
     return () => { cancelled = true; };
@@ -124,11 +151,15 @@ export default function DistrictPage() {
   };
 
   const instances = snapshot?.instances ?? [];
+  // 台区 = 负荷点元件：分类为 loadPoint，或电气语义声明 role=load（国标种子库配变）
+  const districtInstances = instances.filter(
+    (inst) => categoryMap[inst.componentId] === 'loadPoint' || roleMap[inst.componentId] === 'load',
+  );
 
   const diagramName = diagrams.find((d) => d.id === selectedId)?.name ?? '图纸';
 
   const handleExport = () => {
-    const rows = instances.map((inst) => {
+    const rows = districtInstances.map((inst) => {
       const district = districtMap[inst.id];
       return {
         '实例名称': inst.label || '(未命名)',
@@ -153,7 +184,7 @@ export default function DistrictPage() {
       const rows = XLSX.utils.sheet_to_json(ws) as Record<string, string>[];
 
       const labelToId = new Map<string, string>();
-      for (const inst of instances) {
+      for (const inst of districtInstances) {
         labelToId.set(inst.label, inst.id);
       }
 
@@ -225,15 +256,15 @@ export default function DistrictPage() {
             <div className="empty-hint">请选择图纸</div>
           ) : loading ? (
             <div className="empty-hint">加载中...</div>
-          ) : instances.length === 0 ? (
-            <div className="empty-hint">该图纸暂无实例</div>
+          ) : districtInstances.length === 0 ? (
+            <div className="empty-hint">该图纸暂无台区（负荷点）元件</div>
           ) : (
             <div style={{ padding: 12 }}>
               <div className="published-preview-meta">
-                <span>实例总数: {instances.length}</span>
+                <span>台区总数（负荷点）: {districtInstances.length}</span>
                 <span>已录入台区数据: {Object.keys(districtMap).length}</span>
                 <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-                  <button className="btn btn-sm" onClick={handleExport} disabled={instances.length === 0}>
+                  <button className="btn btn-sm" onClick={handleExport} disabled={districtInstances.length === 0}>
                     导出 Excel
                   </button>
                   <label className="btn btn-sm btn-primary" style={{ cursor: 'pointer' }}>
@@ -263,7 +294,7 @@ export default function DistrictPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {instances.map((inst) => {
+                  {districtInstances.map((inst) => {
                     const district = districtMap[inst.id];
                     const isEditing = editingId === inst.id;
                     return (

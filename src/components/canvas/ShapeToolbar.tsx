@@ -11,13 +11,15 @@ const TOOLS: { mode: ToolMode; icon: string; label: string }[] = [
   { mode: 'draw-circle', icon: '◯', label: '圆形' },
   { mode: 'draw-ellipse', icon: '⬭', label: '椭圆' },
   { mode: 'draw-line', icon: '╱', label: '线段' },
+  { mode: 'draw-triangle', icon: '△', label: '三角形' },
+  { mode: 'draw-polygon', icon: '⬠', label: '多边形' },
   { mode: 'draw-text', icon: 'T', label: '文字' },
 ];
 
 export default function ShapeToolbar() {
   const { activeTool, setActiveTool, defaultFill, defaultStroke, defaultStrokeWidth,
     setDefaultFill, setDefaultStroke, setDefaultStrokeWidth, selectedShapeIds, selectedPinIds,
-    wireStateEditing, wireEditState } = useCanvasStore();
+    wireStateEditing, wireEditState, polygonSides, setPolygonSides } = useCanvasStore();
   const {
     activeComponentId,
     removeMany,
@@ -185,6 +187,18 @@ export default function ShapeToolbar() {
             <span className="tool-label">{t.label}</span>
           </button>
         ))}
+        {activeTool === 'draw-polygon' && (
+          <label className="color-field" title="多边形边数">
+            <span className="color-label">边数</span>
+            <input
+              type="number"
+              min={3} max={12}
+              value={polygonSides}
+              onChange={(e) => setPolygonSides(Number(e.target.value))}
+              style={{ width: 44 }}
+            />
+          </label>
+        )}
       </div>
 
       <div className="tool-divider" />

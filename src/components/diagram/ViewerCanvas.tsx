@@ -26,6 +26,8 @@ interface ComponentSnapshot {
   height?: number;
   displayWidth?: number;
   displayHeight?: number;
+  /** 电气语义声明（国标种子库元件）；缺省按 category 判断 */
+  electrical?: { role?: string; breakable?: boolean };
 }
 
 export interface TopologyInstance {
@@ -176,7 +178,8 @@ export default function ViewerCanvas({
       const visibleIds = new Set<string>();
       const visibleInstances = instances.filter((inst) => {
         const cat = inst.component?.category;
-        const show = cat === 'powerPoint' || cat === 'switchPoint';
+        const role = (inst.component?.snapshot as ComponentSnapshot | undefined)?.electrical?.role;
+        const show = cat === 'powerPoint' || cat === 'switchPoint' || role === 'source' || role === 'switch';
         if (show) visibleIds.add(inst.id);
         return show;
       });

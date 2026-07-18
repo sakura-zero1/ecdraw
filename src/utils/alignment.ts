@@ -36,6 +36,21 @@ export function getShapeBounds(el: ShapeElement): Bounds {
       const b = getTextBounds(el);
       return { left: b.x, top: b.y, right: b.x + b.width, bottom: b.y + b.height, width: b.width, height: b.height, cx: b.x + b.width / 2, cy: b.y + b.height / 2 };
     }
+    case 'polygon': {
+      const pts = el.points ?? [];
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const [x, y] of pts) {
+        minX = Math.min(minX, x); minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+      }
+      if (!isFinite(minX)) return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0, cx: 0, cy: 0 };
+      return {
+        left: minX - halfStroke, top: minY - halfStroke,
+        right: maxX + halfStroke, bottom: maxY + halfStroke,
+        width: (maxX - minX) + halfStroke * 2, height: (maxY - minY) + halfStroke * 2,
+        cx: (minX + maxX) / 2, cy: (minY + maxY) / 2,
+      };
+    }
     case 'path': {
       // 从 d 中提取坐标数字，按 (x,y) 配对估算包围盒（与 useComponentStore 偏移 d 的方式一致）。
       // 对曲线控制点/H/V/A 为近似，但足以支持框选与对齐，远胜于退化成 (0,0)。
@@ -62,6 +77,9 @@ export function getShapeBounds(el: ShapeElement): Bounds {
 
 export function moveShapeBy(el: ShapeElement, dx: number, dy: number): Partial<ShapeElement> {
   const updates: Record<string, unknown> = {};
+  if (el.type === 'polygon') {
+    updates.points = (el.points ?? []).map(([x, y]) => [Math.round(x + dx), Math.round(y + dy)]);
+  }
   const pos = getShapePositionKeys(el);
   for (const [k, v] of Object.entries(pos)) {
     updates[k] = Math.round(v + (k.includes('x') || k === 'cx' ? dx : k.includes('y') || k === 'cy' ? dy : 0));
@@ -189,6 +207,15 @@ export function scaleShapeInGroup(
       };
       break;
     }
+    case 'polygon': {
+      result = {
+        points: (shape.points ?? []).map(([x, y]) => [
+          Math.round(newBounds.left + (x - origBounds.left) * scaleX),
+          Math.round(newBounds.top + (y - origBounds.top) * scaleY),
+        ]),
+      };
+      break;
+    }
     default:
       result = {};
   }
@@ -289,6 +316,8 @@ function rotateShape90CW(shape: ShapeElement, cx: number, cy: number): Partial<S
       const [ncx, ncy] = rotatePoint90CW(b.x + b.width / 2, b.y + b.height / 2, cx, cy);
       return { x: Math.round(ncx - b.width / 2), y: Math.round(ncy - b.height / 2) };
     }
+    case 'polygon':
+      return { points: (shape.points ?? []).map(([px, py]) => rotatePoint90CW(px, py, cx, cy)) };
     default: return {};
   }
 }
@@ -319,6 +348,8 @@ function rotateShape90CCW(shape: ShapeElement, cx: number, cy: number): Partial<
       const [ncx, ncy] = rotatePoint90CCW(b.x + b.width / 2, b.y + b.height / 2, cx, cy);
       return { x: Math.round(ncx - b.width / 2), y: Math.round(ncy - b.height / 2) };
     }
+    case 'polygon':
+      return { points: (shape.points ?? []).map(([px, py]) => rotatePoint90CCW(px, py, cx, cy)) };
     default: return {};
   }
 }
@@ -358,6 +389,8 @@ function flipShapeH(shape: ShapeElement, cx: number, _cy: number): Partial<Shape
       const b = getTextBounds(shape);
       return { x: Math.round(2 * cx - b.x - b.width) };
     }
+    case 'polygon':
+      return { points: (shape.points ?? []).map(([px, py]) => [Math.round(2 * cx - px), Math.round(py)]) };
     default: return {};
   }
 }
@@ -378,6 +411,8 @@ function flipShapeV(shape: ShapeElement, _cx: number, cy: number): Partial<Shape
       const b = getTextBounds(shape);
       return { y: Math.round(2 * cy - b.y - b.height) };
     }
+    case 'polygon':
+      return { points: (shape.points ?? []).map(([px, py]) => [Math.round(px), Math.round(2 * cy - py)]) };
     default: return {};
   }
 }

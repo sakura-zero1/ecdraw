@@ -1,0 +1,376 @@
+[
+  {
+    "id": "5eedc0de-0000-4000-a000-000000000001",
+    "name": "断路器",
+    "category": "gbSeed",
+    "description": "内置国标符号 GB/T 4728：动触头端 ×＝可开断短路电流",
+    "snapshot": {
+      "schemaVersion": 1,
+      "electrical": { "role": "switch", "breakable": true },
+      "width": 400, "height": 560, "displayWidth": 44, "displayHeight": 62,
+      "shapeElements": [
+        { "id": "term-top", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 20, "x2": 200, "y2": 148 },
+        { "id": "term-bottom", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 420, "x2": 200, "y2": 540 },
+        { "id": "blade", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 420, "x2": 200, "y2": 148,
+          "linkedConnectionId": "conn-main",
+          "stateClosed": { "x1": 200, "y1": 420, "x2": 200, "y2": 148 },
+          "stateOpen": { "x1": 200, "y1": 420, "x2": 122, "y2": 158 } },
+        { "id": "x-1", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 176, "y1": 396, "x2": 224, "y2": 444 },
+        { "id": "x-2", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 224, "y1": 396, "x2": 176, "y2": 444 }
+      ],
+      "pins": [
+        { "id": "pin-top", "label": "上", "number": 1, "position": { "x": 200, "y": 20 }, "pinType": "bidirectional", "visible": true },
+        { "id": "pin-bottom", "label": "下", "number": 2, "position": { "x": 200, "y": 540 }, "pinType": "bidirectional", "visible": true }
+      ],
+      "matrix": { "componentId": "5eedc0de-0000-4000-a000-000000000001", "connections": [
+        { "id": "conn-main", "componentId": "5eedc0de-0000-4000-a000-000000000001", "pinAId": "pin-top", "pinBId": "pin-bottom", "state": "closed", "pathSvg": "", "animationDuration": 500, "visible": true }
+      ] }
+    }
+  },
+  {
+    "id": "5eedc0de-0000-4000-a000-000000000002",
+    "name": "负荷开关",
+    "category": "gbSeed",
+    "description": "内置国标符号 GB/T 4728：动触头端小圆（灭弧室）＝可开断负荷电流",
+    "snapshot": {
+      "schemaVersion": 1,
+      "electrical": { "role": "switch", "breakable": true },
+      "width": 400, "height": 560, "displayWidth": 44, "displayHeight": 62,
+      "shapeElements": [
+        { "id": "term-top", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 20, "x2": 200, "y2": 148 },
+        { "id": "term-bottom", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 444, "x2": 200, "y2": 540 },
+        { "id": "pivot-circle", "type": "circle", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "cx": 200, "cy": 420, "r": 24 },
+        { "id": "blade", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 396, "x2": 200, "y2": 148,
+          "linkedConnectionId": "conn-main",
+          "stateClosed": { "x1": 200, "y1": 396, "x2": 200, "y2": 148 },
+          "stateOpen": { "x1": 200, "y1": 396, "x2": 122, "y2": 166 } }
+      ],
+      "pins": [
+        { "id": "pin-top", "label": "上", "number": 1, "position": { "x": 200, "y": 20 }, "pinType": "bidirectional", "visible": true },
+        { "id": "pin-bottom", "label": "下", "number": 2, "position": { "x": 200, "y": 540 }, "pinType": "bidirectional", "visible": true }
+      ],
+      "matrix": { "componentId": "5eedc0de-0000-4000-a000-000000000002", "connections": [
+        { "id": "conn-main", "componentId": "5eedc0de-0000-4000-a000-000000000002", "pinAId": "pin-top", "pinBId": "pin-bottom", "state": "closed", "pathSvg": "", "animationDuration": 500, "visible": true }
+      ] }
+    }
+  },
+  {
+    "id": "5eedc0de-0000-4000-a000-000000000003",
+    "name": "隔离开关（刀闸）",
+    "category": "gbSeed",
+    "description": "内置国标符号 GB/T 4728：静触头端短横杠＝隔离断口，只能空载分合",
+    "snapshot": {
+      "schemaVersion": 1,
+      "electrical": { "role": "switch", "breakable": true },
+      "width": 400, "height": 560, "displayWidth": 44, "displayHeight": 62,
+      "shapeElements": [
+        { "id": "term-top", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 20, "x2": 200, "y2": 140 },
+        { "id": "t-bar", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 152, "y1": 140, "x2": 248, "y2": 140 },
+        { "id": "term-bottom", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 420, "x2": 200, "y2": 540 },
+        { "id": "blade", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 420, "x2": 200, "y2": 148,
+          "linkedConnectionId": "conn-main",
+          "stateClosed": { "x1": 200, "y1": 420, "x2": 200, "y2": 148 },
+          "stateOpen": { "x1": 200, "y1": 420, "x2": 122, "y2": 158 } }
+      ],
+      "pins": [
+        { "id": "pin-top", "label": "上", "number": 1, "position": { "x": 200, "y": 20 }, "pinType": "bidirectional", "visible": true },
+        { "id": "pin-bottom", "label": "下", "number": 2, "position": { "x": 200, "y": 540 }, "pinType": "bidirectional", "visible": true }
+      ],
+      "matrix": { "componentId": "5eedc0de-0000-4000-a000-000000000003", "connections": [
+        { "id": "conn-main", "componentId": "5eedc0de-0000-4000-a000-000000000003", "pinAId": "pin-top", "pinBId": "pin-bottom", "state": "closed", "pathSvg": "", "animationDuration": 500, "visible": true }
+      ] }
+    }
+  },
+  {
+    "id": "5eedc0de-0000-4000-a000-000000000004",
+    "name": "负荷隔离开关",
+    "category": "gbSeed",
+    "description": "内置国标符号 GB/T 4728：小圆＋横杠兼有，可带负荷分合且有隔离断口",
+    "snapshot": {
+      "schemaVersion": 1,
+      "electrical": { "role": "switch", "breakable": true },
+      "width": 400, "height": 560, "displayWidth": 44, "displayHeight": 62,
+      "shapeElements": [
+        { "id": "term-top", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 20, "x2": 200, "y2": 140 },
+        { "id": "t-bar", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 152, "y1": 140, "x2": 248, "y2": 140 },
+        { "id": "term-bottom", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 444, "x2": 200, "y2": 540 },
+        { "id": "pivot-circle", "type": "circle", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "cx": 200, "cy": 420, "r": 24 },
+        { "id": "blade", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 396, "x2": 200, "y2": 148,
+          "linkedConnectionId": "conn-main",
+          "stateClosed": { "x1": 200, "y1": 396, "x2": 200, "y2": 148 },
+          "stateOpen": { "x1": 200, "y1": 396, "x2": 122, "y2": 166 } }
+      ],
+      "pins": [
+        { "id": "pin-top", "label": "上", "number": 1, "position": { "x": 200, "y": 20 }, "pinType": "bidirectional", "visible": true },
+        { "id": "pin-bottom", "label": "下", "number": 2, "position": { "x": 200, "y": 540 }, "pinType": "bidirectional", "visible": true }
+      ],
+      "matrix": { "componentId": "5eedc0de-0000-4000-a000-000000000004", "connections": [
+        { "id": "conn-main", "componentId": "5eedc0de-0000-4000-a000-000000000004", "pinAId": "pin-top", "pinBId": "pin-bottom", "state": "closed", "pathSvg": "", "animationDuration": 500, "visible": true }
+      ] }
+    }
+  },
+  {
+    "id": "5eedc0de-0000-4000-a000-000000000005",
+    "name": "接地开关（地刀）",
+    "category": "gbSeed",
+    "description": "内置国标符号 GB/T 4728：刀闸动触头侧接地。侧挂设备，请勿放入串联链中部",
+    "snapshot": {
+      "schemaVersion": 1,
+      "electrical": { "role": "switch", "breakable": true },
+      "width": 400, "height": 580, "displayWidth": 44, "displayHeight": 64,
+      "shapeElements": [
+        { "id": "term-top", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 20, "x2": 200, "y2": 140 },
+        { "id": "t-bar", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 152, "y1": 140, "x2": 248, "y2": 140 },
+        { "id": "blade", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 420, "x2": 122, "y2": 158,
+          "linkedConnectionId": "conn-main",
+          "stateClosed": { "x1": 200, "y1": 420, "x2": 200, "y2": 148 },
+          "stateOpen": { "x1": 200, "y1": 420, "x2": 122, "y2": 158 } },
+        { "id": "earth-stem", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 420, "x2": 200, "y2": 470 },
+        { "id": "earth-1", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 136, "y1": 470, "x2": 264, "y2": 470 },
+        { "id": "earth-2", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 160, "y1": 500, "x2": 240, "y2": 500 },
+        { "id": "earth-3", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 184, "y1": 530, "x2": 216, "y2": 530 }
+      ],
+      "pins": [
+        { "id": "pin-top", "label": "上", "number": 1, "position": { "x": 200, "y": 20 }, "pinType": "bidirectional", "visible": true },
+        { "id": "pin-earth", "label": "地", "number": 2, "position": { "x": 200, "y": 560 }, "pinType": "ground", "visible": false }
+      ],
+      "matrix": { "componentId": "5eedc0de-0000-4000-a000-000000000005", "connections": [
+        { "id": "conn-main", "componentId": "5eedc0de-0000-4000-a000-000000000005", "pinAId": "pin-top", "pinBId": "pin-earth", "state": "open", "pathSvg": "", "animationDuration": 500, "visible": true }
+      ] }
+    }
+  },
+  {
+    "id": "5eedc0de-0000-4000-a000-000000000006",
+    "name": "熔断器",
+    "category": "gbSeed",
+    "description": "内置国标符号 GB/T 4728：矩形熔体，导线贯穿长轴",
+    "snapshot": {
+      "schemaVersion": 1,
+      "electrical": { "role": "switch", "breakable": true },
+      "width": 400, "height": 560, "displayWidth": 44, "displayHeight": 62,
+      "shapeElements": [
+        { "id": "wire", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 20, "x2": 200, "y2": 540 },
+        { "id": "body", "type": "rect", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x": 148, "y": 180, "width": 104, "height": 200 }
+      ],
+      "pins": [
+        { "id": "pin-top", "label": "上", "number": 1, "position": { "x": 200, "y": 20 }, "pinType": "bidirectional", "visible": true },
+        { "id": "pin-bottom", "label": "下", "number": 2, "position": { "x": 200, "y": 540 }, "pinType": "bidirectional", "visible": true }
+      ],
+      "matrix": { "componentId": "5eedc0de-0000-4000-a000-000000000006", "connections": [
+        { "id": "conn-main", "componentId": "5eedc0de-0000-4000-a000-000000000006", "pinAId": "pin-top", "pinBId": "pin-bottom", "state": "closed", "pathSvg": "", "animationDuration": 500, "visible": true }
+      ] }
+    }
+  },
+  {
+    "id": "5eedc0de-0000-4000-a000-000000000007",
+    "name": "跌落式熔断器",
+    "category": "gbSeed",
+    "description": "内置国标符号 GB/T 4728：熔管倾斜、下端铰接，熔断后跌落形成隔离断口",
+    "snapshot": {
+      "schemaVersion": 1,
+      "electrical": { "role": "switch", "breakable": true },
+      "width": 400, "height": 560, "displayWidth": 44, "displayHeight": 62,
+      "shapeElements": [
+        { "id": "term-top", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 20, "x2": 200, "y2": 120 },
+        { "id": "t-bar", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 152, "y1": 120, "x2": 248, "y2": 120 },
+        { "id": "tube-1", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 145, "y1": 163, "x2": 111, "y2": 173 },
+        { "id": "tube-2", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 111, "y1": 173, "x2": 183, "y2": 445 },
+        { "id": "tube-3", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 183, "y1": 445, "x2": 217, "y2": 435 },
+        { "id": "tube-4", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 217, "y1": 435, "x2": 145, "y2": 163 },
+        { "id": "tube-axis", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 440, "x2": 128, "y2": 168 },
+        { "id": "pivot-circle", "type": "circle", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "cx": 200, "cy": 440, "r": 16 },
+        { "id": "term-bottom", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 456, "x2": 200, "y2": 540 }
+      ],
+      "pins": [
+        { "id": "pin-top", "label": "上", "number": 1, "position": { "x": 200, "y": 20 }, "pinType": "bidirectional", "visible": true },
+        { "id": "pin-bottom", "label": "下", "number": 2, "position": { "x": 200, "y": 540 }, "pinType": "bidirectional", "visible": true }
+      ],
+      "matrix": { "componentId": "5eedc0de-0000-4000-a000-000000000007", "connections": [
+        { "id": "conn-main", "componentId": "5eedc0de-0000-4000-a000-000000000007", "pinAId": "pin-top", "pinBId": "pin-bottom", "state": "closed", "pathSvg": "", "animationDuration": 500, "visible": true }
+      ] }
+    }
+  },
+  {
+    "id": "5eedc0de-0000-4000-a000-000000000008",
+    "name": "避雷器",
+    "category": "gbSeed",
+    "description": "内置国标符号 GB/T 4728：矩形内向下箭头指向接地端。侧挂终端设备，单上引脚",
+    "snapshot": {
+      "schemaVersion": 1,
+      "electrical": { "role": "junction", "breakable": false },
+      "width": 400, "height": 560, "displayWidth": 40, "displayHeight": 56,
+      "shapeElements": [
+        { "id": "term-top", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 20, "x2": 200, "y2": 200 },
+        { "id": "body", "type": "rect", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x": 148, "y": 200, "width": 104, "height": 176 },
+        { "id": "arrow-shaft", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 216, "x2": 200, "y2": 320 },
+        { "id": "arrow-head", "type": "path", "fill": "#0f172a", "stroke": "#0f172a", "strokeWidth": 2, "opacity": 1, "d": "M 176 312 L 224 312 L 200 356 Z" },
+        { "id": "earth-lead", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 376, "x2": 200, "y2": 440 },
+        { "id": "earth-1", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 136, "y1": 440, "x2": 264, "y2": 440 },
+        { "id": "earth-2", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 160, "y1": 470, "x2": 240, "y2": 470 },
+        { "id": "earth-3", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 184, "y1": 500, "x2": 216, "y2": 500 }
+      ],
+      "pins": [
+        { "id": "pin-top", "label": "上", "number": 1, "position": { "x": 200, "y": 20 }, "pinType": "bidirectional", "visible": true }
+      ],
+      "matrix": { "componentId": "5eedc0de-0000-4000-a000-000000000008", "connections": [] }
+    }
+  },
+  {
+    "id": "5eedc0de-0000-4000-a000-000000000009",
+    "name": "电流互感器CT",
+    "category": "gbSeed",
+    "description": "内置国标符号 GB/T 4728：一次导线贯穿圆。双二次绕组可串两只",
+    "snapshot": {
+      "schemaVersion": 1,
+      "electrical": { "role": "junction", "breakable": false },
+      "width": 400, "height": 560, "displayWidth": 44, "displayHeight": 62,
+      "shapeElements": [
+        { "id": "wire", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 20, "x2": 200, "y2": 540 },
+        { "id": "winding", "type": "circle", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "cx": 200, "cy": 280, "r": 60 }
+      ],
+      "pins": [
+        { "id": "pin-top", "label": "上", "number": 1, "position": { "x": 200, "y": 20 }, "pinType": "bidirectional", "visible": true },
+        { "id": "pin-bottom", "label": "下", "number": 2, "position": { "x": 200, "y": 540 }, "pinType": "bidirectional", "visible": true }
+      ],
+      "matrix": { "componentId": "5eedc0de-0000-4000-a000-000000000009", "connections": [
+        { "id": "conn-main", "componentId": "5eedc0de-0000-4000-a000-000000000009", "pinAId": "pin-top", "pinBId": "pin-bottom", "state": "closed", "pathSvg": "", "animationDuration": 500, "visible": false }
+      ] }
+    }
+  },
+  {
+    "id": "5eedc0de-0000-4000-a000-000000000010",
+    "name": "电压互感器PT",
+    "category": "gbSeed",
+    "description": "内置国标符号 GB/T 4728：双圆相切标 V。终端设备，单上引脚，串联链在此终止",
+    "snapshot": {
+      "schemaVersion": 1,
+      "electrical": { "role": "junction", "breakable": false },
+      "width": 400, "height": 560, "displayWidth": 44, "displayHeight": 62,
+      "shapeElements": [
+        { "id": "term-top", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 20, "x2": 200, "y2": 180 },
+        { "id": "coil-1", "type": "circle", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "cx": 200, "cy": 256, "r": 76 },
+        { "id": "coil-2", "type": "circle", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "cx": 200, "cy": 392, "r": 76 },
+        { "id": "v-label", "type": "text", "fill": "#0f172a", "stroke": "transparent", "strokeWidth": 0, "opacity": 1, "text": "V", "fontSize": 64, "textAlign": "center", "x": 200, "y": 222 }
+      ],
+      "pins": [
+        { "id": "pin-top", "label": "上", "number": 1, "position": { "x": 200, "y": 20 }, "pinType": "bidirectional", "visible": true }
+      ],
+      "matrix": { "componentId": "5eedc0de-0000-4000-a000-000000000010", "connections": [] }
+    }
+  },
+  {
+    "id": "5eedc0de-0000-4000-a000-000000000011",
+    "name": "配电变压器",
+    "category": "gbSeed",
+    "description": "内置国标符号 GB/T 4728：双绕组变压器双圆。负荷点＝台区，单上引脚",
+    "snapshot": {
+      "schemaVersion": 1,
+      "electrical": { "role": "load", "breakable": false },
+      "width": 400, "height": 560, "displayWidth": 48, "displayHeight": 67,
+      "shapeElements": [
+        { "id": "term-top", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 20, "x2": 200, "y2": 150 },
+        { "id": "coil-1", "type": "circle", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "cx": 200, "cy": 242, "r": 92 },
+        { "id": "coil-2", "type": "circle", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "cx": 200, "cy": 394, "r": 92 }
+      ],
+      "pins": [
+        { "id": "pin-top", "label": "上", "number": 1, "position": { "x": 200, "y": 20 }, "pinType": "bidirectional", "visible": true }
+      ],
+      "matrix": { "componentId": "5eedc0de-0000-4000-a000-000000000011", "connections": [] }
+    }
+  },
+  {
+    "id": "5eedc0de-0000-4000-a000-000000000012",
+    "name": "电缆终端头",
+    "category": "gbSeed",
+    "description": "内置国标符号 GB/T 4728：三角套在导线上，电缆与架空/设备过渡点",
+    "snapshot": {
+      "schemaVersion": 1,
+      "electrical": { "role": "junction", "breakable": false },
+      "width": 400, "height": 560, "displayWidth": 44, "displayHeight": 62,
+      "shapeElements": [
+        { "id": "wire-top", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 20, "x2": 200, "y2": 240 },
+        { "id": "cone", "type": "path", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "d": "M 128 240 L 272 240 L 200 392 Z" },
+        { "id": "wire-bottom", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 392, "x2": 200, "y2": 540 }
+      ],
+      "pins": [
+        { "id": "pin-top", "label": "上", "number": 1, "position": { "x": 200, "y": 20 }, "pinType": "bidirectional", "visible": true },
+        { "id": "pin-bottom", "label": "下", "number": 2, "position": { "x": 200, "y": 540 }, "pinType": "bidirectional", "visible": true }
+      ],
+      "matrix": { "componentId": "5eedc0de-0000-4000-a000-000000000012", "connections": [
+        { "id": "conn-main", "componentId": "5eedc0de-0000-4000-a000-000000000012", "pinAId": "pin-top", "pinBId": "pin-bottom", "state": "closed", "pathSvg": "", "animationDuration": 500, "visible": false }
+      ] }
+    }
+  },
+  {
+    "id": "5eedc0de-0000-4000-a000-000000000013",
+    "name": "接地",
+    "category": "gbSeed",
+    "description": "内置国标符号 GB/T 4728：三横递减。终端设备，单上引脚",
+    "snapshot": {
+      "schemaVersion": 1,
+      "electrical": { "role": "junction", "breakable": false },
+      "width": 400, "height": 500, "displayWidth": 36, "displayHeight": 45,
+      "shapeElements": [
+        { "id": "stem", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 200, "y1": 20, "x2": 200, "y2": 400 },
+        { "id": "earth-1", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 136, "y1": 400, "x2": 264, "y2": 400 },
+        { "id": "earth-2", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 160, "y1": 428, "x2": 240, "y2": 428 },
+        { "id": "earth-3", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 184, "y1": 456, "x2": 216, "y2": 456 }
+      ],
+      "pins": [
+        { "id": "pin-top", "label": "上", "number": 1, "position": { "x": 200, "y": 20 }, "pinType": "ground", "visible": true }
+      ],
+      "matrix": { "componentId": "5eedc0de-0000-4000-a000-000000000013", "connections": [] }
+    }
+  },
+  {
+    "id": "5eedc0de-0000-4000-a000-000000000014",
+    "name": "母线",
+    "category": "gbSeed",
+    "description": "内置符号：加粗横条，4 个均布引脚全导通，各间隔/出线由此引下",
+    "snapshot": {
+      "schemaVersion": 1,
+      "electrical": { "role": "junction", "breakable": false },
+      "width": 1200, "height": 200, "displayWidth": 140, "displayHeight": 24,
+      "shapeElements": [
+        { "id": "bar", "type": "rect", "fill": "#0f172a", "stroke": "#0f172a", "strokeWidth": 2, "opacity": 1, "x": 40, "y": 80, "width": 1120, "height": 24 }
+      ],
+      "pins": [
+        { "id": "pin-1", "label": "P1", "number": 1, "position": { "x": 180, "y": 92 }, "pinType": "bidirectional", "visible": true },
+        { "id": "pin-2", "label": "P2", "number": 2, "position": { "x": 460, "y": 92 }, "pinType": "bidirectional", "visible": true },
+        { "id": "pin-3", "label": "P3", "number": 3, "position": { "x": 740, "y": 92 }, "pinType": "bidirectional", "visible": true },
+        { "id": "pin-4", "label": "P4", "number": 4, "position": { "x": 1020, "y": 92 }, "pinType": "bidirectional", "visible": true }
+      ],
+      "matrix": { "componentId": "5eedc0de-0000-4000-a000-000000000014", "connections": [
+        { "id": "conn-12", "componentId": "5eedc0de-0000-4000-a000-000000000014", "pinAId": "pin-1", "pinBId": "pin-2", "state": "closed", "pathSvg": "", "animationDuration": 500, "visible": false },
+        { "id": "conn-23", "componentId": "5eedc0de-0000-4000-a000-000000000014", "pinAId": "pin-2", "pinBId": "pin-3", "state": "closed", "pathSvg": "", "animationDuration": 500, "visible": false },
+        { "id": "conn-34", "componentId": "5eedc0de-0000-4000-a000-000000000014", "pinAId": "pin-3", "pinBId": "pin-4", "state": "closed", "pathSvg": "", "animationDuration": 500, "visible": false }
+      ] }
+    }
+  },
+  {
+    "id": "5eedc0de-0000-4000-a000-000000000015",
+    "name": "柱上开关（方块）",
+    "category": "gbSeed",
+    "description": "内置调度运行图惯例符号：方块实心＝合、空心＝分。横向安装于线路",
+    "snapshot": {
+      "schemaVersion": 1,
+      "electrical": { "role": "switch", "breakable": true },
+      "width": 560, "height": 400, "displayWidth": 62, "displayHeight": 44,
+      "shapeElements": [
+        { "id": "wire-left", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 20, "y1": 200, "x2": 200, "y2": 200 },
+        { "id": "wire-right", "type": "line", "fill": "transparent", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x1": 360, "y1": 200, "x2": 540, "y2": 200 },
+        { "id": "box", "type": "rect", "fill": "#0f172a", "stroke": "#0f172a", "strokeWidth": 6, "opacity": 1, "x": 200, "y": 120, "width": 160, "height": 160,
+          "linkedConnectionId": "conn-main",
+          "stateClosed": { "fill": "#0f172a" },
+          "stateOpen": { "fill": "transparent" } }
+      ],
+      "pins": [
+        { "id": "pin-left", "label": "左", "number": 1, "position": { "x": 20, "y": 200 }, "pinType": "bidirectional", "visible": true },
+        { "id": "pin-right", "label": "右", "number": 2, "position": { "x": 540, "y": 200 }, "pinType": "bidirectional", "visible": true }
+      ],
+      "matrix": { "componentId": "5eedc0de-0000-4000-a000-000000000015", "connections": [
+        { "id": "conn-main", "componentId": "5eedc0de-0000-4000-a000-000000000015", "pinAId": "pin-left", "pinBId": "pin-right", "state": "closed", "pathSvg": "", "animationDuration": 500, "visible": true }
+      ] }
+    }
+  }
+]

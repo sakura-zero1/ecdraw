@@ -77,6 +77,13 @@ pub fn run() {
                         log::info!("管理员用户 '{}' 密码已同步", username);
                     }
                 }
+
+                // 种子内置元件库（国标符号，仅首次）
+                match ecdraw_core::logic::seed_logic::seed_builtin_components(&pool_for_seed).await {
+                    Ok(0) => {}
+                    Ok(n) => log::info!("已种子 {} 个内置国标元件", n),
+                    Err(e) => log::warn!("内置元件种子失败: {}", e),
+                }
             });
 
             // Create system tray icon

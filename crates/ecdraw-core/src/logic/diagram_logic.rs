@@ -159,6 +159,59 @@ async fn hydrate_realtime_from_snapshot(
     Ok(())
 }
 
+/// 从实时表 diagram_instances/diagram_edges 重建快照 JSON（hydrate 的逆操作）。
+/// 保留 base 快照的 schemaVersion/selection/viewport，只重建 instances/connections；
+/// 字段命名与 get_diagram_version_topology 的读取逻辑对齐（双写 from/source 命名）。
+/// 守卫：若实时表无实例（未迁移的遗留快照图 / 从列表提交未打开的图），原样返回 base，避免清空数据。
+async fn build_snapshot_from_realtime(
+    pool: &PgPool,
+    diagram_id: Uuid,
+    base: &serde_json::Value,
+) -> Result<serde_json::Value, AppError> {
+    let instances = sqlx::query_as::<_, DiagramInstance>(
+        "SELECT * FROM diagram_instances WHERE diagram_id = $1"
+    ).bind(diagram_id).fetch_all(pool).await?;
+
+    if instances.is_empty() {
+        return Ok(base.clone());
+    }
+
+    let edges = sqlx::query_as::<_, DiagramEdge>(
+        "SELECT * FROM diagram_edges WHERE diagram_id = $1"
+    ).bind(diagram_id).fetch_all(pool).await?;
+
+    let inst_json: Vec<serde_json::Value> = instances.iter().map(|i| json!({
+        "id": i.id,
+        "componentId": i.component_id,
+        "label": i.label,
+        "positionX": i.position_x,
+        "positionY": i.position_y,
+        "instanceData": i.instance_data,
+    })).collect();
+
+    let conn_json: Vec<serde_json::Value> = edges.iter().map(|e| json!({
+        "id": e.id,
+        "fromInstanceId": e.source_instance_id,
+        "toInstanceId": e.target_instance_id,
+        "sourceInstanceId": e.source_instance_id,
+        "targetInstanceId": e.target_instance_id,
+        "fromPinId": e.source_pin_id,
+        "toPinId": e.target_pin_id,
+        "sourcePinId": e.source_pin_id,
+        "targetPinId": e.target_pin_id,
+        "lineType": e.line_type,
+        "polylineMidRatio": e.polyline_mid_ratio,
+    })).collect();
+
+    Ok(json!({
+        "schemaVersion": base.get("schemaVersion").cloned().unwrap_or(json!(1)),
+        "instances": inst_json,
+        "connections": conn_json,
+        "selection": base.get("selection").cloned().unwrap_or(json!(null)),
+        "viewport": base.get("viewport").cloned().unwrap_or(json!({"zoom":1,"panX":0,"panY":0})),
+    }))
+}
+
 // ========== Diagram CRUD ==========
 
 pub async fn list_diagrams(pool: &PgPool, roles: &[String], user_id: Uuid) -> Result<Vec<Diagram>, AppError> {
@@ -548,7 +601,14 @@ pub async fn submit_diagram_review(pool: &PgPool, roles: &[String], user_id: Uui
     ).bind(id).fetch_optional(pool).await?
         .ok_or_else(|| AppError::BadRequest("请先保存图纸".into()))?;
 
+    // 提交前从实时表重建该版本快照，确保送审/审核/转正使用的快照与编辑器当前状态一致。
+    // （元件命名、位置等改动只写入实时表 diagram_instances，未必已手动落盘到快照。）
+    let rebuilt = build_snapshot_from_realtime(pool, id, &latest_ver.snapshot).await?;
+
     let mut tx = pool.begin().await?;
+    sqlx::query("UPDATE diagram_versions SET snapshot = $1 WHERE id = $2")
+        .bind(&rebuilt).bind(latest_ver.id).execute(&mut *tx).await?;
+
     let online = has_online_version(pool, id).await?;
     if online {
         sqlx::query("UPDATE diagrams SET updated_at = NOW() WHERE id = $1").bind(id).execute(&mut *tx).await?;

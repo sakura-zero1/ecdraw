@@ -278,6 +278,7 @@ export const useComponentStore = create<ComponentStore>()(
       // Deep clone with offset
       const cloned: ShapeElement = { ...el, id: newId, groupId: undefined };
       // Offset position by 20px
+      if (cloned.points) cloned.points = cloned.points.map(([px, py]) => [px + 20, py + 20]);
       if ('x' in cloned && cloned.x !== undefined) cloned.x += 20;
       if ('y' in cloned && cloned.y !== undefined) cloned.y += 20;
       if ('cx' in cloned && cloned.cx !== undefined) cloned.cx += 20;
@@ -302,6 +303,7 @@ export const useComponentStore = create<ComponentStore>()(
       const newId = uuid();
       const cloned: ShapeElement = { ...element, id: newId, groupId: groupIdOverride ?? undefined };
       // Offset position by 20px
+      if (cloned.points) cloned.points = cloned.points.map(([px, py]) => [px + 20, py + 20]);
       if ('x' in cloned && cloned.x !== undefined) cloned.x += 20;
       if ('y' in cloned && cloned.y !== undefined) cloned.y += 20;
       if ('cx' in cloned && cloned.cx !== undefined) cloned.cx += 20;
@@ -328,6 +330,7 @@ export const useComponentStore = create<ComponentStore>()(
         const newId = uuid();
         newShapeIds.push(newId);
         const cloned: ShapeElement = { ...s, id: newId, groupId, linkedConnectionId: undefined, stateClosed: undefined, stateOpen: undefined };
+        if (cloned.points) cloned.points = cloned.points.map(([px, py]) => [px + offsetX, py + offsetY]);
         if ('x' in cloned && cloned.x !== undefined) cloned.x += offsetX;
         if ('y' in cloned && cloned.y !== undefined) cloned.y += offsetY;
         if ('cx' in cloned && cloned.cx !== undefined) cloned.cx += offsetX;

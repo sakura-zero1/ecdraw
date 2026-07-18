@@ -235,6 +235,16 @@ export function drawShapeOnCanvas(ctx: CanvasRenderingContext2D, el: ShapeElemen
         ctx.stroke(path);
       }
       break;
+    case 'polygon':
+      if (el.points && el.points.length >= 3) {
+        ctx.beginPath();
+        ctx.moveTo(el.points[0][0], el.points[0][1]);
+        for (let i = 1; i < el.points.length; i++) ctx.lineTo(el.points[i][0], el.points[i][1]);
+        ctx.closePath();
+        if (fill !== 'transparent' && fill !== 'none') ctx.fill();
+        ctx.stroke();
+      }
+      break;
     case 'text':
       if (el.text) {
         const fs = el.fontSize ?? 16;

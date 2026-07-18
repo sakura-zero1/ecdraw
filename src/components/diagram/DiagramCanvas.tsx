@@ -22,6 +22,33 @@ function getPolylinePoints(sx: number, sy: number, tx: number, ty: number, lt: s
   return [[sx, sy], [midX, sy], [midX, ty], [tx, ty]];
 }
 
+// 折线圆角拐角：用 arcTo 在直角拐点处画一段真实圆弧（半径为世界单位），
+// lineJoin='round' 的圆角半径只有线宽一半（细线时肉眼不可见），所以必须这样画。
+// 半径按每个拐角各自相邻的线段单独夹取：端点侧的段可用全长，被两个拐角
+// 共享的中段各取一半。这样拖动中段时只有变短那一侧的拐角会收圆角，另一侧不受影响。
+const POLYLINE_CORNER_RADIUS = 10;
+function buildRoundedPolylinePath(ctx: CanvasRenderingContext2D, pts: number[][], radius: number): void {
+  const n = pts.length;
+  if (n < 3) {
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < n; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    return;
+  }
+  const segLen: number[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    segLen.push(Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]));
+  }
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < n - 1; i++) {
+    // 段 i-1（进角）若起点也是拐角则与上一拐角共享 → 取一半；段 i（出角）同理
+    const prevAvail = i - 1 > 0 ? segLen[i - 1] / 2 : segLen[i - 1];
+    const nextAvail = i + 1 < n - 1 ? segLen[i] / 2 : segLen[i];
+    const r = Math.min(radius, prevAvail, nextAvail);
+    ctx.arcTo(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], r);
+  }
+  ctx.lineTo(pts[n - 1][0], pts[n - 1][1]);
+}
+
 // ---------- Constants ----------
 
 const NODE_WIDTH = 140;
@@ -46,7 +73,7 @@ const PIN_COLORS: Record<PinType, string> = {
   ground: '#6b7280',
 };
 
-const EDGE_COLOR = '#94a3b8';
+const EDGE_COLOR = '#a7b4cf';
 const EDGE_SELECTED_COLOR = '#3b82f6';
 const SELECTION_BORDER_COLOR = '#2563eb';
 const GRID_COLOR = '#e2e8f0';
@@ -579,7 +606,9 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
       ctx.save();
       ctx.globalAlpha = g.edgeAlpha;
       ctx.strokeStyle = g.edgeColor;
-      ctx.lineWidth = g.isSelected ? 3 / zoom : 2 / zoom;
+      ctx.lineWidth = g.isSelected ? 2 / zoom : 1.25 / zoom;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
       if (g.isCable) ctx.setLineDash([8 / zoom, 4 / zoom]);
       ctx.beginPath();
       const crs = crossingMap.get(ei);
@@ -604,9 +633,9 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
         }
         ctx.stroke();
       } else if (g.polyPts) {
-        // Polyline: draw with bridges using shared utility
-        ctx.moveTo(g.polyPts[0][0], g.polyPts[0][1]);
+        // Polyline: 有交叉时走桥接（尖角）；无交叉时画圆角拐角
         if (crs && crs.length > 0) {
+          ctx.moveTo(g.polyPts[0][0], g.polyPts[0][1]);
           const segCrossings = new Map<number, CrossingInfo[]>();
           for (const c of crs) {
             let list = segCrossings.get(c.segIdx);
@@ -615,7 +644,7 @@ const DiagramCanvasInner = forwardRef<DiagramCanvasHandle, DiagramCanvasProps>(f
           }
           drawPathWithBridges(ctx, g.polyPts, segCrossings, bridgeR);
         } else {
-          for (let i = 1; i < g.polyPts.length; i++) ctx.lineTo(g.polyPts[i][0], g.polyPts[i][1]);
+          buildRoundedPolylinePath(ctx, g.polyPts, POLYLINE_CORNER_RADIUS);
         }
         ctx.stroke();
       } else {

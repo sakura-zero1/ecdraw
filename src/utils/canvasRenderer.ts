@@ -63,6 +63,16 @@ export function drawShapeOnCanvas(ctx: CanvasRenderingContext2D, el: ShapeElemen
         ctx.stroke(path);
       }
       break;
+    case 'polygon':
+      if (el.points && el.points.length >= 3) {
+        ctx.beginPath();
+        ctx.moveTo(el.points[0][0], el.points[0][1]);
+        for (let i = 1; i < el.points.length; i++) ctx.lineTo(el.points[i][0], el.points[i][1]);
+        ctx.closePath();
+        if (fill !== 'transparent' && fill !== 'none') ctx.fill();
+        ctx.stroke();
+      }
+      break;
     case 'text': {
       const t = el.text ?? '';
       if (!t) break;
@@ -208,6 +218,15 @@ export function buildShapePath(el: ShapeElement): Path2D {
       if (el.d) {
         const p = new Path2D(el.d);
         path.addPath(p);
+      }
+      break;
+    }
+    case 'polygon': {
+      const pts = el.points ?? [];
+      if (pts.length >= 3) {
+        path.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) path.lineTo(pts[i][0], pts[i][1]);
+        path.closePath();
       }
       break;
     }

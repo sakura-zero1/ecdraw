@@ -21,6 +21,28 @@ const PIN_HIT_RADIUS = 20;
 
 // ─── Pure logic functions (unchanged from SvgCanvas) ───
 
+// polygon 顶点在拖拽 origData（Record<string, number>）中的扁平表示：p0x/p0y/p1x/...
+// applyShapeMove 的 isX/isY 判断（k.includes('x'/'y')）对这些键天然成立。
+function flattenPolygonPoints(points: number[][] | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
+  (points ?? []).forEach(([x, y], i) => {
+    out[`p${i}x`] = x;
+    out[`p${i}y`] = y;
+  });
+  return out;
+}
+
+/** 从扁平键重组 points；无 p 键返回 null */
+function unflattenPolygonPoints(flat: Record<string, number | object>): number[][] | null {
+  const pts: number[][] = [];
+  for (let i = 0; ; i++) {
+    const x = flat[`p${i}x`], y = flat[`p${i}y`];
+    if (typeof x !== 'number' || typeof y !== 'number') break;
+    pts.push([x, y]);
+  }
+  return pts.length >= 3 ? pts : null;
+}
+
 function getShapePosition(el: ShapeElement): Record<string, number> {
   switch (el.type) {
     case 'rect': return { x: el.x ?? 0, y: el.y ?? 0 };
@@ -28,6 +50,7 @@ function getShapePosition(el: ShapeElement): Record<string, number> {
     case 'ellipse': return { cx: el.cx ?? 0, cy: el.cy ?? 0 };
     case 'line': return { x1: el.x1 ?? 0, y1: el.y1 ?? 0, x2: el.x2 ?? 0, y2: el.y2 ?? 0 };
     case 'text': return { x: el.x ?? 0, y: el.y ?? 0 };
+    case 'polygon': return flattenPolygonPoints(el.points);
     default: return {};
   }
 }
@@ -38,6 +61,7 @@ function getShapeResizeData(el: ShapeElement): Record<string, number> {
     case 'circle': return { cx: el.cx ?? 0, cy: el.cy ?? 0, r: el.r ?? 0 };
     case 'ellipse': return { cx: el.cx ?? 0, cy: el.cy ?? 0, rx: el.rx ?? 0, ry: el.ry ?? 0 };
     case 'line': return { x1: el.x1 ?? 0, y1: el.y1 ?? 0, x2: el.x2 ?? 0, y2: el.y2 ?? 0 };
+    case 'polygon': return flattenPolygonPoints(el.points);
     default: return getShapePosition(el);
   }
 }
@@ -48,12 +72,15 @@ function applyShapeMove(
   update: (cid: string, sid: string, u: Partial<ShapeElement>) => void,
   origOverrides?: Record<string, Record<string, unknown>>,
 ) {
-  const updates: Record<string, number | object> = {};
+  let updates: Record<string, number | object> = {};
   for (const [k, v] of Object.entries(orig)) {
     const isX = k.includes('x') || k === 'cx';
     const isY = k.includes('y') || k === 'cy';
     updates[k] = Math.round(v + (isX ? dx : isY ? dy : 0));
   }
+  // polygon：扁平键重组回 points
+  const polyPts = unflattenPolygonPoints(updates);
+  if (polyPts) updates = { points: polyPts };
   // Also move override position keys so stateClosed/stateOpen follow the shape.
   // Use ORIGINAL override values captured at drag start to avoid drift.
   if (origOverrides) {
@@ -109,6 +136,29 @@ function computeResizedShape(
     if (handle === 'start') return { x1: Math.round((orig.x1 ?? 0) + dx), y1: Math.round((orig.y1 ?? 0) + dy) };
     if (handle === 'end') return { x2: Math.round((orig.x2 ?? 0) + dx), y2: Math.round((orig.y2 ?? 0) + dy) };
   }
+  if (shapeType === 'polygon') {
+    // 角手柄拖拽 → 包围盒缩放，全部顶点按比例映射
+    const pts = unflattenPolygonPoints(orig);
+    if (!pts) return {};
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const [x, y] of pts) {
+      minX = Math.min(minX, x); minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+    }
+    let nx1 = minX, ny1 = minY, nx2 = maxX, ny2 = maxY;
+    if (handle.includes('e')) nx2 += dx;
+    if (handle.includes('w')) nx1 += dx;
+    if (handle.includes('s')) ny2 += dy;
+    if (handle.includes('n')) ny1 += dy;
+    const ow = Math.max(1, maxX - minX), oh = Math.max(1, maxY - minY);
+    const nw = Math.max(4, nx2 - nx1), nh = Math.max(4, ny2 - ny1);
+    return {
+      points: pts.map(([x, y]) => [
+        Math.round(nx1 + ((x - minX) / ow) * nw),
+        Math.round(ny1 + ((y - minY) / oh) * nh),
+      ]),
+    };
+  }
   return {};
 }
 
@@ -154,8 +204,25 @@ function getShapeSnapPoints(el: ShapeElement): { x: number; y: number }[] {
         { x: b.x + b.width / 2, y: b.y + b.height / 2 },
       ];
     }
+    case 'polygon': {
+      const pts = el.points ?? [];
+      if (pts.length < 3) return [];
+      let sx = 0, sy = 0;
+      for (const [x, y] of pts) { sx += x; sy += y; }
+      return [...pts.map(([x, y]) => ({ x, y })), { x: sx / pts.length, y: sy / pts.length }];
+    }
     default: return [];
   }
+}
+
+/** 正 N 边形顶点：圆心 (cx,cy)、外接圆半径 r，首顶点朝上 */
+function regularPolygonPoints(cx: number, cy: number, r: number, sides: number): number[][] {
+  const pts: number[][] = [];
+  for (let i = 0; i < sides; i++) {
+    const a = -Math.PI / 2 + (i * 2 * Math.PI) / sides;
+    pts.push([Math.round(cx + r * Math.cos(a)), Math.round(cy + r * Math.sin(a))]);
+  }
+  return pts;
 }
 
 function getSnapPosition(pos: { x: number; y: number }, shapes: ShapeElement[], zoom: number = 1) {
@@ -299,6 +366,17 @@ function getResizeHandles(el: ShapeElement): Array<{ key: string; x: number; y: 
     handles.push({ key: 'e', x: cx + rx, y: cy }, { key: 'w', x: cx - rx, y: cy }, { key: 'n', x: cx, y: cy - ry }, { key: 's', x: cx, y: cy + ry });
   } else if (el.type === 'line') {
     handles.push({ key: 'start', x: el.x1 ?? 0, y: el.y1 ?? 0 }, { key: 'end', x: el.x2 ?? 0, y: el.y2 ?? 0 });
+  } else if (el.type === 'polygon') {
+    // 包围盒四角手柄，拖拽时整体等比映射顶点
+    const pts = el.points ?? [];
+    if (pts.length >= 3) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const [x, y] of pts) {
+        minX = Math.min(minX, x); minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+      }
+      handles.push({ key: 'nw', x: minX, y: minY }, { key: 'ne', x: maxX, y: minY }, { key: 'sw', x: minX, y: maxY }, { key: 'se', x: maxX, y: maxY });
+    }
   }
   return handles;
 }
@@ -1325,8 +1403,8 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
 
     if (!drawing || !activeComp) return;
     const { startX, startY } = drawing;
-    const { defaultFill, defaultStroke, defaultStrokeWidth } = useCanvasStore.getState();
-    const shapeType = activeTool.replace('draw-', '') as ShapeElement['type'];
+    const { defaultFill, defaultStroke, defaultStrokeWidth, polygonSides } = useCanvasStore.getState();
+    const shapeType = activeTool.replace('draw-', '');
     let preview: ShapeElement;
     switch (shapeType) {
       case 'rect':
@@ -1346,6 +1424,25 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
         if (Math.abs(pos.x - startX) < lineSnap) ex = startX;
         if (Math.abs(pos.y - startY) < lineSnap) ey = startY;
         preview = { id: '__preview__', type: 'line', fill: 'none', stroke: defaultStroke, strokeWidth: defaultStrokeWidth, opacity: 0.6, x1: startX, y1: startY, x2: ex, y2: ey };
+        break;
+      }
+      case 'triangle': {
+        // 拖拽包围盒 → 等腰三角形（顶点居上）
+        const left = Math.min(startX, pos.x), right = Math.max(startX, pos.x);
+        const top = Math.min(startY, pos.y), bottom = Math.max(startY, pos.y);
+        preview = {
+          id: '__preview__', type: 'polygon', fill: defaultFill, stroke: defaultStroke, strokeWidth: defaultStrokeWidth, opacity: 0.6,
+          points: [[Math.round((left + right) / 2), top], [right, bottom], [left, bottom]],
+        };
+        break;
+      }
+      case 'polygon': {
+        // 从中心拖出外接圆半径 → 正 N 边形
+        const r = Math.round(Math.hypot(pos.x - startX, pos.y - startY));
+        preview = {
+          id: '__preview__', type: 'polygon', fill: defaultFill, stroke: defaultStroke, strokeWidth: defaultStrokeWidth, opacity: 0.6,
+          points: regularPolygonPoints(startX, startY, Math.max(r, 1), polygonSides),
+        };
         break;
       }
       default: return;
@@ -1393,7 +1490,8 @@ export default function ComponentCanvas({ onSave }: { onSave?: () => void }) {
     if (dragState) { setSnapPreview(null); setAlignmentGuides([]); setDragState(null); return; }
     if (drawing?.preview && activeComp) {
       const el = drawing.preview;
-      const tooSmall = (el.type === 'rect' && ((el.width ?? 0) < 3 || (el.height ?? 0) < 3)) || (el.type === 'circle' && (el.r ?? 0) < 3) || (el.type === 'ellipse' && ((el.rx ?? 0) < 3 || (el.ry ?? 0) < 3));
+      const polyBounds = el.type === 'polygon' ? getShapeBounds(el) : null;
+      const tooSmall = (el.type === 'rect' && ((el.width ?? 0) < 3 || (el.height ?? 0) < 3)) || (el.type === 'circle' && (el.r ?? 0) < 3) || (el.type === 'ellipse' && ((el.rx ?? 0) < 3 || (el.ry ?? 0) < 3)) || (polyBounds != null && (polyBounds.width < 3 || polyBounds.height < 3));
       if (!tooSmall) addShapeElement(activeComp.id, { ...el, opacity: 1 });
     }
     setSnapPreview(null);

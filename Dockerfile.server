@@ -1,0 +1,41 @@
+# ECDraw API Server Docker 镜像
+# 多阶段构建：编译 + 运行
+
+# 构建阶段
+FROM rust:1.82-alpine AS builder
+
+# 安装构建依赖
+RUN apk add --no-cache \
+    musl-dev \
+    postgresql-client \
+    pkgconfig \
+    openssl-dev
+
+WORKDIR /build
+
+# 复制 Cargo 配置
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ ./ crates/
+
+# 构建 ecdraw-server
+RUN cargo build --release -p ecdraw-server
+
+# 运行阶段
+FROM alpine:3.19
+
+RUN apk add --no-cache \
+    ca-certificates \
+    postgresql-client
+
+# 从构建阶段复制二进制文件
+COPY --from=builder /build/target/release/ecdraw-server /usr/local/bin/ecdraw-server
+
+# 暴露端口
+EXPOSE 3001
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3001/api/health || exit 1
+
+# 启动服务
+CMD ["ecdraw-server"]

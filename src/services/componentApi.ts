@@ -49,6 +49,7 @@ function toComponent(row: ApiComponentWithVersion): ElectricalComponent {
         displayHeight?: number;
         shapeElements?: ElectricalComponent['shapeElements'];
         pins?: ElectricalComponent['pins'];
+        electrical?: ElectricalComponent['electrical'];
       })
     : undefined;
 
@@ -63,6 +64,7 @@ function toComponent(row: ApiComponentWithVersion): ElectricalComponent {
     displayHeight: Number(payload?.displayHeight) > 0 ? Number(payload?.displayHeight) : 90,
     shapeElements: Array.isArray(payload?.shapeElements) ? payload.shapeElements : [],
     pins: Array.isArray(payload?.pins) ? payload.pins : [],
+    electrical: payload?.electrical,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -71,6 +73,8 @@ function toComponent(row: ApiComponentWithVersion): ElectricalComponent {
 function buildSnapshot(component: ElectricalComponent, matrix: ConnectivityMatrix) {
   return {
     schemaVersion: 1,
+    // 保留电气语义声明，避免编辑内置元件时自动同步把它冲掉
+    electrical: component.electrical,
     width: component.width,
     height: component.height,
     displayWidth: component.displayWidth,

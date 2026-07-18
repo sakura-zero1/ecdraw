@@ -44,6 +44,13 @@ async fn main() {
                 tracing::info!("管理员用户 '{}' 已自动创建", username);
             }
         }
+
+        // 种子内置元件库（国标符号，仅首次）
+        match ecdraw_core::logic::seed_logic::seed_builtin_components(&seed_pool).await {
+            Ok(0) => {}
+            Ok(n) => tracing::info!("已种子 {} 个内置国标元件", n),
+            Err(e) => tracing::warn!("内置元件种子失败: {}", e),
+        }
     });
 
     let state = AppState {

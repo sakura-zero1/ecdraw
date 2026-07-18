@@ -7,6 +7,7 @@ mod components;
 mod diagrams;
 mod districts;
 mod gis;
+mod health;
 mod lines;
 mod reviews;
 mod seed;
@@ -17,6 +18,7 @@ use ecdraw_core::AppState;
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
+        .nest("/api", health::routes())
         .nest("/api/auth", auth::routes())
         .nest("/api/users", users::routes())
         .nest("/api/components", components::routes())

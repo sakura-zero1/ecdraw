@@ -24,6 +24,9 @@ interface CanvasStore {
   defaultFill: string;
   defaultStroke: string;
   defaultStrokeWidth: number;
+  /** 多边形工具边数（3-12） */
+  polygonSides: number;
+  setPolygonSides: (n: number) => void;
 
   setViewport: (viewport: Partial<Viewport>) => void;
   zoomIn: () => void;
@@ -76,6 +79,13 @@ export const useCanvasStore = create<CanvasStore>()(
     defaultFill: 'transparent',
     defaultStroke: '#000000',
     defaultStrokeWidth: 5,
+    polygonSides: 6,
+
+    setPolygonSides: (n) => {
+      set((state) => {
+        state.polygonSides = Math.max(3, Math.min(12, Math.floor(n) || 3));
+      });
+    },
 
     setViewport: (vp) => {
       set((state) => {

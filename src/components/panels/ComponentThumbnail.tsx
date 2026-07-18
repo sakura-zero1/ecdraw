@@ -51,6 +51,8 @@ function renderThumbShape(resolved: ShapeElement) {
       return <line x1={resolved.x1} y1={resolved.y1} x2={resolved.x2} y2={resolved.y2} stroke={base.stroke} strokeWidth={base.strokeWidth} opacity={base.opacity} />;
     case 'path':
       return <path d={resolved.d} {...base} />;
+    case 'polygon':
+      return <polygon points={(resolved.points ?? []).map(([x, y]) => `${x},${y}`).join(' ')} {...base} />;
     case 'text': {
       const t = resolved.text ?? '';
       if (!t) return null;

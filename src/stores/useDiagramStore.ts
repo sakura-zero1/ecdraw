@@ -22,6 +22,7 @@ import {
 import { fetchComponentLibrary } from '../services/componentApi';
 import { parseError } from '../utils/parseError';
 import type { Pin, ShapeElement } from '../types';
+import type { ElectricalMeta } from '../types/component';
 import type { ConnectivityMatrix } from '../types/connection';
 
 const MAX_UNDO = 50;
@@ -35,6 +36,8 @@ export interface ComponentMeta {
   height?: number;
   displayWidth?: number;
   displayHeight?: number;
+  /** 电气语义声明（国标种子库等）；缺省按 category 判断 */
+  electrical?: ElectricalMeta;
 }
 
 interface Snapshot {
@@ -165,6 +168,7 @@ export const useDiagramStore = create<DiagramEditorState>()(
             height: comp.height,
             displayWidth: comp.displayWidth,
             displayHeight: comp.displayHeight,
+            electrical: comp.electrical,
           };
         }
         const connMap: Record<string, ConnectivityMatrix> = {};
@@ -488,6 +492,7 @@ export const useDiagramStore = create<DiagramEditorState>()(
               height: comp.height,
               displayWidth: comp.displayWidth,
               displayHeight: comp.displayHeight,
+              electrical: comp.electrical,
             };
           }
           for (const m of matrices) {
